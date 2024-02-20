@@ -1,0 +1,243 @@
+name: 'CI'
+
+on:
+  workflow_call:
+    inputs:
+      working-directory:
+        description: 'Directory in which to run things in.'
+        type: string
+        required: false
+        default: '.'
+    secrets:
+      build_env:
+        description: 'Environment variables to set when running build script.'
+        required: false
+
+env:
+  NEXT_TELEMETRY_DISABLED: 1
+
+jobs:
+  setup:
+    name: 'Setup'
+    runs-on: ubuntu-latest
+    outputs:
+      scripts: ${{ steps.setup.outputs.scripts }}
+    steps:
+      - name: Setup
+        id: setup
+        uses: verkstedt/actions/setup@main
+        with:
+          working-directory: ${{ inputs.working-directory }}
+
+  lint-js:
+    name: 'Lint JS'
+    runs-on: ubuntu-latest
+    if: contains(needs.setup.outputs.scripts, ',lint:js,')
+    needs:
+      - setup
+    steps:
+      - name: Setup
+        uses: verkstedt/actions/setup@main
+        with:
+          working-directory: ${{ inputs.working-directory }}
+
+      # Once https://github.com/actions/setup-node/issues/96 is
+      # implemented, next two steps can be replaced with just:
+      #
+      # - name: Lint JS
+      #   run: npm lint:js
+
+      - name: Lint JS
+        id: lint
+        working-directory: ${{ inputs.working-directory }}
+        run: |
+          if jq -r '.scripts["lint:js"]' package.json | grep -qE '^(eslint|next lint) '
+          then
+            npm run lint:js -- --format=json --output-file=eslint_report.json || :
+            echo 'generated-eslint-report=true' >> "$GITHUB_OUTPUT"
+          else
+            npm run lint:js
+            echo 'generated-eslint-report=false' >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Annotate
+        if: steps.lint.outputs.generated-eslint-report == 'true'
+        uses: ataylorme/eslint-annotate-action@v2
+        with:
+          report-json: eslint_report.json
+
+  lint-ts:
+    name: 'Lint TS'
+    runs-on: ubuntu-latest
+    if: contains(needs.setup.outputs.scripts, ',lint:ts,')
+    needs:
+      - setup
+    steps:
+      - name: Setup
+        uses: verkstedt/actions/setup@main
+        with:
+          working-directory: ${{ inputs.working-directory }}
+
+      - name: Lint TS
+        working-directory: ${{ inputs.working-directory }}
+        run: npm run lint:ts
+
+  lint-css:
+    name: 'Lint CSS'
+    runs-on: ubuntu-latest
+    if: contains(needs.setup.outputs.scripts, ',lint:css,')
+    needs:
+      - setup
+    steps:
+      - name: Setup
+        uses: verkstedt/actions/setup@main
+        with:
+          working-directory: ${{ inputs.working-directory }}
+
+      - name: Lint CSS
+        working-directory: ${{ inputs.working-directory }}
+        run: |
+          if jq -r '.scripts["lint:css"]' package.json | grep -q '^stylelint '
+          then
+            npm run lint:css -- --formatter=github
+          else
+            npm run lint:css
+          fi
+
+  lint-missing-translations:
+    name: 'Lint missing translations'
+    runs-on: ubuntu-latest
+    if: contains(needs.setup.outputs.scripts, ',lint:missing-translations,')
+    needs:
+      - setup
+    steps:
+      - name: Setup
+        uses: verkstedt/actions/setup@main
+        with:
+          working-directory: ${{ inputs.working-directory }}
+
+      - name: Lint Translations
+        working-directory: ${{ inputs.working-directory }}
+        run: npm run lint:missing-translations
+
+  # We prefer to have lint script split into lint:*, but will use
+  # generic lint if no lint:* scripts are found
+  lint:
+    name: 'Lint everything'
+    runs-on: ubuntu-latest
+    if: >
+      contains(needs.setup.outputs.scripts, ',lint,')
+      && ! contains(needs.setup.outputs.scripts, ',lint:')
+    needs:
+      - setup
+    steps:
+      - name: Setup
+        uses: verkstedt/actions/setup@main
+        with:
+          working-directory: ${{ inputs.working-directory }}
+
+      - name: Lint everything
+        working-directory: ${{ inputs.working-directory }}
+        run: npm run lint
+
+  test-unit:
+    name: 'Unit tests'
+    runs-on: ubuntu-latest
+    if: >
+      '# Don’t skip if any of the needs are skipped'
+      && always() && ! contains(needs.*.result, 'failure')
+      && contains(needs.setup.outputs.scripts, ',test:unit,')
+    needs:
+      - setup
+      - lint-js
+      - lint-ts
+      - lint
+    steps:
+      - name: Setup
+        uses: verkstedt/actions/setup@main
+        with:
+          working-directory: ${{ inputs.working-directory }}
+
+      - name: Test units
+        working-directory: ${{ inputs.working-directory }}
+        run: npm run test:unit
+
+  # We prefer to have test script split into test:*, but will use
+  # generic test if no test:* scripts are found
+  test:
+    name: 'Test everything'
+    runs-on: ubuntu-latest
+    if: >
+      '# Don’t skip if any of the needs are skipped'
+      && always() && ! contains(needs.*.result, 'failure')
+      && contains(needs.setup.outputs.scripts, ',test,')
+      && ! contains(needs.setup.outputs.scripts, ',test:')
+    needs:
+      - setup
+      - lint-js
+      - lint-ts
+      - lint
+    steps:
+      - name: Setup
+        uses: verkstedt/actions/setup@main
+        with:
+          working-directory: ${{ inputs.working-directory }}
+
+      - name: Test everything
+        working-directory: ${{ inputs.working-directory }}
+        run: npm run test
+
+  build:
+    name: 'Build'
+    runs-on: ubuntu-latest
+    if: >
+      '# Don’t skip if any of the needs are skipped'
+      && always() && ! contains(needs.*.result, 'failure')
+      && contains(needs.setup.outputs.scripts, ',build,')
+    needs:
+      - setup
+      # all linters:
+      - lint-js
+      - lint-ts
+      - lint-css
+      - lint-missing-translations
+      - lint
+      # all testers:
+      - test-unit
+      - test
+    steps:
+      - name: Setup
+        uses: verkstedt/actions/setup@main
+        with:
+          working-directory: ${{ inputs.working-directory }}
+
+      - name: Set environment variables
+        working-directory: ${{ inputs.working-directory }}
+        run: |
+          echo "${{ secrets.build_env }}" >> "$GITHUB_ENV"
+
+      - name: Restore cache
+        uses: actions/cache/restore@v4
+        with:
+          # ⚠️ Keep path and key in sync with cache/save below
+          path: |
+            ${{ inputs.working-directory }}/.next/cache
+          key: |
+            nextjs-os:${{ runner.os }}-nodeVer:${{ hashFiles('**/.nvmrc') }}-packageJson:${{ hashFiles('**/package.json') }}-lock:${{ hashFiles('**/package-lock.json', '**/yarn.lock') }}-ref:${{ github.head_ref || github.ref }}
+          restore-keys: |
+            nextjs-os:${{ runner.os }}-nodeVer:${{ hashFiles('**/.nvmrc') }}-packageJson:${{ hashFiles('**/package.json') }}-lock:${{ hashFiles('**/package-lock.json', '**/yarn.lock') }}-
+            nextjs-os:${{ runner.os }}-nodeVer:${{ hashFiles('**/.nvmrc') }}-packageJson:${{ hashFiles('**/package.json') }}-
+            nextjs-os:${{ runner.os }}-nodeVer:${{ hashFiles('**/.nvmrc') }}-
+            nextjs-os:${{ runner.os }}-
+
+      - name: Build
+        working-directory: ${{ inputs.working-directory }}
+        run: npm run build
+
+      - name: Save cache
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            ${{ inputs.working-directory }}/.next/cache
+          key: |
+            nextjs-os:${{ runner.os }}-nodeVer:${{ hashFiles('.nvmrc') }}-packageJson:${{ hashFiles('package.json') }}-lock:${{ hashFiles('package-lock.json', 'yarn.lock') }}-ref:${{ github.head_ref || github.ref }}

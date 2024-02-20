@@ -1,0 +1,48 @@
+name: 'Chromatic'
+
+on:
+  workflow_call:
+    inputs:
+      working-directory:
+        description: 'Directory in which to run things in.'
+        type: string
+        required: false
+        default: '.'
+
+jobs:
+  chromatic:
+    name: 'Chromatic'
+    if: github.ref == 'refs/heads/main' || (github.event_name == 'pull_request' && github.event.pull_request.draft == false)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify workflow setup
+        run: |
+          exit_code=0
+
+          if [ -z "${{ secrets.CHROMATIC_PROJECT_TOKEN }}" ]
+          then
+            echo "::error::Missing secret CHROMATIC_PROJECT_TOKEN. You can get it https://www.chromatic.com/start, then ope your project and go to “Manage” → “Configure”."
+            exit_code=78
+          fi
+
+          exit $exit_code
+
+      - name: Setup
+        uses: verkstedt/actions/setup@main
+        with:
+          working-directory: ${{ inputs.working-directory }}
+          fetch-depth: 0
+
+      - name: Build StoryBook
+        working-directory: ${{ inputs.working-directory }}
+        run: |
+          npx storybook build --webpack-stats-json
+
+      - name: Publish to Chromatic
+        uses: chromaui/action@latest
+        with:
+          workingDir: ${{ inputs.working-directory }}
+          projectToken: ${{ secrets.CHROMATIC_PROJECT_TOKEN }}
+          onlyChanged: true
+          autoAcceptChanges: main
+          storybookBuildDir: ./storybook-static/

@@ -1,0 +1,65 @@
+name: Trello integration
+
+on:
+  workflow_call:
+
+jobs:
+  trello:
+    name: 'Move trello cards'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify workflow setup
+        run: |
+          exit_code=0
+
+          if [ -z "${{ secrets.TRELLO_API_KEY }}" ]
+          then
+            echo "::error::Missing secret TRELLO_API_KEY. You can get it on https://trello.com/app-key. It’s a good idea to set it on organisation level."
+            exit_code=78
+          fi
+
+          if [ -z "${{ secrets.TRELLO_AUTH_TOKEN }}" ]
+          then
+            echo "::error::Missing secret TRELLO_AUTH_TOKEN. Generate it on https://trello.com/app-key. It’s a good idea to set it on organisation level."
+            exit_code=78
+          fi
+
+          if [ -z "${{ vars.TRELLO_ORG_NAME }}" ]
+          then
+            echo "::error::Missing var: TRELLO_ORG_NAME. Go to https://trello.com, then open Board of given workspace — you will find the name in the URL. It’s a good idea to set a default one on the organisation level."
+            exit_code=78
+          fi
+
+          if [ -z "${{ vars.TRELLO_BOARD_ID }}" ]
+          then
+            echo "::error::Missing var: TRELLO_BOARD_ID. Open the board and append “.json” to the URL. The id is under `.id`."
+            exit_code=78
+          fi
+
+          if [ -z "${{ vars.TRELLO_PR_OPEN_LIST_ID }}" ]
+          then
+            echo "::error::Missing var: TRELLO_PR_OPEN_LIST_ID. Open the board and append “.json” to the URL. Look for an object with `name` of the list and get it’s `id`."
+            exit_code=78
+          fi
+
+          if [ -z "${{ vars.TRELLO_PR_CLOSED_LIST_ID }}" ]
+          then
+            echo "::error::Missing var: TRELLO_PR_CLOSED_LIST_ID. Open the board and append “.json” to the URL. Look for an object with `name` of the list and get it’s `id`."
+            exit_code=78
+          fi
+
+          exit $exit_code
+
+      - name: 'Move trello cards'
+        uses: verkstedt/trello-integration-action@main
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          github-require-keyword-prefix: true
+
+          trello-api-key: ${{ secrets.TRELLO_API_KEY }}
+          trello-auth-token: ${{ secrets.TRELLO_AUTH_TOKEN }}
+          trello-organization-name: ${{ vars.TRELLO_ORG_NAME }}
+
+          trello-board-id: ${{ vars.TRELLO_BOARD_ID }}
+          trello-list-id-pr-open: ${{ vars.TRELLO_PR_OPEN_LIST_ID }}
+          trello-list-id-pr-closed: ${{ vars.TRELLO_PR_CLOSED_LIST_ID }}

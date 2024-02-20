@@ -1,0 +1,50 @@
+name: 'Notify about failure on main branch'
+
+# This MUST be specified as a job that `needs` all of the other jobs int
+# he worflow:
+#
+# notify-main-branch-failures:
+#   name: Notify about failure on main branch
+#   needs:
+#     - setup
+#     - …
+#   if: failure() && github.ref == 'refs/heads/main'
+#   uses: verkstedt/actions/.github/workflows/notify-main-failures.yaml@main
+#   secrets: inherit
+
+on:
+  workflow_call:
+
+env:
+  NEXT_TELEMETRY_DISABLED: 1
+
+jobs:
+  notify-main-branch-failure:
+    name: Notify about failure on main branch
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify workflow setup
+        shell: sh
+        run: |
+          exit_code=0
+
+          if [ -z "${{ secrets.SLACK_BOT_TOKEN }}" ]
+          then
+            echo "::error::Missing secret SLACK_BOT_TOKEN. Go to https://api.slack.com/apps/, create a bot, go to “OAuth & Permissions”. Add chate:write permission and grab a token."
+            exit_code=78
+          fi
+
+          if [ -z "${{ vars.SLACK_CHANNEL_ID }}" ]
+          then
+            echo "::error::Missing var SLACK_CHANNEL_ID. This is _not_ a channel name. You can grab the ID from page URL."
+            exit_code=78
+          fi
+
+          exit $exit_code
+
+      - name: Notify about failure on main branch
+        uses: verkstedt/actions/notify-status@main
+        with:
+          status: failure
+          slack-bot-token: ${{ secrets.SLACK_BOT_TOKEN }}
+          slack-channel-id: ${{ vars.SLACK_CHANNEL_ID }}

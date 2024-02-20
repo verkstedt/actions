@@ -1,0 +1,73 @@
+name: Send job status notification
+description: "Sends Slack message. Most commonly used with `if: failure() && github.ref == 'refs/heads/main'`"
+
+inputs:
+  status:
+    description: 'Status to show. One of: success, failure, cancelled'
+    required: true
+  slack-bot-token:
+    description: 'Slack bot token. Go to https://api.slack.com/apps/, create a bot, go to “OAuth & Permissions”. Add chate:write permission and grab a token.'
+    required: true
+  slack-channel-id:
+    description: 'This is _not_ a channel name. You can grab the ID from page URL.'
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Send Slack message
+      uses: slackapi/slack-github-action@v1
+      env:
+        SLACK_BOT_TOKEN: ${{ inputs.slack-bot-token }}
+      with:
+        channel-id: ${{ inputs.slack-channel-id }}
+        payload: |
+          {
+            "blocks": [
+              {
+                "type": "section",
+                "text": {
+                  "type": "mrkdwn",
+                  "text": "<!here> ${{ github.repository }} @ ${{ github.head_ref || github.ref_name }}, ${{ github.workflow }}"
+                }
+              },
+              {
+                "type": "context",
+                "elements": [
+                  {
+                    "type": "mrkdwn",
+                    "text": "Triggered by:"
+                  },
+                  {
+                    "type": "image",
+                    "alt_text": "",
+                    "image_url": "${{ github.event.sender.avatar_url }}"
+                  },
+                  {
+                    "type": "mrkdwn",
+                    "text": "<${{ github.event.sender.url }}|${{ github.event.sender.login }}>"
+                  }
+                ]
+              }
+            ],
+            "attachments": [
+              {
+                "color": "${{ inputs.status == 'failure' && 'db0909' || inputs.status == 'success' && '28a745' || '333333' }}",
+                "blocks": [
+                  {
+                    "type": "section",
+                    "fields": [
+                      {
+                        "type": "mrkdwn",
+                        "text": "*Status:*\n${{ inputs.status }}"
+                      },
+                      {
+                        "type": "mrkdwn",
+                        "text": "*Logs:*\n<${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|GH Actions>"
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }

@@ -1,0 +1,22 @@
+{
+  "name": "@verkstedt/actions",
+  "version": "2.0.0",
+  "description": "verkstedt GitHub actions and reusable workflows",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/verkstedt/actions.git"
+  },
+  "keywords": [
+    "gh-actions"
+  ],
+  "author": "info@verkstedt.com",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/verkstedt/actions/issues"
+  },
+  "homepage": "https://github.com/verkstedt/actions#readme",
+  "devDependencies": {
+    "@verkstedt/eslint-config-verkstedt": "^9.3.1",
+    "prettier": "^3.2.5"
+  }
+}
