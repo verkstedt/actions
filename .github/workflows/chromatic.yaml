@@ -59,3 +59,26 @@ jobs:
           # report it’s own checks, which we can use as required for
           # merging branches.
           exitOnceUploaded: true
+
+      - name: Post summary
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          {
+            printf -- '# Chromatic\n\n'
+            if [ "${{ steps.publish.outputs.buildUrl }}" = "undefined" ]
+            then
+              printf -- 'Skipped.\n'
+            else
+              printf -- '- StoryBook: %s\n' \
+                '${{ steps.publish.outputs.storybookUrl }}'
+              printf -- '- Build: %s\n' \
+                '${{ steps.publish.outputs.buildUrl }}'
+              printf -- '- Components: %d\n' \
+                '${{ steps.publish.outputs.componentCount }}'
+              printf -- '- Changed screenshots: %d out of %d built now + %d inherited\n' \
+                '${{ steps.publish.outputs.changeCount }}' \
+                '${{ steps.publish.outputs.actualCaptureCount }}' \
+                '${{ steps.publish.outputs.inheritedCaptureCount }}'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
