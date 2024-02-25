@@ -14,6 +14,9 @@ jobs:
     name: 'Chromatic'
     if: github.ref == 'refs/heads/main' || (github.event_name == 'pull_request' && github.event.pull_request.draft == false)
     runs-on: ubuntu-latest
+    environment:
+      name: ${{ github.ref == 'refs/heads/main' && 'storybook' || 'PR storybook' }}
+      url: ${{ steps.publish.outputs.storybookUrl == 'undefined' && '' || steps.publish.outputs.storybookUrl }}
     steps:
       - name: Verify workflow setup
         run: |
@@ -39,6 +42,7 @@ jobs:
           npx storybook build --webpack-stats-json
 
       - name: Publish to Chromatic
+        id: publish
         uses: chromaui/action@latest
         with:
           workingDir: ${{ inputs.working-directory }}
