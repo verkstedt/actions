@@ -43,6 +43,10 @@ jobs:
         with:
           workingDir: ${{ inputs.working-directory }}
           projectToken: ${{ secrets.CHROMATIC_PROJECT_TOKEN }}
+          # Take screenshots only of components that changed
           onlyChanged: true
+          # We assume that everything that goes to main has already been
+          # approved on the PR level
           autoAcceptChanges: main
+          # Use StoryBook build from previous step
           storybookBuildDir: ./storybook-static/
