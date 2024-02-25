@@ -50,3 +50,8 @@ jobs:
           autoAcceptChanges: main
           # Use StoryBook build from previous step
           storybookBuildDir: ./storybook-static/
+          # Don’t want for the build to finish before continuing.
+          # This require Chromatic is connected to GitHub repo and will
+          # report it’s own checks, which we can use as required for
+          # merging branches.
+          exitOnceUploaded: true
