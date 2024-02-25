@@ -23,6 +23,7 @@ runs:
       uses: actions/checkout@v4
       with:
         fetch-depth: ${{ inputs.fetch-depth }}
+        ref: ${{ github.event.pull_request.head.ref || github.ref }}
 
     - name: Setup Node.js
       uses: actions/setup-node@v4
