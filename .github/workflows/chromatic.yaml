@@ -21,7 +21,7 @@ jobs:
 
           if [ -z "${{ secrets.CHROMATIC_PROJECT_TOKEN }}" ]
           then
-            echo "::error::Missing secret CHROMATIC_PROJECT_TOKEN. You can get it https://www.chromatic.com/start, then ope your project and go to “Manage” → “Configure”."
+            echo "::error::Missing secret CHROMATIC_PROJECT_TOKEN. You can get it https://www.chromatic.com/start, then open your project and go to “Manage” → “Configure”."
             exit_code=78
           fi
 
