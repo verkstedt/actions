@@ -142,6 +142,17 @@ Moves [Trello] cards when PRs are created, published or merged.
 Requires some vars and/or secrets.
 See [./.github/workflows/trello.yaml][workflow-trello] for details.
 
+## Deploying new versions of actions and workflows
+
+You might have noticed that main branch in this repository is called
+`v1` not `main`. This means that when something is merged, it will be
+picked up by all projects using us `@v1`. We don’t create any release
+git tags.
+
+In case we’d have to introduce any breaking changes we will create a
+`v2` branch (and set it as default), but we should try hard to avoid
+that.
+
 [storybook]: https://storybook.js.org/docs/get-started/install
 [chromatic]: https://www.chromatic.com/start
 [trello]: https://trello.com
