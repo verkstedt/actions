@@ -4,6 +4,24 @@
 
 ![](./screenshots/run.png)
 
+## Goals
+
+- Something that covers 99% needs of 80% of our projects instead of
+  something that covers 80% of 99% of our projects
+
+- Opinionated GH actions setup for our projects that work out of the box
+
+  For most projects it should require only copying template workflows
+  and setting up few secrets and vars. These will be kept to minimum by
+  setting them in the organisation level, where it makes sense.
+
+- Easy to maintain
+
+  Try hard to keep things backwards compatible, so we can keep
+  everything pointed `@v1` forever and only change things in this
+  repository, without having to create 1000s of PRs updating these in
+  other projects. 🧘
+
 ## Assumptions
 
 - Only for JavaScript projects.
