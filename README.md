@@ -153,6 +153,59 @@ In case we’d have to introduce any breaking changes we will create a
 `v2` branch (and set it as default), but we should try hard to avoid
 that.
 
+## FAQ
+
+### How do I pass secrets?
+
+Pass `build_env` secret to CI workflow, like so:
+
+```jobs:
+  ci:
+    name: 'CI'
+    uses: verkstedt/actions/.github/workflows/ci.yaml@v1
+    with:
+      working-directory: .
+    secrets:
+      build_env: |
+        CF_SPACE_ID=${{ secrets.CF_SPACE_ID }}yaml
+```
+
+If it turns out we need that to run e.g. tests, we shall add `test_env`
+or similar.
+
+### How do I start something that’s required for running tests?
+
+You have two options:
+
+1. Modify your `npm test` script to do the setup for you.
+
+   Example:
+
+   Let’s assume that your `test` script runs `jest` and you need to run
+   `npx mock-server` before.
+
+   - Create separate script file, e.g. `./scripts/test.sh`:
+
+     ```sh
+     #!/bin/sh
+     set -ue
+
+     if [ -n "${CI-}" ]
+     then
+       npx mock-server &
+       mock_server_pid=$!
+       trap "kill \"$mock_server_pid\" 2>/dev/null" EXIT SIGINT SIGTERM SIGHUP
+     fi
+
+     jest "$@"
+     ```
+
+   - Update script in `package.json`: `"test": "./scripts/test.sh"`
+
+2. Don’t use these workflows.
+
+   See first item on the list of [Goals](#goals).
+
 [storybook]: https://storybook.js.org/docs/get-started/install
 [chromatic]: https://www.chromatic.com/start
 [trello]: https://trello.com
