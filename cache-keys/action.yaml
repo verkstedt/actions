@@ -1,0 +1,54 @@
+name: Calculate cache key parts
+description: Output parts that can be used as parts of the cache key.
+
+inputs:
+  working-directory:
+    description: 'Directory in which to run things in.'
+    required: false
+    default: '.'
+
+outputs:
+  os:
+    description: 'OS, e.g. `os:Linux`'
+    value: ${{ steps.main.outputs.os }}
+  node:
+    description: 'Node.js version, e.g. `node:v20.11.1`'
+    value: ${{ steps.main.outputs.node }}
+  packageJson:
+    description: 'Hash of the contents of package.json, e.g. `packageJson:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`'
+    value: ${{ steps.main.outputs.packageJson }}
+  packageJsonLock:
+    description: 'Hash of the contents of package-lock.json and/or yarn.lock, e.g. `packageJsonLock:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`'
+    value: ${{ steps.main.outputs.packageJsonLock }}
+  ref:
+    description: 'Git ref we are running on, e.g. `ref:refs/heads/main`'
+    value: ${{ steps.main.outputs.ref }}
+
+runs:
+  using: composite
+  steps:
+    - name: Calculate cache key parts
+      id: main
+      working-directory: ${{ inputs.working-directory }}
+      shell: sh
+      run: |
+        echo "os=os:${{ runner.os }}" >> "$GITHUB_OUTPUT"
+
+        node="$( node --version 2>/dev/null || : )"
+        echo "node=node:$node" >> "$GITHUB_OUTPUT"
+
+        # Not using GH actions’ hashFiles, because we want file to be
+        # relative to working-directory, not GITHUB_WORKSPACE
+        packageJson="$(
+          cat package.json | sha256sum | cut -d' ' -f1
+        )"
+        echo "packageJson=packageJson:$packageJson" >> "$GITHUB_OUTPUT"
+
+        packageJsonLock="$(
+          {
+            cat package-lock.json yarn.lock 2>/dev/null || true
+          } | sha256sum | cut -d' ' -f1
+        )"
+        echo "packageJsonLock=packageJsonLock:$packageJsonLock" >> "$GITHUB_OUTPUT"
+
+        echo "ref=${{ github.head_ref || github.ref }}" >> "$GITHUB_OUTPUT"

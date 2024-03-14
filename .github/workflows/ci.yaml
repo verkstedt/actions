@@ -216,28 +216,37 @@ jobs:
         run: |
           echo "${{ secrets.build_env }}" >> "$GITHUB_ENV"
 
-      - name: Restore cache
-        uses: actions/cache/restore@v4
+      - name: Calculate cache key parts
+        id: cache-keys
+        uses: verkstedt/actions/cache-keys@v1
         with:
-          # ⚠️ Keep path and key in sync with cache/save below
+          working-directory: ${{ inputs.working-directory }}
+
+      - name: Restore cache
+        id: cache
+        uses: actions/cache/restore@v4
+        # ⚠ Keep in sync with cache/save below
+        with:
           path: |
             ${{ inputs.working-directory }}/.next/cache
           key: |
-            nextjs-os:${{ runner.os }}-nodeVer:${{ hashFiles('**/.nvmrc') }}-packageJson:${{ hashFiles('**/package.json') }}-lock:${{ hashFiles('**/package-lock.json', '**/yarn.lock') }}-ref:${{ github.head_ref || github.ref }}
+            build--${{ steps.cache-keys.outputs.os }}--${{ steps.cache-keys.outputs.node }}--${{ steps.cache-keys.outputs.packageJson }}--${{ steps.cache-keys.outputs.packageJsonLock }}--${{ steps.cache-keys.outputs.ref }}
           restore-keys: |
-            nextjs-os:${{ runner.os }}-nodeVer:${{ hashFiles('**/.nvmrc') }}-packageJson:${{ hashFiles('**/package.json') }}-lock:${{ hashFiles('**/package-lock.json', '**/yarn.lock') }}-
-            nextjs-os:${{ runner.os }}-nodeVer:${{ hashFiles('**/.nvmrc') }}-packageJson:${{ hashFiles('**/package.json') }}-
-            nextjs-os:${{ runner.os }}-nodeVer:${{ hashFiles('**/.nvmrc') }}-
-            nextjs-os:${{ runner.os }}-
+            build--${{ steps.cache-keys.outputs.os }}--${{ steps.cache-keys.outputs.node }}--${{ steps.cache-keys.outputs.packageJson }}--${{ steps.cache-keys.outputs.packageJsonLock }}--
+            build--${{ steps.cache-keys.outputs.os }}--${{ steps.cache-keys.outputs.node }}--${{ steps.cache-keys.outputs.packageJson }}--
+            build--${{ steps.cache-keys.outputs.os }}--${{ steps.cache-keys.outputs.node }}--
+            build--${{ steps.cache-keys.outputs.os }}--
 
       - name: Build
         working-directory: ${{ inputs.working-directory }}
         run: npm run build
 
       - name: Save cache
+        if: steps.cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
+        # ⚠ Keep in sync with cache/restore above
         with:
           path: |
             ${{ inputs.working-directory }}/.next/cache
           key: |
-            nextjs-os:${{ runner.os }}-nodeVer:${{ hashFiles('.nvmrc') }}-packageJson:${{ hashFiles('package.json') }}-lock:${{ hashFiles('package-lock.json', 'yarn.lock') }}-ref:${{ github.head_ref || github.ref }}
+            build--${{ steps.cache-keys.outputs.os }}--${{ steps.cache-keys.outputs.node }}--${{ steps.cache-keys.outputs.packageJson }}--${{ steps.cache-keys.outputs.packageJsonLock }}--${{ steps.cache-keys.outputs.ref }}

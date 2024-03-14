@@ -39,22 +39,27 @@ runs:
           jq -r '.scripts | keys | .[]' package.json | paste -sd,
         )"
         echo "Detected npm scripts: $npm_scripts"
-        printf 'scripts=,%s,\n' "$npm_scripts" >> "$GITHUB_OUTPUT"
+        echo "scripts=,$npm_scripts," >> "$GITHUB_OUTPUT"
+
+    - name: Calculate cache key parts
+      id: cache-keys
+      uses: verkstedt/actions/cache-keys@v1
+      with:
+        working-directory: ${{ inputs.working-directory }}
 
     - name: Restore cache
       id: cache
       uses: actions/cache/restore@v4
+      # ⚠ Keep in sync with cache/save below
       with:
-        # ⚠️ Keep path and key in sync with cache/save below
         path: |
-          ${{ inputs.working-directory }}/**/node_modules
+          ${{ inputs.working-directory }}/node_modules/
           ${{ inputs.working-directory }}/.yarn/install-state.gz
         key: |
-          node-os:${{ runner.os }}-nodeVer:${{ hashFiles('**/.nvmrc') }}-packageJson:${{ hashFiles('**/package.json') }}-lock:${{ hashFiles('**/package-lock.json', '**/yarn.lock') }}
+          npm--${{ steps.cache-keys.outputs.os }}--${{ steps.cache-keys.outputs.node }}--${{ steps.cache-keys.outputs.packageJson }}--${{ steps.cache-keys.outputs.packageJsonLock }}
         restore-keys: |
-          node-os:${{ runner.os }}-nodeVer:${{ hashFiles('**/.nvmrc') }}-packageJson:${{ hashFiles('**/package.json') }}-
-          node-os:${{ runner.os }}-nodeVer:${{ hashFiles('**/.nvmrc') }}-
-          node-os:${{ runner.os }}-
+          npm--${{ steps.cache-keys.outputs.os }}--${{ steps.cache-keys.outputs.node }}--${{ steps.cache-keys.outputs.packageJson }}--
+          npm--${{ steps.cache-keys.outputs.os }}--${{ steps.cache-keys.outputs.node }}--
 
     - name: Install dependencies
       if: steps.cache.outputs.cache-hit != 'true'
@@ -71,9 +76,10 @@ runs:
     - name: Save cache
       if: steps.cache.outputs.cache-hit != 'true'
       uses: actions/cache/save@v4
+      # ⚠ Keep in sync with cache/restore above
       with:
         path: |
-          ${{ inputs.working-directory }}/**/node_modules
+          ${{ inputs.working-directory }}/node_modules/
           ${{ inputs.working-directory }}/.yarn/install-state.gz
         key: |
-          node-os:${{ runner.os }}-nodeVer:${{ hashFiles('**/.nvmrc') }}-packageJson:${{ hashFiles('**/package.json') }}-lock:${{ hashFiles('**/package-lock.json', '**/yarn.lock') }}
+          npm--${{ steps.cache-keys.outputs.os }}--${{ steps.cache-keys.outputs.node }}--${{ steps.cache-keys.outputs.packageJson }}--${{ steps.cache-keys.outputs.packageJsonLock }}
