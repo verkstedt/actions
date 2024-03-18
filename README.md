@@ -114,7 +114,7 @@ have something like:
 
 ```json
 "scripts": {
-  "lint": "npm-run-all lint:*",
+  "lint": "npm-run-all 'lint:*'",
   "lint:js": "eslint .",
   "lint:css": "stylelint '**/*.css'"
 }

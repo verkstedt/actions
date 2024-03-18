@@ -47,14 +47,26 @@ runs:
       with:
         working-directory: ${{ inputs.working-directory }}
 
+    - name: Find all node_modules paths
+      id: cache-paths
+      shell: sh
+      run: |
+        {
+          echo 'paths<<PATHS'
+          {
+            echo 'node_modules/'
+            jq -r '.workspaces // [] | .[] + "/node_modules/"' package.json
+            echo '.yarn/install-state.gz'
+          } | sed 's~^~${{ inputs.working-directory }}/~'
+          echo 'PATHS'
+        } >> "$GITHUB_OUTPUT"
+
     - name: Restore cache
       id: cache
       uses: actions/cache/restore@v4
       # ⚠ Keep in sync with cache/save below
       with:
-        path: |
-          ${{ inputs.working-directory }}/node_modules/
-          ${{ inputs.working-directory }}/.yarn/install-state.gz
+        path: ${{ steps.cache-paths.outputs.paths }}
         key: |
           npm--${{ steps.cache-keys.outputs.os }}--${{ steps.cache-keys.outputs.node }}--${{ steps.cache-keys.outputs.packageJson }}--${{ steps.cache-keys.outputs.packageJsonLock }}
         restore-keys: |
@@ -78,8 +90,6 @@ runs:
       uses: actions/cache/save@v4
       # ⚠ Keep in sync with cache/restore above
       with:
-        path: |
-          ${{ inputs.working-directory }}/node_modules/
-          ${{ inputs.working-directory }}/.yarn/install-state.gz
+        path: ${{ steps.cache-paths.outputs.paths }}
         key: |
           npm--${{ steps.cache-keys.outputs.os }}--${{ steps.cache-keys.outputs.node }}--${{ steps.cache-keys.outputs.packageJson }}--${{ steps.cache-keys.outputs.packageJsonLock }}
