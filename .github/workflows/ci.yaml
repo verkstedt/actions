@@ -122,8 +122,8 @@ jobs:
 
   # We prefer to have lint script split into lint:*, but will use
   # generic lint if no lint:* scripts are found
-  lint:
-    name: 'Lint everything'
+  lint-fallback:
+    name: 'Lint fallback'
     runs-on: ubuntu-latest
     if: >
       contains(needs.setup.outputs.scripts, ',lint,')
@@ -136,7 +136,7 @@ jobs:
         with:
           working-directory: ${{ inputs.working-directory }}
 
-      - name: Lint everything
+      - name: Lint fallback
         working-directory: ${{ inputs.working-directory }}
         run: npm run lint
 
@@ -151,7 +151,7 @@ jobs:
       - setup
       - lint-js
       - lint-ts
-      - lint
+      - lint-fallback
     steps:
       - name: Setup
         uses: verkstedt/actions/setup@v1
@@ -164,8 +164,8 @@ jobs:
 
   # We prefer to have test script split into test:*, but will use
   # generic test if no test:* scripts are found
-  test:
-    name: 'Test everything'
+  test-fallback:
+    name: 'Test fallback'
     runs-on: ubuntu-latest
     if: >
       '# Don’t skip if any of the needs are skipped'
@@ -176,14 +176,14 @@ jobs:
       - setup
       - lint-js
       - lint-ts
-      - lint
+      - lint-fallback
     steps:
       - name: Setup
         uses: verkstedt/actions/setup@v1
         with:
           working-directory: ${{ inputs.working-directory }}
 
-      - name: Test everything
+      - name: Test fallback
         working-directory: ${{ inputs.working-directory }}
         run: npm run test
 
@@ -201,10 +201,10 @@ jobs:
       - lint-ts
       - lint-css
       - lint-missing-translations
-      - lint
+      - lint-fallback
       # all testers:
       - test-unit
-      - test
+      - test-fallback
     steps:
       - name: Setup
         uses: verkstedt/actions/setup@v1
