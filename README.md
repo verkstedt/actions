@@ -1,6 +1,6 @@
 # verkstedt GitHub actions
 
-- [projects using this](https://github.com/search?q=-repo:verkstedt/actions+path:.github/workflows/+verkstedt/actions)
+- [projects using this](https://github.com/search?type=code&q=-repo:verkstedt/actions+path:.github/workflows/+uses:+verkstedt/actions)
 
 ![](./screenshots/run.png)
 
