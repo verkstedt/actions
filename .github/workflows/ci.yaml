@@ -17,8 +17,12 @@ env:
   NEXT_TELEMETRY_DISABLED: 1
 
 jobs:
-  setup:
-    name: 'Setup'
+  # Each job here will use verkstedt/action/setup which checks out the
+  # code and runs `npm install`, caching the results.
+  # We run this job with just `setup` before anything else to make sure
+  # that cache is filled up for all other jobs.
+  initial-setup:
+    name: 'Initial setup'
     runs-on: ubuntu-latest
     outputs:
       scripts: ${{ steps.setup.outputs.scripts }}
@@ -34,7 +38,7 @@ jobs:
     runs-on: ubuntu-latest
     if: contains(needs.setup.outputs.scripts, ',lint:js,')
     needs:
-      - setup
+      - initial-setup
     steps:
       - name: Setup
         uses: verkstedt/actions/setup@v1
@@ -71,7 +75,7 @@ jobs:
     runs-on: ubuntu-latest
     if: contains(needs.setup.outputs.scripts, ',lint:ts,')
     needs:
-      - setup
+      - initial-setup
     steps:
       - name: Setup
         uses: verkstedt/actions/setup@v1
@@ -87,7 +91,7 @@ jobs:
     runs-on: ubuntu-latest
     if: contains(needs.setup.outputs.scripts, ',lint:css,')
     needs:
-      - setup
+      - initial-setup
     steps:
       - name: Setup
         uses: verkstedt/actions/setup@v1
@@ -109,7 +113,7 @@ jobs:
     runs-on: ubuntu-latest
     if: contains(needs.setup.outputs.scripts, ',lint:missing-translations,')
     needs:
-      - setup
+      - initial-setup
     steps:
       - name: Setup
         uses: verkstedt/actions/setup@v1
@@ -129,7 +133,7 @@ jobs:
       contains(needs.setup.outputs.scripts, ',lint,')
       && ! contains(needs.setup.outputs.scripts, ',lint:')
     needs:
-      - setup
+      - initial-setup
     steps:
       - name: Setup
         uses: verkstedt/actions/setup@v1
@@ -148,7 +152,7 @@ jobs:
       && always() && ! contains(needs.*.result, 'failure')
       && contains(needs.setup.outputs.scripts, ',test:unit,')
     needs:
-      - setup
+      - initial-setup
       - lint-js
       - lint-ts
       - lint-fallback
@@ -173,7 +177,7 @@ jobs:
       && contains(needs.setup.outputs.scripts, ',test,')
       && ! contains(needs.setup.outputs.scripts, ',test:')
     needs:
-      - setup
+      - initial-setup
       - lint-js
       - lint-ts
       - lint-fallback
@@ -195,7 +199,7 @@ jobs:
       && always() && ! contains(needs.*.result, 'failure')
       && contains(needs.setup.outputs.scripts, ',build,')
     needs:
-      - setup
+      - initial-setup
       # all linters:
       - lint-js
       - lint-ts

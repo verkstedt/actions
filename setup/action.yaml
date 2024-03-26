@@ -1,5 +1,5 @@
 name: Setup
-description: Setup Node.js and install dependencies
+description: 'Check out the code, setup Node.js, install dependencies, cache node_modules'
 
 inputs:
   fetch-depth:
