@@ -149,7 +149,7 @@ jobs:
     runs-on: ubuntu-latest
     if: >
       '# Don’t skip if any of the needs are skipped'
-      && always() && ! contains(needs.*.result, 'failure')
+      && !cancelled() && ! contains(needs.*.result, 'failure')
       && contains(needs.setup.outputs.scripts, ',test:unit,')
     needs:
       - initial-setup
@@ -173,7 +173,7 @@ jobs:
     runs-on: ubuntu-latest
     if: >
       '# Don’t skip if any of the needs are skipped'
-      && always() && ! contains(needs.*.result, 'failure')
+      && !cancelled() && ! contains(needs.*.result, 'failure')
       && contains(needs.setup.outputs.scripts, ',test,')
       && ! contains(needs.setup.outputs.scripts, ',test:')
     needs:
@@ -196,7 +196,7 @@ jobs:
     runs-on: ubuntu-latest
     if: >
       '# Don’t skip if any of the needs are skipped'
-      && always() && ! contains(needs.*.result, 'failure')
+      && !cancelled() && ! contains(needs.*.result, 'failure')
       && contains(needs.setup.outputs.scripts, ',build,')
     needs:
       - initial-setup
