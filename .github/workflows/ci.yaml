@@ -36,7 +36,7 @@ jobs:
   lint-js:
     name: 'Lint JS'
     runs-on: ubuntu-latest
-    if: contains(needs.setup.outputs.scripts, ',lint:js,')
+    if: contains(needs.initial-setup.outputs.scripts, ',lint:js,')
     needs:
       - initial-setup
     steps:
@@ -73,7 +73,7 @@ jobs:
   lint-ts:
     name: 'Lint TS'
     runs-on: ubuntu-latest
-    if: contains(needs.setup.outputs.scripts, ',lint:ts,')
+    if: contains(needs.initial-setup.outputs.scripts, ',lint:ts,')
     needs:
       - initial-setup
     steps:
@@ -89,7 +89,7 @@ jobs:
   lint-css:
     name: 'Lint CSS'
     runs-on: ubuntu-latest
-    if: contains(needs.setup.outputs.scripts, ',lint:css,')
+    if: contains(needs.initial-setup.outputs.scripts, ',lint:css,')
     needs:
       - initial-setup
     steps:
@@ -111,7 +111,7 @@ jobs:
   lint-missing-translations:
     name: 'Lint missing translations'
     runs-on: ubuntu-latest
-    if: contains(needs.setup.outputs.scripts, ',lint:missing-translations,')
+    if: contains(needs.initial-setup.outputs.scripts, ',lint:missing-translations,')
     needs:
       - initial-setup
     steps:
@@ -130,8 +130,8 @@ jobs:
     name: 'Lint fallback'
     runs-on: ubuntu-latest
     if: >
-      contains(needs.setup.outputs.scripts, ',lint,')
-      && ! contains(needs.setup.outputs.scripts, ',lint:')
+      contains(needs.initial-setup.outputs.scripts, ',lint,')
+      && ! contains(needs.initial-setup.outputs.scripts, ',lint:')
     needs:
       - initial-setup
     steps:
@@ -150,7 +150,7 @@ jobs:
     if: >
       '# Don’t skip if any of the needs are skipped'
       && !cancelled() && ! contains(needs.*.result, 'failure')
-      && contains(needs.setup.outputs.scripts, ',test:unit,')
+      && contains(needs.initial-setup.outputs.scripts, ',test:unit,')
     needs:
       - initial-setup
       - lint-js
@@ -174,8 +174,8 @@ jobs:
     if: >
       '# Don’t skip if any of the needs are skipped'
       && !cancelled() && ! contains(needs.*.result, 'failure')
-      && contains(needs.setup.outputs.scripts, ',test,')
-      && ! contains(needs.setup.outputs.scripts, ',test:')
+      && contains(needs.initial-setup.outputs.scripts, ',test,')
+      && ! contains(needs.initial-setup.outputs.scripts, ',test:')
     needs:
       - initial-setup
       - lint-js
@@ -197,7 +197,7 @@ jobs:
     if: >
       '# Don’t skip if any of the needs are skipped'
       && !cancelled() && ! contains(needs.*.result, 'failure')
-      && contains(needs.setup.outputs.scripts, ',build,')
+      && contains(needs.initial-setup.outputs.scripts, ',build,')
     needs:
       - initial-setup
       # all linters:
