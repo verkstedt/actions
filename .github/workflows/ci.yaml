@@ -24,6 +24,7 @@ jobs:
   initial-setup:
     name: 'Initial setup'
     runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' || github.event.pull_request.draft == false
     outputs:
       scripts: ${{ steps.setup.outputs.scripts }}
     steps:
@@ -148,8 +149,10 @@ jobs:
     name: 'Unit tests'
     runs-on: ubuntu-latest
     if: >
-      '# Don’t skip if any of the needs are skipped'
-      && !cancelled() && ! contains(needs.*.result, 'failure')
+      '# Don’t skip if any of the needs (apart from initial-setup) are skipped'
+      && !cancelled()
+      && needs.initial-setup.result != 'skipped'
+      && ! contains(needs.*.result, 'failure')
       && contains(needs.initial-setup.outputs.scripts, ',test:unit,')
     needs:
       - initial-setup
@@ -172,8 +175,10 @@ jobs:
     name: 'Test fallback'
     runs-on: ubuntu-latest
     if: >
-      '# Don’t skip if any of the needs are skipped'
-      && !cancelled() && ! contains(needs.*.result, 'failure')
+      '# Don’t skip if any of the needs (apart from initial-setup) are skipped'
+      && !cancelled()
+      && needs.initial-setup.result != 'skipped'
+      && ! contains(needs.*.result, 'failure')
       && contains(needs.initial-setup.outputs.scripts, ',test,')
       && ! contains(needs.initial-setup.outputs.scripts, ',test:')
     needs:
@@ -195,8 +200,10 @@ jobs:
     name: 'Build'
     runs-on: ubuntu-latest
     if: >
-      '# Don’t skip if any of the needs are skipped'
-      && !cancelled() && ! contains(needs.*.result, 'failure')
+      '# Don’t skip if any of the needs (apart from initial-setup) are skipped'
+      && !cancelled()
+      && needs.initial-setup.result != 'skipped'
+      && ! contains(needs.*.result, 'failure')
       && contains(needs.initial-setup.outputs.scripts, ',build,')
     needs:
       - initial-setup
