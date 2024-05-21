@@ -45,7 +45,7 @@ runs:
                   },
                   {
                     "type": "mrkdwn",
-                    "text": "<${{ github.event.sender.url }}|${{ github.event.sender.login }}>"
+                    "text": "<${{ github.event.sender.html_url }}|${{ github.event.sender.login }}>"
                   }
                 ]
               }
