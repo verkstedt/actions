@@ -70,6 +70,9 @@ jobs:
         uses: ataylorme/eslint-annotate-action@v2
         with:
           report-json: eslint_report.json
+          # Also report errors in files not changed in the PR,
+          # assuring there are no errors in the whole codebase
+          only-pr-files: false
 
   lint-ts:
     name: 'Lint TS'
