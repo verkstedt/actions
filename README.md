@@ -142,6 +142,13 @@ Moves [Trello] cards when PRs are created, published or merged.
 Requires some vars and/or secrets.
 See [./.github/workflows/trello.yaml][workflow-trello] for details.
 
+### Ref Comment in Commit
+
+Template:
+<https://github.com/verkstedt/.github/tree/main/workflow-templates/ref-comment-in-commit.yaml>
+
+When a GH commit URL is included in commit message, link the commit from said comment.
+
 ## Deploying new versions of actions and workflows
 
 You might have noticed that main branch in this repository is called

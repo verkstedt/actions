@@ -1,5 +1,3 @@
-/* eslint-disable no-console */
-
 import * as core from '@actions/core'
 import * as github from '@actions/github'
 
@@ -31,14 +29,13 @@ if (payload?.commits) {
             commentId: Number(url.hash.replace('#discussion_r', '')),
           }))
           .map(async ({ prNumber, commentId }) => {
-            const response = octokit.rest.pulls.createReplyForReviewComment({
+            octokit.rest.pulls.createReplyForReviewComment({
               owner: context.repo.owner,
               repo: context.repo.repo,
               pull_number: prNumber,
               comment_id: commentId,
               body: `Referenced in ${id}`,
             })
-            console.log(await response)
           })
       )
     })

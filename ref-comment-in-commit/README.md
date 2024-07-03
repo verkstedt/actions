@@ -30,4 +30,5 @@ npm run build
 
 ## TODO
 
+- [ ] Error handling
 - [ ] Strip comments when building. Currently our git hooks are not happy with the build file (loads of `TODO` comments and ugly spaces).
