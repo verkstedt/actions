@@ -1,0 +1,11 @@
+name: 'Ref Comment in Commit'
+description: 'Make it possible to reference a GH comment in a commit message.'
+
+inputs:
+  token:
+    description: 'GitHub token. Probably secrets.GITHUB_TOKEN.'
+    required: true
+
+runs:
+  using: node20
+  main: 'dist/index.mjs'
