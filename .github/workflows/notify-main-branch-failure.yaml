@@ -8,7 +8,7 @@ name: 'Notify about failure on main branch'
 #   needs:
 #     - setup
 #     - …
-#   if: failure() && github.ref == 'refs/heads/main'
+#   if: failure() && github.head_ref == 'main'
 #   uses: verkstedt/actions/.github/workflows/notify-main-failures.yaml@v1
 #   secrets: inherit
 

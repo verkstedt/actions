@@ -24,7 +24,7 @@ jobs:
   initial-setup:
     name: 'Initial setup'
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main' || github.event.pull_request.draft == false
+    if: github.head_ref == 'main' || github.event.pull_request.draft == false
     outputs:
       scripts: ${{ steps.setup.outputs.scripts }}
     steps:

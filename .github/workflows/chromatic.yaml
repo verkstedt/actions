@@ -12,10 +12,10 @@ on:
 jobs:
   chromatic:
     name: 'Chromatic'
-    if: github.ref == 'refs/heads/main' || github.event.pull_request.draft == false
+    if: github.head_ref == 'main' || github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     environment:
-      name: ${{ github.ref == 'refs/heads/main' && 'storybook' || 'PR storybook' }}
+      name: ${{ github.head_ref == 'main' && 'storybook' || 'PR storybook' }}
       url: ${{ steps.publish.outputs.storybookUrl == 'undefined' && '' || steps.publish.outputs.storybookUrl }}
     steps:
       - name: Verify workflow setup
