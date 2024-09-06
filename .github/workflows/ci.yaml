@@ -105,12 +105,7 @@ jobs:
       - name: Lint CSS
         working-directory: ${{ inputs.working-directory }}
         run: |
-          if jq -r '.scripts["lint:css"]' package.json | grep -q '^stylelint '
-          then
-            npm run lint:css -- --formatter=github
-          else
-            npm run lint:css
-          fi
+          npm run lint:css
 
   lint-missing-translations:
     name: 'Lint missing translations'
