@@ -98,6 +98,7 @@ scripts as paralel jobs:
 - `lint:missing-translations`
 - `lint` (if no `lint:*` scripts present)
 - `test:unit`
+- `test:integration`
 - `test:end-to-end`
 - `test` (if no `test:*` scripts present)
 - `build`
