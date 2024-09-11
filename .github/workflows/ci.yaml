@@ -9,6 +9,9 @@ on:
         required: false
         default: '.'
     secrets:
+      test_env:
+        description: 'Environment variables to set when running integration and end-to-end tests.'
+        required: false
       build_env:
         description: 'Environment variables to set when running build script.'
         required: false
@@ -188,7 +191,12 @@ jobs:
         with:
           working-directory: ${{ inputs.working-directory }}
 
-      - name: Test units
+      - name: Set environment variables
+        working-directory: ${{ inputs.working-directory }}
+        run: |
+          echo "${{ secrets.test_env }}" >> "$GITHUB_ENV"
+
+      - name: Test end to end
         working-directory: ${{ inputs.working-directory }}
         run: npm run test:end-to-end
 

@@ -98,6 +98,7 @@ scripts as paralel jobs:
 - `lint:missing-translations`
 - `lint` (if no `lint:*` scripts present)
 - `test:unit`
+- `test:end-to-end`
 - `test` (if no `test:*` scripts present)
 - `build`
 
@@ -164,7 +165,9 @@ that.
 
 ### How do I pass secrets?
 
-Pass `build_env` secret to CI workflow, like so:
+You can set `test_env` and `build_env` secrets in your CI workflow to
+define environment variables that will be used when running
+`test:integration`, `test:end-to-end` and `build` npm scripts. E.g.:
 
 ```jobs:
   ci:
@@ -173,6 +176,7 @@ Pass `build_env` secret to CI workflow, like so:
     with:
       working-directory: .
     secrets:
+      inherit: true
       build_env: |
         CF_SPACE_ID=${{ secrets.CF_SPACE_ID }}yaml
 ```
