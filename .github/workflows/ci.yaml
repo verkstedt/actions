@@ -181,6 +181,7 @@ jobs:
       - lint-js
       - lint-ts
       - lint-fallback
+      - build
     steps:
       - name: Setup
         uses: verkstedt/actions/setup@v1
