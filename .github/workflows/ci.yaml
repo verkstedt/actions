@@ -24,7 +24,7 @@ jobs:
   initial-setup:
     name: 'Initial setup'
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main' || github.event.pull_request.draft == false
+    if: github.head_ref == 'main' || github.event.pull_request.draft == false
     outputs:
       scripts: ${{ steps.setup.outputs.scripts }}
     steps:
@@ -283,3 +283,105 @@ jobs:
             ${{ inputs.working-directory }}/.next/cache
           key: |
             build--${{ steps.cache-keys.outputs.os }}--${{ steps.cache-keys.outputs.node }}--${{ steps.cache-keys.outputs.packageJson }}--${{ steps.cache-keys.outputs.packageJsonLock }}--${{ steps.cache-keys.outputs.ref }}
+
+  check-licenses-compatibility:
+    name: 'Check licenses compatibility'
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    needs:
+      - initial-setup
+    steps:
+      - name: Setup
+        uses: verkstedt/actions/setup@v1
+        with:
+          working-directory: ${{ inputs.working-directory }}
+      - name: Check licenses compatibility
+        id: check
+        working-directory: ${{ inputs.working-directory }}
+        env:
+          ALLOWED_LICENSES: ${{ vars.ALLOWED_LICENSES }}
+        run: |
+          if [ -z "$ALLOWED_LICENSES" ]
+          then
+          echo '::error::Set ALLOWED_LICENSES GitHub actions variable with list of SPDX license identifiers (one per line, lines starting with # are comments). Tip: Do it on organisation level to avoid repeating it for each repository.'
+            exit 64 # EX_USAGE
+          fi
+
+          this_package="$(
+            node --no-warnings --input-type=module -e '
+              import pkg from "./package.json" with { type: "json" };
+              process.stdout.write(`${pkg.name}@${pkg.version}`);
+            '
+          )"
+          licenses="$( echo "$ALLOWED_LICENSES" | grep -Ev '^\s*($|#)' | paste -sd';' )"
+
+          exit_status_file=$( mktemp )
+          output_file=$( mktemp )
+          set +e
+          {
+            npx --yes --loglevel=error license-checker@25.0.1 \
+              --production --onlyAllow="$licenses" --excludePackages "$this_package" \
+              2>&1 1>/dev/null
+            echo $? > "$exit_status_file"
+          } | tee "$output_file"
+          set -e
+
+          {
+            echo 'LINT_ERRORS_MARKDOWN<<EOM'
+            sed \
+              -e 's~ which is not permitted by the --onlyAllow flag\. Exiting\.$~.~' \
+              -e 's~^~- ~g' \
+              -e 's~"~`~g' \
+              "$output_file"
+            echo 'EOM'
+          } >> "$GITHUB_ENV"
+
+          exit $( cat "$exit_status_file" )
+      - name: Notify about violations on PR
+        uses: actions/github-script@v6
+        if: failure() && github.event_name == 'pull_request'
+        with:
+          script: |
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `Detected license issues in this PR:\n\n${process.env.LINT_ERRORS_MARKDOWN}\n`
+            })
+      - name: Notify about violations on main branch
+        uses: slackapi/slack-github-action@v1
+        if: failure() && github.head_ref == 'main'
+        env:
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+        with:
+          channel-id: ${{ vars.LICENSE_VIOLATIONS_SLACK_CHANNEL_ID || vars.SLACK_CHANNEL_ID }}
+          payload: |
+            {
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "<!here> Detected license issues in <${{ github.server_url }}/${{ github.repository }}|${{ github.repository }}> @ ${{ github.head_ref || github.ref_name }}:\n\n${{ env.LINT_ERRORS_MARKDOWN }}\n"
+                  }
+                },
+                {
+                  "type": "context",
+                  "elements": [
+                    {
+                      "type": "mrkdwn",
+                      "text": "Triggered by:"
+                    },
+                    {
+                      "type": "image",
+                      "alt_text": "",
+                      "image_url": "${{ github.event.sender.avatar_url }}"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "<${{ github.event.sender.html_url }}|${{ github.event.sender.login }}>"
+                    }
+                  ]
+                }
+              ]
+            }
