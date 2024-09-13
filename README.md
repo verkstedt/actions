@@ -120,6 +120,14 @@ have something like:
 }
 ```
 
+#### Checking license compatibility
+
+Look for dependencies [^license-check-dependency] that use non–permissive (e.g. copyleft or proprietary) licenses.
+
+Will not fail the build, but just add a comment on the PR or, if it’s a push to `main` branch -- send a Slack message.
+
+[^license-check-dependency]: Both direct and transitive dependencies are checked. We do not check `devDependencies` — just `dependencies`.
+
 ### Chromatic
 
 Template:
