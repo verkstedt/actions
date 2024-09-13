@@ -1,5 +1,5 @@
 name: Send job status notification
-description: "Sends Slack message. Most commonly used with `if: failure() && github.head_ref == 'main'`"
+description: "Sends Slack message. Most commonly used with `if: failure() && github.ref == 'refs/heads/main'`"
 
 inputs:
   status:
