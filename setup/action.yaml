@@ -85,6 +85,29 @@ runs:
           npm ci
         fi
 
+    - name: Run prepare npm script
+      if: >
+        steps.cache.outputs.cache-hit = 'true'
+        && (
+          contains(needs.initial-setup.outputs.scripts, ',prepare,')
+          || contains(needs.initial-setup.outputs.scripts, ',postinstall,')
+        )
+      working-directory: ${{ inputs.working-directory }}
+      shell: bash
+      run: |
+        if [ -e "yarn.lock" ]
+        then
+          # yarn:
+          # - doesn’t support `prepare` script (we use postinstall)
+          # - doesn’t have --if-present
+          if yarn run 2>/dev/null | grep -Eq '(^|\s)postinstall($|\s)'
+          then
+            yarn run postinstall
+          fi
+        else
+          npm run --if-present prepare
+        fi
+
     - name: Save cache
       if: steps.cache.outputs.cache-hit != 'true'
       uses: actions/cache/save@v4
