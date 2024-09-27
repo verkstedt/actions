@@ -87,7 +87,7 @@ runs:
 
     - name: Run prepare npm script
       if: >
-        steps.cache.outputs.cache-hit = 'true'
+        steps.cache.outputs.cache-hit == 'true'
         && (
           contains(needs.initial-setup.outputs.scripts, ',prepare,')
           || contains(needs.initial-setup.outputs.scripts, ',postinstall,')
