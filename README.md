@@ -37,20 +37,39 @@
    - skip `chromatic`, if your project doesn’t use it
    - skip `trello`, if your project doesn’t use it 😿
 
-2. When workflows run, they will most probably fail, because some
-   secrets and/or vars are missing, but error messages should guide you
-   where to take them from.
+2. If your project doesn’t have `package.json` in the root, change
+   `working-directory` from `.` in all of the files that define it.
 
-3. You might have these defined on the GitHub organisation level, but
-   want to overwrite them with project–specific values:
+   If you have multiple `package.json` files, create separate YAML files
+   for each of them. Also change `name:` to be able to distinguish
+   between them.
+
+3. You might have these vars defined on the GitHub organisation level,
+   but want to overwrite them with project–specific values:
 
    - `SLACK_CHANNEL_ID` var, if you have a project–specific channel
+
+     Open Slack in the browser, open the channel and copy id from the
+     URL.
+
    - `TRELLO_ORG_NAME` var, if your project is not in default workspace
 
-4. If “CI” workflow didn’t detect something you’d want it to run,
-   customise it (see comments in the file).
+4. Create a test PR to check if workflows run as expected.
 
-5. Set your `main` branch as protected and require passing the checks. 🔓
+   Some of the checks are skipped for draft PRs, so make sure to
+   publish.
+
+   1. When workflows run, they will most probably fail, because some
+      secrets and/or vars are missing, but error messages should guide
+      you where to take them from.
+
+   2. If “CI” workflow didn’t detect something you’d want it to run,
+      customise it (see comments in the file).
+
+   3. Set your `main` branch as protected and require passing the checks. 🔓
+
+      Make all of the “CI / CI / (…)” checks that were not skipped in
+      your test PR as required.
 
 ## Parts
 
