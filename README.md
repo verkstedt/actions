@@ -49,8 +49,9 @@
 
    - `SLACK_CHANNEL_ID` var, if you have a project–specific channel
 
-     Open Slack in the browser, open the channel and copy id from the
-     URL.
+     - In Slack, open the channel.
+     - Open the channel details (the channel name on the top of the screen)
+     - The channel ID is at the bottom
 
    - `TRELLO_ORG_NAME` var, if your project is not in default workspace
 
