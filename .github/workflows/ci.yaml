@@ -32,7 +32,6 @@ jobs:
       scripts: ${{ steps.setup.outputs.scripts }}
     steps:
       - name: Set environment variables
-        if: secrets.env_vars
         working-directory: ${{ inputs.working-directory }}
         run: |
           echo "${{ secrets.env_vars }}" >> "$GITHUB_ENV"
@@ -51,7 +50,6 @@ jobs:
       - initial-setup
     steps:
       - name: Set environment variables
-        if: secrets.env_vars
         working-directory: ${{ inputs.working-directory }}
         run: |
           echo "${{ secrets.env_vars }}" >> "$GITHUB_ENV"
@@ -97,7 +95,6 @@ jobs:
       - initial-setup
     steps:
       - name: Set environment variables
-        if: secrets.env_vars
         working-directory: ${{ inputs.working-directory }}
         run: |
           echo "${{ secrets.env_vars }}" >> "$GITHUB_ENV"
@@ -119,7 +116,6 @@ jobs:
       - initial-setup
     steps:
       - name: Set environment variables
-        if: secrets.env_vars
         working-directory: ${{ inputs.working-directory }}
         run: |
           echo "${{ secrets.env_vars }}" >> "$GITHUB_ENV"
@@ -142,7 +138,6 @@ jobs:
       - initial-setup
     steps:
       - name: Set environment variables
-        if: secrets.env_vars
         working-directory: ${{ inputs.working-directory }}
         run: |
           echo "${{ secrets.env_vars }}" >> "$GITHUB_ENV"
@@ -168,7 +163,6 @@ jobs:
       - initial-setup
     steps:
       - name: Set environment variables
-        if: secrets.env_vars
         working-directory: ${{ inputs.working-directory }}
         run: |
           echo "${{ secrets.env_vars }}" >> "$GITHUB_ENV"
@@ -198,7 +192,6 @@ jobs:
       - lint-fallback
     steps:
       - name: Set environment variables
-        if: secrets.env_vars
         working-directory: ${{ inputs.working-directory }}
         run: |
           echo "${{ secrets.env_vars }}" >> "$GITHUB_ENV"
@@ -223,10 +216,9 @@ jobs:
       && contains(needs.initial-setup.outputs.scripts, ',test:end-to-end,')
     needs:
       - initial-setup
-      - build
+      # - build DEBUG
     steps:
       - name: Set environment variables
-        if: secrets.env_vars
         working-directory: ${{ inputs.working-directory }}
         run: |
           echo "${{ secrets.env_vars }}" >> "$GITHUB_ENV"
@@ -236,7 +228,9 @@ jobs:
         with:
           working-directory: ${{ inputs.working-directory }}
 
-      - name: Test units
+      - run: env
+
+      - name: Test end-to-end
         working-directory: ${{ inputs.working-directory }}
         run: npm run test:end-to-end
 
@@ -259,7 +253,6 @@ jobs:
       - lint-fallback
     steps:
       - name: Set environment variables
-        if: secrets.env_vars
         working-directory: ${{ inputs.working-directory }}
         run: |
           echo "${{ secrets.env_vars }}" >> "$GITHUB_ENV"
@@ -295,15 +288,16 @@ jobs:
       - test-fallback
     steps:
       - name: Set environment variables (build_env)
-        if: secrets.build_env
         working-directory: ${{ inputs.working-directory }}
         run: |
-          echo "::warning::build_env secret is deprecated, use env_vars instead."
+          if [ -n "${{ secrets.build_env }}" ]
+          then
+            echo "::warning::build_env secret is deprecated, use env_vars instead."
 
-          echo "${{ secrets.build_env }}" >> "$GITHUB_ENV"
+            echo "${{ secrets.build_env }}" >> "$GITHUB_ENV"
+          fi
 
       - name: Set environment variables
-        if: secrets.env_vars
         working-directory: ${{ inputs.working-directory }}
         run: |
           echo "${{ secrets.env_vars }}" >> "$GITHUB_ENV"
