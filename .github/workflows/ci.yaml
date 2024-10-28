@@ -178,9 +178,7 @@ jobs:
       && contains(needs.initial-setup.outputs.scripts, ',test:end-to-end,')
     needs:
       - initial-setup
-      - lint-js
-      - lint-ts
-      - lint-fallback
+      - build
     steps:
       - name: Setup
         uses: verkstedt/actions/setup@v1
