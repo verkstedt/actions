@@ -30892,8 +30892,6 @@ var _actions_github__WEBPACK_IMPORTED_MODULE_1___namespace_cache;
 __nccwpck_require__.a(__webpack_module__, async (__webpack_handle_async_dependencies__, __webpack_async_result__) => { try {
 /* harmony import */ var _actions_core__WEBPACK_IMPORTED_MODULE_0__ = __nccwpck_require__(2186);
 /* harmony import */ var _actions_github__WEBPACK_IMPORTED_MODULE_1__ = __nccwpck_require__(5438);
-/* eslint-disable no-console */
-
 
 
 
@@ -30902,37 +30900,74 @@ const { payload } = context
 
 const token = _actions_core__WEBPACK_IMPORTED_MODULE_0__.getInput('token')
 
+/**
+ * @doc https://octokit.github.io/rest.js
+ */
 const octokit = _actions_github__WEBPACK_IMPORTED_MODULE_1__.getOctokit(token)
 
-// Handle push event. Get list of commits from the push event payload
-if (payload?.commits) {
-  const { commits } = payload
+function adaptPushEventCommits(commits) {
+  return commits.map(({ id, ...commit }) => ({
+    sha: id,
+    commit,
+  }))
+}
+
+async function getCommits() {
+  const {
+    organization: { login: owner },
+    repository: { name: repo },
+    before,
+    after,
+  } = payload
+  _actions_core__WEBPACK_IMPORTED_MODULE_0__.info(`Getting commits from ${before} to ${after}`)
+  const { data } = await octokit.rest.repos.compareCommits({
+    owner,
+    repo,
+    base: before,
+    head: after,
+  })
+  return data.commits
+}
+
+const commits =
+  'commits' in payload
+    ? adaptPushEventCommits(payload.commits)
+    : await getCommits()
+
+if (!commits?.length) {
+  _actions_core__WEBPACK_IMPORTED_MODULE_0__.info('No commits found')
+} else {
   _actions_core__WEBPACK_IMPORTED_MODULE_0__.info(`Commits: ${commits.length}`)
   await Promise.all(
-    commits.map(async ({ id, message }) => {
-      _actions_core__WEBPACK_IMPORTED_MODULE_0__.info(`Commit: ${message}`)
+    commits.map(async ({ sha, commit: { message } }) => {
+      _actions_core__WEBPACK_IMPORTED_MODULE_0__.debug(`Commit message:${`\n${message}`.replace('\n', '\n\t')}`)
 
       const urls =
         message.match(
           /https:\/\/github.com\/([^\s/]+\/){2}pull\/\d+#discussion_r\d+/gi
         ) || []
 
+      _actions_core__WEBPACK_IMPORTED_MODULE_0__.debug(`Discussion URLs: ${urls.length}`)
+
       await Promise.all(
         urls
           .map((url) => new URL(url))
           .map((url) => ({
+            url,
+            owner: url.pathname.split('/').at(1),
+            repo: url.pathname.split('/').at(2),
             prNumber: Number(url.pathname.split('/').at(-1)),
             commentId: Number(url.hash.replace('#discussion_r', '')),
           }))
-          .map(async ({ prNumber, commentId }) => {
-            const response = octokit.rest.pulls.createReplyForReviewComment({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
+          .map(async ({ url, owner, repo, prNumber, commentId }) => {
+            _actions_core__WEBPACK_IMPORTED_MODULE_0__.info(`Posting reply to ${url.toString()}`)
+            octokit.rest.pulls.createReplyForReviewComment({
+              owner,
+              repo,
               pull_number: prNumber,
               comment_id: commentId,
-              body: `Referenced in ${id}`,
+              body: `Referenced in ${sha}`,
             })
-            console.log(await response)
           })
       )
     })
