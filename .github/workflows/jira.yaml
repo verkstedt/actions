@@ -18,9 +18,9 @@ jobs:
             exit_code=78
           fi
 
-          if [ -z "${{ secrets.JIRA_USER }}" ]
+          if [ -z "${{ vars.JIRA_USER }}" ]
           then
-            echo "::error::Missing secret JIRA_USER. E-mail address of user to run this automation as. It’s a good idea to set it on organisation level."
+            echo "::error::Missing var JIRA_USER. E-mail address of user to run this automation as. It’s a good idea to set it on organisation level."
             exit_code=78
           fi
 
@@ -44,7 +44,7 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           # Hint: Set these on an organisation level and override in repos only when necessary
           jira-domain: ${{ vars.JIRA_DOMAIN }}
-          jira-user: ${{ secrets.JIRA_USER }}
+          jira-user: ${{ vars.JIRA_USER }}
           jira-api-token: ${{ secrets.JIRA_API_TOKEN }}
           jira-status-pr-draft: ${{ vars.JIRA_STATUS_PR_DRAFT }}
           jira-status-pr-ready: ${{ vars.JIRA_STATUS_PR_READY }}
