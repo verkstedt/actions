@@ -9,7 +9,7 @@ on:
         required: false
         default: '.'
     secrets:
-      build_env:
+      env_vars:
         description: 'Environment variables to set when running build script.'
         required: false
 
@@ -187,7 +187,17 @@ jobs:
         with:
           working-directory: ${{ inputs.working-directory }}
 
-      - name: Test units
+      - name: Set environment variables
+        working-directory: ${{ inputs.working-directory }}
+        env:
+          ENV_VARS: ${{ secrets.env_vars }}
+        run: |
+          echo "$ENV_VARS" >> "$GITHUB_ENV"
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps
+
+      - name: Test end to end
         working-directory: ${{ inputs.working-directory }}
         run: npm run test:end-to-end
 
@@ -246,8 +256,10 @@ jobs:
 
       - name: Set environment variables
         working-directory: ${{ inputs.working-directory }}
+        env:
+          ENV_VARS: ${{ secrets.env_vars }}
         run: |
-          echo "${{ secrets.build_env }}" >> "$GITHUB_ENV"
+          echo "$ENV_VARS" >> "$GITHUB_ENV"
 
       - name: Calculate cache key parts
         id: cache-keys
