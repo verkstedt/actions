@@ -1,0 +1,51 @@
+name: Jira integration
+
+on:
+  workflow_call:
+
+jobs:
+  jira:
+    name: 'Move jira issues'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify workflow setup
+        run: |
+          exit_code=0
+
+          if [ -z "${{ vars.JIRA_DOMAIN }}" ]
+          then
+            echo "::error::Missing var JIRA_DOMAIN. Set it to the origin you are accessing jira on, e.g. https://example.atlassian.net. It’s a good idea to set it on organisation level."
+            exit_code=78
+          fi
+
+          if [ -z "${{ vars.JIRA_USER }}" ]
+          then
+            echo "::error::Missing var JIRA_USER. E-mail address of user to run this automation as. It’s a good idea to set it on organisation level."
+            exit_code=78
+          fi
+
+          if [ -z "${{ secrets.JIRA_API_TOKEN }}" ]
+          then
+            echo "::error::Missing secret JIRA_API_TOKEN. Generate one at https://id.atlassian.com/manage-profile/security/api-tokens . It’s a good idea to set it on organisation level."
+            exit_code=78
+          fi
+
+          if [ -z "${{ vars.JIRA_STATUS_PR_DRAFT}}${{ vars.JIRA_STATUS_PR_READY }}${{ vars.JIRA_STATUS_PR_MERGED }}" ]
+          then
+            echo "::error::Missing var JIRA_STATUS_PR_DRAFT, JIRA_STATUS_PR_READY or JIRA_STATUS_PR_MERGED. Set any of them to the status names you want to transition issues to when PRs are in draft, ready or merged state. It’s a good idea to set them on organisation level."
+            exit_code=78
+          fi
+
+          exit $exit_code
+
+      - name: 'Move jira issues'
+        uses: verkstedt/jira-integration-action@v1
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          # Hint: Set these on an organisation level and override in repos only when necessary
+          jira-domain: ${{ vars.JIRA_DOMAIN }}
+          jira-user: ${{ vars.JIRA_USER }}
+          jira-api-token: ${{ secrets.JIRA_API_TOKEN }}
+          jira-status-pr-draft: ${{ vars.JIRA_STATUS_PR_DRAFT }}
+          jira-status-pr-ready: ${{ vars.JIRA_STATUS_PR_READY }}
+          jira-status-pr-merged: ${{ vars.JIRA_STATUS_PR_MERGED }}

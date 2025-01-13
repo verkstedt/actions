@@ -35,7 +35,7 @@
    `.github/workflows/` in your repository.
 
    - skip `chromatic`, if your project doesn’t use it
-   - skip `trello`, if your project doesn’t use it 😿
+   - skip `jira`, if your project doesn’t use it
 
 2. If your project doesn’t have `package.json` in the root, change
    `working-directory` from `.` in all of the files that define it.
@@ -44,8 +44,8 @@
    for each of them. Also change `name:` to be able to distinguish
    between them.
 
-3. You might have these vars defined on the GitHub organisation level,
-   but want to overwrite them with project–specific values:
+3. You might have these defined on the GitHub organisation level, but
+   want to overwrite them with project–specific values:
 
    - `SLACK_CHANNEL_ID` var, if you have a project–specific channel
 
@@ -53,7 +53,8 @@
      - Open the channel details (the channel name on the top of the screen)
      - The channel ID is at the bottom
 
-   - `TRELLO_ORG_NAME` var, if your project is not in default workspace
+   - `JIRA_STATUS_*` vars, if your project uses custom status names. You
+     can also set var to empty string to disable that transition.
 
 4. Create a test PR to check if workflows run as expected.
 
@@ -70,7 +71,8 @@
    3. Set your `main` branch as protected and require passing the checks. 🔓
 
       Make all of the “CI / CI / (…)” checks that were not skipped in
-      your test PR as required.
+      your test PR required. If you use Chromatic, you’ll also want to
+      make “UI Tests” required.
 
 ## Parts
 
@@ -152,15 +154,15 @@ Runs only on `main` branch and published PRs.
 Requires some vars and/or secrets.
 See [./.github/workflows/chromatic.yaml][workflow-chromatic] for details.
 
-### Trello
+### Jira
 
 Template:
-<https://github.com/verkstedt/.github/tree/main/workflow-templates/trello.yaml>
+<https://github.com/verkstedt/.github/tree/main/workflow-templates/jira.yaml>
 
-Moves [Trello] cards when PRs are created, published or merged.
+Moves [Jira] issues when PRs are created, published or merged.
 
 Requires some vars and/or secrets.
-See [./.github/workflows/trello.yaml][workflow-trello] for details.
+See [./.github/workflows/jira.yaml][workflow-jira] for details.
 
 ### Ref Comment in Commit
 
@@ -231,11 +233,11 @@ You have two options:
 
 2. Don’t use these workflows.
 
-   See first item on the list of [Goals](#goals).
+   See [Goals](#goals) for this project.
 
 [storybook]: https://storybook.js.org/docs/get-started/install
 [chromatic]: https://www.chromatic.com/start
-[trello]: https://trello.com
+[jira]: https://www.atlassian.com/software/jira
 [workflow-chromatic]: ./.github/workflows/chromatic.yaml
-[workflow-trello]: ./.github/workflows/trello.yaml
+[workflow-jira]: ./.github/workflows/jira.yaml
 [workflow-templates]: https://github.com/verkstedt/.github/tree/main/workflow-templates
