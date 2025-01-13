@@ -10,7 +10,10 @@ on:
         default: '.'
     secrets:
       env_vars:
-        description: 'Environment variables to set when running build script.'
+        description: 'Environment variables to set when running npm scripts.'
+        required: false
+      build_env:
+        description: '(DEPRECATED! Use env_vars instead) Environment variables to set when running build script.'
         required: false
 
 env:
@@ -194,8 +197,8 @@ jobs:
         run: |
           echo "$ENV_VARS" >> "$GITHUB_ENV"
 
-      - name: Install Playwright browsers
-        run: npx playwright install --with-deps
+      - name: Install end to end pre-requisites
+        run: npm run pretest:end-to-end 
 
       - name: Test end to end
         working-directory: ${{ inputs.working-directory }}
