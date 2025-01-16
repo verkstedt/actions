@@ -33,8 +33,10 @@ jobs:
     steps:
       - name: Set environment variables
         working-directory: ${{ inputs.working-directory }}
+        env:
+          ENV_VARS: ${{ secrets.env_vars }}
         run: |
-          echo "${{ secrets.env_vars }}" >> "$GITHUB_ENV"
+          echo "$ENV_VARS" >> "$GITHUB_ENV"
 
       - name: Setup
         id: setup
@@ -51,8 +53,10 @@ jobs:
     steps:
       - name: Set environment variables
         working-directory: ${{ inputs.working-directory }}
+        env:
+          ENV_VARS: ${{ secrets.env_vars }}
         run: |
-          echo "${{ secrets.env_vars }}" >> "$GITHUB_ENV"
+          echo "$ENV_VARS" >> "$GITHUB_ENV"
 
       - name: Setup
         uses: verkstedt/actions/setup@v1
@@ -96,8 +100,10 @@ jobs:
     steps:
       - name: Set environment variables
         working-directory: ${{ inputs.working-directory }}
+        env:
+          ENV_VARS: ${{ secrets.env_vars }}
         run: |
-          echo "${{ secrets.env_vars }}" >> "$GITHUB_ENV"
+          echo "$ENV_VARS" >> "$GITHUB_ENV"
 
       - name: Setup
         uses: verkstedt/actions/setup@v1
@@ -117,8 +123,10 @@ jobs:
     steps:
       - name: Set environment variables
         working-directory: ${{ inputs.working-directory }}
+        env:
+          ENV_VARS: ${{ secrets.env_vars }}
         run: |
-          echo "${{ secrets.env_vars }}" >> "$GITHUB_ENV"
+          echo "$ENV_VARS" >> "$GITHUB_ENV"
 
       - name: Setup
         uses: verkstedt/actions/setup@v1
@@ -139,8 +147,10 @@ jobs:
     steps:
       - name: Set environment variables
         working-directory: ${{ inputs.working-directory }}
+        env:
+          ENV_VARS: ${{ secrets.env_vars }}
         run: |
-          echo "${{ secrets.env_vars }}" >> "$GITHUB_ENV"
+          echo "$ENV_VARS" >> "$GITHUB_ENV"
 
       - name: Setup
         uses: verkstedt/actions/setup@v1
@@ -164,8 +174,10 @@ jobs:
     steps:
       - name: Set environment variables
         working-directory: ${{ inputs.working-directory }}
+        env:
+          ENV_VARS: ${{ secrets.env_vars }}
         run: |
-          echo "${{ secrets.env_vars }}" >> "$GITHUB_ENV"
+          echo "$ENV_VARS" >> "$GITHUB_ENV"
 
       - name: Setup
         uses: verkstedt/actions/setup@v1
@@ -193,8 +205,10 @@ jobs:
     steps:
       - name: Set environment variables
         working-directory: ${{ inputs.working-directory }}
+        env:
+          ENV_VARS: ${{ secrets.env_vars }}
         run: |
-          echo "${{ secrets.env_vars }}" >> "$GITHUB_ENV"
+          echo "$ENV_VARS" >> "$GITHUB_ENV"
 
       - name: Setup
         uses: verkstedt/actions/setup@v1
@@ -222,8 +236,10 @@ jobs:
     steps:
       - name: Set environment variables
         working-directory: ${{ inputs.working-directory }}
+        env:
+          ENV_VARS: ${{ secrets.env_vars }}
         run: |
-          echo "${{ secrets.env_vars }}" >> "$GITHUB_ENV"
+          echo "$ENV_VARS" >> "$GITHUB_ENV"
 
       - name: Setup
         uses: verkstedt/actions/setup@v1
@@ -257,8 +273,10 @@ jobs:
     steps:
       - name: Set environment variables
         working-directory: ${{ inputs.working-directory }}
+        env:
+          ENV_VARS: ${{ secrets.env_vars }}
         run: |
-          echo ${{ secrets.env_vars }} >> "$GITHUB_ENV"
+          echo $ENV_VARS >> "$GITHUB_ENV"
 
       - name: Setup
         uses: verkstedt/actions/setup@v1
@@ -301,8 +319,10 @@ jobs:
 
       - name: Set environment variables
         working-directory: ${{ inputs.working-directory }}
+        env:
+          ENV_VARS: ${{ secrets.env_vars }}
         run: |
-          echo ${{ secrets.env_vars }} >> "$GITHUB_ENV"
+          echo $ENV_VARS >> "$GITHUB_ENV"
           
       - name: Setup
         uses: verkstedt/actions/setup@v1
