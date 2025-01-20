@@ -246,9 +246,6 @@ jobs:
         with:
           working-directory: ${{ inputs.working-directory }}
 
-      - name: Install end to end pre-requisites
-        run: npm run pretest:end-to-end 
-
       - name: Test end to end
         working-directory: ${{ inputs.working-directory }}
         run: npm run test:end-to-end
