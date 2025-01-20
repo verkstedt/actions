@@ -9,8 +9,11 @@ on:
         required: false
         default: '.'
     secrets:
+      env_vars:
+        description: 'Environment variables to set when running npm scripts.'
+        required: false
       build_env:
-        description: 'Environment variables to set when running build script.'
+        description: '(DEPRECATED! Use env_vars instead) Environment variables to set when running build script.'
         required: false
 
 env:
@@ -28,6 +31,13 @@ jobs:
     outputs:
       scripts: ${{ steps.setup.outputs.scripts }}
     steps:
+      - name: Set environment variables
+        working-directory: ${{ inputs.working-directory }}
+        env:
+          ENV_VARS: ${{ secrets.env_vars }}
+        run: |
+          echo "$ENV_VARS" >> "$GITHUB_ENV"
+
       - name: Setup
         id: setup
         uses: verkstedt/actions/setup@v1
@@ -41,6 +51,13 @@ jobs:
     needs:
       - initial-setup
     steps:
+      - name: Set environment variables
+        working-directory: ${{ inputs.working-directory }}
+        env:
+          ENV_VARS: ${{ secrets.env_vars }}
+        run: |
+          echo "$ENV_VARS" >> "$GITHUB_ENV"
+
       - name: Setup
         uses: verkstedt/actions/setup@v1
         with:
@@ -81,6 +98,13 @@ jobs:
     needs:
       - initial-setup
     steps:
+      - name: Set environment variables
+        working-directory: ${{ inputs.working-directory }}
+        env:
+          ENV_VARS: ${{ secrets.env_vars }}
+        run: |
+          echo "$ENV_VARS" >> "$GITHUB_ENV"
+
       - name: Setup
         uses: verkstedt/actions/setup@v1
         with:
@@ -97,6 +121,13 @@ jobs:
     needs:
       - initial-setup
     steps:
+      - name: Set environment variables
+        working-directory: ${{ inputs.working-directory }}
+        env:
+          ENV_VARS: ${{ secrets.env_vars }}
+        run: |
+          echo "$ENV_VARS" >> "$GITHUB_ENV"
+
       - name: Setup
         uses: verkstedt/actions/setup@v1
         with:
@@ -114,6 +145,13 @@ jobs:
     needs:
       - initial-setup
     steps:
+      - name: Set environment variables
+        working-directory: ${{ inputs.working-directory }}
+        env:
+          ENV_VARS: ${{ secrets.env_vars }}
+        run: |
+          echo "$ENV_VARS" >> "$GITHUB_ENV"
+
       - name: Setup
         uses: verkstedt/actions/setup@v1
         with:
@@ -134,6 +172,13 @@ jobs:
     needs:
       - initial-setup
     steps:
+      - name: Set environment variables
+        working-directory: ${{ inputs.working-directory }}
+        env:
+          ENV_VARS: ${{ secrets.env_vars }}
+        run: |
+          echo "$ENV_VARS" >> "$GITHUB_ENV"
+
       - name: Setup
         uses: verkstedt/actions/setup@v1
         with:
@@ -158,6 +203,13 @@ jobs:
       - lint-ts
       - lint-fallback
     steps:
+      - name: Set environment variables
+        working-directory: ${{ inputs.working-directory }}
+        env:
+          ENV_VARS: ${{ secrets.env_vars }}
+        run: |
+          echo "$ENV_VARS" >> "$GITHUB_ENV"
+
       - name: Setup
         uses: verkstedt/actions/setup@v1
         with:
@@ -182,12 +234,19 @@ jobs:
       - lint-ts
       - lint-fallback
     steps:
+      - name: Set environment variables
+        working-directory: ${{ inputs.working-directory }}
+        env:
+          ENV_VARS: ${{ secrets.env_vars }}
+        run: |
+          echo "$ENV_VARS" >> "$GITHUB_ENV"
+
       - name: Setup
         uses: verkstedt/actions/setup@v1
         with:
           working-directory: ${{ inputs.working-directory }}
 
-      - name: Test units
+      - name: Test end to end
         working-directory: ${{ inputs.working-directory }}
         run: npm run test:end-to-end
 
@@ -209,6 +268,13 @@ jobs:
       - lint-ts
       - lint-fallback
     steps:
+      - name: Set environment variables
+        working-directory: ${{ inputs.working-directory }}
+        env:
+          ENV_VARS: ${{ secrets.env_vars }}
+        run: |
+          echo $ENV_VARS >> "$GITHUB_ENV"
+
       - name: Setup
         uses: verkstedt/actions/setup@v1
         with:
@@ -239,15 +305,26 @@ jobs:
       - test-unit
       - test-fallback
     steps:
+      - name: Set environment variables (build_env)
+        working-directory: ${{ inputs.working-directory }}
+        run: |
+          if [ -n "${{ secrets.build_env }}" ]
+          then
+            echo "::warning::build_env secret is deprecated, use env_vars instead."
+            echo "${{ secrets.build_env }}" >> "$GITHUB_ENV"
+          fi
+
+      - name: Set environment variables
+        working-directory: ${{ inputs.working-directory }}
+        env:
+          ENV_VARS: ${{ secrets.env_vars }}
+        run: |
+          echo $ENV_VARS >> "$GITHUB_ENV"
+          
       - name: Setup
         uses: verkstedt/actions/setup@v1
         with:
           working-directory: ${{ inputs.working-directory }}
-
-      - name: Set environment variables
-        working-directory: ${{ inputs.working-directory }}
-        run: |
-          echo "${{ secrets.build_env }}" >> "$GITHUB_ENV"
 
       - name: Calculate cache key parts
         id: cache-keys
