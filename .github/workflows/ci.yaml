@@ -320,7 +320,6 @@ jobs:
           ENV_VARS: ${{ secrets.env_vars }}
         run: |
           echo $ENV_VARS >> "$GITHUB_ENV"
-          
       - name: Setup
         uses: verkstedt/actions/setup@v1
         with:

@@ -4,6 +4,8 @@
 
 ![](./screenshots/run.png)
 
+<a id=user-content-goals></a>
+
 ## Goals
 
 - Something that covers 99% needs of 80% of our projects instead of
@@ -37,21 +39,42 @@
    - skip `chromatic`, if your project doesn’t use it
    - skip `jira`, if your project doesn’t use it
 
-2. When workflows run, they will most probably fail, because some
-   secrets and/or vars are missing, but error messages should guide you
-   where to take them from.
+2. If your project doesn’t have `package.json` in the root, change
+   `working-directory` from `.` in all of the files that define it.
+
+   If you have multiple `package.json` files, create separate YAML files
+   for each of them. Also change `name:` to be able to distinguish
+   between them.
 
 3. You might have these defined on the GitHub organisation level, but
    want to overwrite them with project–specific values:
 
    - `SLACK_CHANNEL_ID` var, if you have a project–specific channel
+
+     - In Slack, open the channel.
+     - Open the channel details (the channel name on the top of the screen)
+     - The channel ID is at the bottom
+
    - `JIRA_STATUS_*` vars, if your project uses custom status names. You
      can also set var to empty string to disable that transition.
 
-4. If “CI” workflow didn’t detect something you’d want it to run,
-   customise it (see comments in the file).
+4. Create a test PR to check if workflows run as expected.
 
-5. Set your `main` branch as protected and require passing the checks. 🔓
+   Some of the checks are skipped for draft PRs, so make sure to
+   publish.
+
+   1. When workflows run, they will most probably fail, because some
+      secrets and/or vars are missing, but error messages should guide
+      you where to take them from.
+
+   2. If “CI” workflow didn’t detect something you’d want it to run,
+      customise it (see comments in the file).
+
+   3. Set your `main` branch as protected and require passing the checks. 🔓
+
+      Make all of the “CI / CI / (…)” checks that were not skipped in
+      your test PR required. If you use Chromatic, you’ll also want to
+      make “UI Tests” required.
 
 ## Parts
 
@@ -200,7 +223,7 @@ You have two options:
 
 2. Don’t use these workflows.
 
-   See list of [Goals](#goals) for this project.
+   See [Goals](#user-content-goals) for this project.
 
 [storybook]: https://storybook.js.org/docs/get-started/install
 [chromatic]: https://www.chromatic.com/start
