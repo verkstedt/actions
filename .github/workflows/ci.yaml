@@ -32,7 +32,6 @@ jobs:
       scripts: ${{ steps.setup.outputs.scripts }}
     steps:
       - name: Set environment variables
-        working-directory: ${{ inputs.working-directory }}
         env:
           ENV_VARS: ${{ secrets.env_vars }}
         run: |
@@ -52,7 +51,6 @@ jobs:
       - initial-setup
     steps:
       - name: Set environment variables
-        working-directory: ${{ inputs.working-directory }}
         env:
           ENV_VARS: ${{ secrets.env_vars }}
         run: |
@@ -99,7 +97,6 @@ jobs:
       - initial-setup
     steps:
       - name: Set environment variables
-        working-directory: ${{ inputs.working-directory }}
         env:
           ENV_VARS: ${{ secrets.env_vars }}
         run: |
@@ -122,7 +119,6 @@ jobs:
       - initial-setup
     steps:
       - name: Set environment variables
-        working-directory: ${{ inputs.working-directory }}
         env:
           ENV_VARS: ${{ secrets.env_vars }}
         run: |
@@ -146,7 +142,6 @@ jobs:
       - initial-setup
     steps:
       - name: Set environment variables
-        working-directory: ${{ inputs.working-directory }}
         env:
           ENV_VARS: ${{ secrets.env_vars }}
         run: |
@@ -173,7 +168,6 @@ jobs:
       - initial-setup
     steps:
       - name: Set environment variables
-        working-directory: ${{ inputs.working-directory }}
         env:
           ENV_VARS: ${{ secrets.env_vars }}
         run: |
@@ -204,7 +198,6 @@ jobs:
       - lint-fallback
     steps:
       - name: Set environment variables
-        working-directory: ${{ inputs.working-directory }}
         env:
           ENV_VARS: ${{ secrets.env_vars }}
         run: |
@@ -235,7 +228,6 @@ jobs:
       - lint-fallback
     steps:
       - name: Set environment variables
-        working-directory: ${{ inputs.working-directory }}
         env:
           ENV_VARS: ${{ secrets.env_vars }}
         run: |
@@ -269,7 +261,6 @@ jobs:
       - lint-fallback
     steps:
       - name: Set environment variables
-        working-directory: ${{ inputs.working-directory }}
         env:
           ENV_VARS: ${{ secrets.env_vars }}
         run: |
@@ -306,7 +297,6 @@ jobs:
       - test-fallback
     steps:
       - name: Set environment variables (build_env)
-        working-directory: ${{ inputs.working-directory }}
         run: |
           if [ -n "${{ secrets.build_env }}" ]
           then
@@ -315,7 +305,6 @@ jobs:
           fi
 
       - name: Set environment variables
-        working-directory: ${{ inputs.working-directory }}
         env:
           ENV_VARS: ${{ secrets.env_vars }}
         run: |
