@@ -10,6 +10,10 @@ inputs:
     description: 'Directory in which to run things in.'
     required: false
     default: '.'
+  github-npm-registry-personal-access-token:
+    description: 'GitHub personal access token for npm registry authentication. You can create one at https://github.com/settings/tokens/new (scopes: `read:packages`, `repo` and `read:org`). If not set, will use secrets.GITHUB_TOKEN, which is enough for most cases.'
+    required: false
+    default: ''
 
 outputs:
   scripts:
@@ -73,11 +77,25 @@ runs:
           npm--${{ steps.cache-keys.outputs.os }}--${{ steps.cache-keys.outputs.node }}--${{ steps.cache-keys.outputs.packageJson }}--
           npm--${{ steps.cache-keys.outputs.os }}--${{ steps.cache-keys.outputs.node }}--
 
+    - name: Set up GitHub npm registry authentication
+      if: inputs.github-npm-registry-personal-access-token
+      shell: bash
+      run: |
+        echo "//npm.pkg.github.com/:_authToken=${{ inputs.github-npm-registry-personal-access-token }}" >> ~/.npmrc
+
     - name: Install dependencies
       if: steps.cache.outputs.cache-hit != 'true'
       working-directory: ${{ inputs.working-directory }}
       shell: bash
+      env:
+        GITHUB_NPM_REGISTRY_PERSONAL_ACCESS_TOKEN: ${{ inputs.github-npm-registry-personal-access-token }}
       run: |
+        if [ -n "$GITHUB_NPM_REGISTRY_PERSONAL_ACCESS_TOKEN" ]
+        then
+          # GH_REGISTRY_TOKEN is commonly used in .npmrc and .yarnrc files
+          export GH_REGISTRY_TOKEN="$GITHUB_NPM_REGISTRY_PERSONAL_ACCESS_TOKEN"
+        fi
+
         if [ -e "yarn.lock" ]
         then
           yarn install --immutable
