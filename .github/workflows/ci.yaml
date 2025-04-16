@@ -15,6 +15,9 @@ on:
       build_env:
         description: '(DEPRECATED! Use env_vars instead) Environment variables to set when running build script.'
         required: false
+      GH_NPM_REGISTRY_PERSONAL_ACCESS_TOKEN:
+        description: 'GitHub personal access token for npm registry authentication. You can create one at https://github.com/settings/tokens/new (scopes: `read:packages`, `repo` and `read:org`). If not set, will use secrets.GITHUB_TOKEN, which is enough for most cases.'
+        required: false
 
 env:
   NEXT_TELEMETRY_DISABLED: 1
@@ -42,6 +45,7 @@ jobs:
         uses: verkstedt/actions/setup@v1
         with:
           working-directory: ${{ inputs.working-directory }}
+          github-npm-registry-personal-access-token: ${{ secrets.GH_NPM_REGISTRY_PERSONAL_ACCESS_TOKEN }}
 
   lint-js:
     name: 'Lint JS'
@@ -60,6 +64,7 @@ jobs:
         uses: verkstedt/actions/setup@v1
         with:
           working-directory: ${{ inputs.working-directory }}
+          github-npm-registry-personal-access-token: ${{ secrets.GH_NPM_REGISTRY_PERSONAL_ACCESS_TOKEN }}
 
       # Once https://github.com/actions/setup-node/issues/96 is
       # implemented, next two steps can be replaced with just:
@@ -106,6 +111,7 @@ jobs:
         uses: verkstedt/actions/setup@v1
         with:
           working-directory: ${{ inputs.working-directory }}
+          github-npm-registry-personal-access-token: ${{ secrets.GH_NPM_REGISTRY_PERSONAL_ACCESS_TOKEN }}
 
       - name: Lint TS
         working-directory: ${{ inputs.working-directory }}
@@ -128,6 +134,7 @@ jobs:
         uses: verkstedt/actions/setup@v1
         with:
           working-directory: ${{ inputs.working-directory }}
+          github-npm-registry-personal-access-token: ${{ secrets.GH_NPM_REGISTRY_PERSONAL_ACCESS_TOKEN }}
 
       - name: Lint CSS
         working-directory: ${{ inputs.working-directory }}
@@ -151,6 +158,7 @@ jobs:
         uses: verkstedt/actions/setup@v1
         with:
           working-directory: ${{ inputs.working-directory }}
+          github-npm-registry-personal-access-token: ${{ secrets.GH_NPM_REGISTRY_PERSONAL_ACCESS_TOKEN }}
 
       - name: Lint Translations
         working-directory: ${{ inputs.working-directory }}
@@ -177,6 +185,7 @@ jobs:
         uses: verkstedt/actions/setup@v1
         with:
           working-directory: ${{ inputs.working-directory }}
+          github-npm-registry-personal-access-token: ${{ secrets.GH_NPM_REGISTRY_PERSONAL_ACCESS_TOKEN }}
 
       - name: Lint fallback
         working-directory: ${{ inputs.working-directory }}
@@ -207,6 +216,7 @@ jobs:
         uses: verkstedt/actions/setup@v1
         with:
           working-directory: ${{ inputs.working-directory }}
+          github-npm-registry-personal-access-token: ${{ secrets.GH_NPM_REGISTRY_PERSONAL_ACCESS_TOKEN }}
 
       - name: Test units
         working-directory: ${{ inputs.working-directory }}
@@ -237,6 +247,7 @@ jobs:
         uses: verkstedt/actions/setup@v1
         with:
           working-directory: ${{ inputs.working-directory }}
+          github-npm-registry-personal-access-token: ${{ secrets.GH_NPM_REGISTRY_PERSONAL_ACCESS_TOKEN }}
 
       - name: Test end to end
         working-directory: ${{ inputs.working-directory }}
@@ -270,6 +281,7 @@ jobs:
         uses: verkstedt/actions/setup@v1
         with:
           working-directory: ${{ inputs.working-directory }}
+          github-npm-registry-personal-access-token: ${{ secrets.GH_NPM_REGISTRY_PERSONAL_ACCESS_TOKEN }}
 
       - name: Test fallback
         working-directory: ${{ inputs.working-directory }}
@@ -313,6 +325,7 @@ jobs:
         uses: verkstedt/actions/setup@v1
         with:
           working-directory: ${{ inputs.working-directory }}
+          github-npm-registry-personal-access-token: ${{ secrets.GH_NPM_REGISTRY_PERSONAL_ACCESS_TOKEN }}
 
       - name: Calculate cache key parts
         id: cache-keys
