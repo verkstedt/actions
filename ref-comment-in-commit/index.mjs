@@ -44,8 +44,12 @@ if (!commits?.length) {
   core.info('No commits found')
 } else {
   core.info(`Commits: ${commits.length}`)
-  await Promise.all(
-    commits.map(async ({ sha, commit: { message } }) => {
+  const commitResults = await Promise.allSettled(
+    commits.map(async (commitItem) => {
+      const {
+        sha,
+        commit: { message, author: gitAuthor },
+      } = commitItem
       core.debug(`Commit message:${`\n${message}`.replace('\n', '\n\t')}`)
 
       const urls =
@@ -55,27 +59,57 @@ if (!commits?.length) {
 
       core.debug(`Discussion URLs: ${urls.length}`)
 
-      await Promise.all(
-        urls
-          .map((url) => new URL(url))
-          .map((url) => ({
-            url,
-            owner: url.pathname.split('/').at(1),
-            repo: url.pathname.split('/').at(2),
-            prNumber: Number(url.pathname.split('/').at(-1)),
-            commentId: Number(url.hash.replace('#discussion_r', '')),
-          }))
-          .map(async ({ url, owner, repo, prNumber, commentId }) => {
-            core.info(`Posting reply to ${url.toString()}`)
-            return octokit.rest.pulls.createReplyForReviewComment({
-              owner,
-              repo,
-              pull_number: prNumber,
-              comment_id: commentId,
-              body: `Referenced in ${sha}`,
+      if (urls.length > 0) {
+        const ghLogin = commitItem.author?.login ?? gitAuthor?.username
+        const authorMarkdown = ghLogin
+          ? // Link, not `@mention`, to avoid notifying the author each reference.
+            `[@${ghLogin}](https://github.com/${ghLogin})`
+          : (gitAuthor?.name ?? '_(unknown)_')
+
+        const longestBacktickRun = Math.max(
+          0,
+          ...[...message.matchAll(/`+/g)].map((m) => m[0].length)
+        )
+        const fence = '`'.repeat(Math.max(3, longestBacktickRun + 1))
+
+        const replyResults = await Promise.allSettled(
+          urls
+            .map((url) => new URL(url))
+            .map((url) => ({
+              url,
+              owner: url.pathname.split('/').at(1),
+              repo: url.pathname.split('/').at(2),
+              prNumber: Number(url.pathname.split('/').at(-1)),
+              commentId: Number(url.hash.replace('#discussion_r', '')),
+            }))
+            .map(async ({ url, owner, repo, prNumber, commentId }) => {
+              core.info(`Posting reply to ${url.toString()}`)
+              return octokit.rest.pulls.createReplyForReviewComment({
+                owner,
+                repo,
+                pull_number: prNumber,
+                comment_id: commentId,
+                body: `Referenced in ${sha} by ${authorMarkdown}:\n\n${fence}\n${message}\n${fence}`,
+              })
             })
-          })
-      )
+        )
+
+        replyResults.forEach((result, index) => {
+          if (result.status === 'rejected') {
+            core.warning(
+              `Failed to post reply to ${urls[index]}: ${result.reason}`
+            )
+          }
+        })
+      }
     })
   )
+
+  commitResults.forEach((result, index) => {
+    if (result.status === 'rejected') {
+      core.warning(
+        `Failed to process commit ${commits[index].sha}: ${result.reason}`
+      )
+    }
+  })
 }

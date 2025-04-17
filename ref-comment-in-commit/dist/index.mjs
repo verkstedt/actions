@@ -28976,10 +28976,11 @@ __webpack_unused_export__ = defaultContentType
 __nccwpck_require__.d(__webpack_exports__, {
   Yz: () => (/* binding */ core_debug),
   V4: () => (/* binding */ getInput),
-  pq: () => (/* binding */ info)
+  pq: () => (/* binding */ info),
+  $e: () => (/* binding */ warning)
 });
 
-// UNUSED EXPORTS: ExitCode, addPath, endGroup, error, exportVariable, getBooleanInput, getIDToken, getMultilineInput, getState, group, isDebug, markdownSummary, notice, platform, saveState, setCommandEcho, setFailed, setOutput, setSecret, startGroup, summary, toPlatformPath, toPosixPath, toWin32Path, warning
+// UNUSED EXPORTS: ExitCode, addPath, endGroup, error, exportVariable, getBooleanInput, getIDToken, getMultilineInput, getState, group, isDebug, markdownSummary, notice, platform, saveState, setCommandEcho, setFailed, setOutput, setSecret, startGroup, summary, toPlatformPath, toPosixPath, toWin32Path
 
 // EXTERNAL MODULE: external "os"
 var external_os_ = __nccwpck_require__(857);
@@ -31824,7 +31825,7 @@ function error(message, properties = {}) {
  * @param properties optional properties to add to the annotation.
  */
 function warning(message, properties = {}) {
-    issueCommand('warning', toCommandProperties(properties), message instanceof Error ? message.toString() : message);
+    command_issueCommand('warning', utils_toCommandProperties(properties), message instanceof Error ? message.toString() : message);
 }
 /**
  * Adds a notice issue
@@ -36098,8 +36099,12 @@ if (!commits?.length) {
   _actions_core__WEBPACK_IMPORTED_MODULE_0__/* .info */ .pq('No commits found')
 } else {
   _actions_core__WEBPACK_IMPORTED_MODULE_0__/* .info */ .pq(`Commits: ${commits.length}`)
-  await Promise.all(
-    commits.map(async ({ sha, commit: { message } }) => {
+  const commitResults = await Promise.allSettled(
+    commits.map(async (commitItem) => {
+      const {
+        sha,
+        commit: { message, author: gitAuthor },
+      } = commitItem
       _actions_core__WEBPACK_IMPORTED_MODULE_0__/* .debug */ .Yz(`Commit message:${`\n${message}`.replace('\n', '\n\t')}`)
 
       const urls =
@@ -36109,29 +36114,59 @@ if (!commits?.length) {
 
       _actions_core__WEBPACK_IMPORTED_MODULE_0__/* .debug */ .Yz(`Discussion URLs: ${urls.length}`)
 
-      await Promise.all(
-        urls
-          .map((url) => new URL(url))
-          .map((url) => ({
-            url,
-            owner: url.pathname.split('/').at(1),
-            repo: url.pathname.split('/').at(2),
-            prNumber: Number(url.pathname.split('/').at(-1)),
-            commentId: Number(url.hash.replace('#discussion_r', '')),
-          }))
-          .map(async ({ url, owner, repo, prNumber, commentId }) => {
-            _actions_core__WEBPACK_IMPORTED_MODULE_0__/* .info */ .pq(`Posting reply to ${url.toString()}`)
-            return octokit.rest.pulls.createReplyForReviewComment({
-              owner,
-              repo,
-              pull_number: prNumber,
-              comment_id: commentId,
-              body: `Referenced in ${sha}`,
+      if (urls.length > 0) {
+        const ghLogin = commitItem.author?.login ?? gitAuthor?.username
+        const authorMarkdown = ghLogin
+          ? // Link, not `@mention`, to avoid notifying the author each reference.
+            `[@${ghLogin}](https://github.com/${ghLogin})`
+          : (gitAuthor?.name ?? '_(unknown)_')
+
+        const longestBacktickRun = Math.max(
+          0,
+          ...[...message.matchAll(/`+/g)].map((m) => m[0].length)
+        )
+        const fence = '`'.repeat(Math.max(3, longestBacktickRun + 1))
+
+        const replyResults = await Promise.allSettled(
+          urls
+            .map((url) => new URL(url))
+            .map((url) => ({
+              url,
+              owner: url.pathname.split('/').at(1),
+              repo: url.pathname.split('/').at(2),
+              prNumber: Number(url.pathname.split('/').at(-1)),
+              commentId: Number(url.hash.replace('#discussion_r', '')),
+            }))
+            .map(async ({ url, owner, repo, prNumber, commentId }) => {
+              _actions_core__WEBPACK_IMPORTED_MODULE_0__/* .info */ .pq(`Posting reply to ${url.toString()}`)
+              return octokit.rest.pulls.createReplyForReviewComment({
+                owner,
+                repo,
+                pull_number: prNumber,
+                comment_id: commentId,
+                body: `Referenced in ${sha} by ${authorMarkdown}:\n\n${fence}\n${message}\n${fence}`,
+              })
             })
-          })
-      )
+        )
+
+        replyResults.forEach((result, index) => {
+          if (result.status === 'rejected') {
+            _actions_core__WEBPACK_IMPORTED_MODULE_0__/* .warning */ .$e(
+              `Failed to post reply to ${urls[index]}: ${result.reason}`
+            )
+          }
+        })
+      }
     })
   )
+
+  commitResults.forEach((result, index) => {
+    if (result.status === 'rejected') {
+      _actions_core__WEBPACK_IMPORTED_MODULE_0__/* .warning */ .$e(
+        `Failed to process commit ${commits[index].sha}: ${result.reason}`
+      )
+    }
+  })
 }
 
 __webpack_async_result__();
