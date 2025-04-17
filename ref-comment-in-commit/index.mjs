@@ -45,7 +45,7 @@ if (!commits?.length) {
 } else {
   core.info(`Commits: ${commits.length}`)
   await Promise.all(
-    commits.map(async ({ sha, commit: { message, author } }) => {
+    commits.map(async ({ sha, commit: { message } }) => {
       core.debug(`Commit message:${`\n${message}`.replace('\n', '\n\t')}`)
 
       const urls =
@@ -55,36 +55,27 @@ if (!commits?.length) {
 
       core.debug(`Discussion URLs: ${urls.length}`)
 
-      if (urls.length > 0) {
-        core.debug('Getting author info')
-        const { data: authorUser } = await octokit.rest.users.getByEmail({
-          email: author.email,
-        })
-
-        const authorMarkdown = authorUser ? `@${author.name}` : author.name
-
-        await Promise.all(
-          urls
-            .map((url) => new URL(url))
-            .map((url) => ({
-              url,
-              owner: url.pathname.split('/').at(1),
-              repo: url.pathname.split('/').at(2),
-              prNumber: Number(url.pathname.split('/').at(-1)),
-              commentId: Number(url.hash.replace('#discussion_r', '')),
-            }))
-            .map(async ({ url, owner, repo, prNumber, commentId }) => {
-              core.info(`Posting reply to ${url.toString()}`)
-              octokit.rest.pulls.createReplyForReviewComment({
-                owner,
-                repo,
-                pull_number: prNumber,
-                comment_id: commentId,
-                body: `Referenced in ${sha} by ${authorMarkdown}:\n\n\`\`\`\n${message}\n\`\`\``,
-              })
+      await Promise.all(
+        urls
+          .map((url) => new URL(url))
+          .map((url) => ({
+            url,
+            owner: url.pathname.split('/').at(1),
+            repo: url.pathname.split('/').at(2),
+            prNumber: Number(url.pathname.split('/').at(-1)),
+            commentId: Number(url.hash.replace('#discussion_r', '')),
+          }))
+          .map(async ({ url, owner, repo, prNumber, commentId }) => {
+            core.info(`Posting reply to ${url.toString()}`)
+            octokit.rest.pulls.createReplyForReviewComment({
+              owner,
+              repo,
+              pull_number: prNumber,
+              comment_id: commentId,
+              body: `Referenced in ${sha}`,
             })
-        )
-      }
+          })
+      )
     })
   )
 }
