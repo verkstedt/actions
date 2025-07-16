@@ -1,0 +1,415 @@
+name: Reusable Build and Push Docker Image
+on:
+  workflow_call:
+    inputs:
+      # Build configuration
+      context:
+        description: "Docker build context path"
+        type: string
+        default: "."
+      dockerfile:
+        description: "Path to Dockerfile"
+        type: string
+        default: "Dockerfile"
+      platforms:
+        description: "Platforms to build for (comma-separated)"
+        type: string
+        default: "linux/amd64, linux/arm64"
+      
+      # Push destinations
+      push_to_github:
+        description: "Push to GitHub Container Registry"
+        type: boolean
+        default: true
+      push_to_ecr:
+        description: "Push to Amazon ECR"
+        type: boolean
+        default: false
+      push_to_google:
+        description: "Push to Google Artifact Registry"
+        type: boolean
+        default: false
+      
+      # ECR configuration
+      aws_region:
+        description: "AWS region for ECR"
+        type: string
+        default: "us-east-1"
+      role_to_assume:
+        description: "AWS IAM role to assume"
+        type: string
+        default: ""
+      ecr_registry:
+        description: "ECR registry URL"
+        type: string
+        default: ""
+      ecr_repository:
+        description: "ECR repository name, defaults to GitHub repository name"
+        type: string
+        default: ""
+      ecr_default_tag:
+        description: "Default tag to use for main branch in ECR"
+        type: string
+        default: "latest"
+      
+      # Google Artifact Registry configuration
+      google_registry:
+        description: "Google Artifact Registry URL"
+        type: string
+        default: "europe-west3-docker.pkg.dev"
+      google_repository:
+        description: "Google Artifact Registry repository path"
+        type: string
+        default: ""
+      
+    outputs:
+      image:
+        value: ${{ jobs.docker_build.outputs.image }}
+      short_sha:
+        value: ${{ jobs.docker_build.outputs.short_sha }}
+      commit_timestamp:
+        value: ${{ jobs.docker_build.outputs.commit_timestamp }}
+      github_tags:
+        value: ${{ jobs.docker_build.outputs.github_tags }}
+      ecr_repository:
+        value: ${{ jobs.push_ecr.outputs.ecr_repository }}
+      ecr_pushed_tags:
+        value: ${{ jobs.push_ecr.outputs.pushed_tags }}
+
+jobs:
+  docker_build:
+    runs-on: ubuntu-latest
+
+    permissions:
+      checks: write
+      contents: read
+      packages: write
+
+    outputs:
+      short_sha: ${{ steps.commit_details.outputs.short_sha }}
+      commit_timestamp: ${{ steps.commit_details.outputs.commit_timestamp }}
+      image: ${{ steps.docker_tags.outputs.image }}
+      github_tags: ${{ steps.docker_tags.outputs.tags }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Get Commit Details
+        id: commit_details
+        run: |
+          echo "short_sha=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+          echo "commit_timestamp=$(git show -s --format=%cd --date=format:%Y%m%d%H%M%S HEAD)" >> $GITHUB_OUTPUT
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GitHub Container Registry
+        if: ${{ inputs.push_to_github }}
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Determine Docker Tags
+        id: docker_tags
+        env:
+          GITHUB_REF: ${{ github.ref }}
+        run: |
+          REPO_LOWER=$(echo ${GITHUB_REPOSITORY} | tr '[:upper:]' '[:lower:]')
+          IMAGE_BASE="ghcr.io/${REPO_LOWER}"
+          echo "image_base=${IMAGE_BASE}" >> $GITHUB_OUTPUT
+
+          IMAGE="${IMAGE_BASE}:${{ steps.commit_details.outputs.short_sha }}"
+          echo "image=$IMAGE" >> $GITHUB_OUTPUT
+          TAGS="${IMAGE}"
+          TAGS="$TAGS,${IMAGE_BASE}:${{ steps.commit_details.outputs.commit_timestamp }}"
+          if [[ "$GITHUB_REF" == "refs/heads/main" ]]; then
+            TAGS="$TAGS,${IMAGE_BASE}:latest"
+          fi
+          echo "tags=$TAGS" >> $GITHUB_OUTPUT
+
+      - name: Build and Push to GitHub Registry
+        uses: docker/build-push-action@v6
+        env:
+          COMMIT_TIMESTAMP: ${{ steps.commit_details.outputs.commit_timestamp }}
+          SHORT_SHA: ${{ steps.commit_details.outputs.short_sha }}
+          TAGS: "${{ steps.docker_tags.outputs.tags }}"
+        with:
+          context: ${{ inputs.context }}
+          file: ${{ inputs.dockerfile }}
+          platforms: ${{ inputs.platforms }}
+          tags: |
+            ${{ env.TAGS }}
+          push: ${{ inputs.push_to_github }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: GitHub Registry Summary
+        if: ${{ inputs.push_to_github }}
+        env:
+          COMMIT_TIMESTAMP: ${{ steps.commit_details.outputs.commit_timestamp }}
+          SHORT_SHA: ${{ steps.commit_details.outputs.short_sha }}
+          IMAGE_BASE: ${{ steps.docker_tags.outputs.image_base }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          PACKAGE_URL="https://github.com/${{ env.REPOSITORY }}/pkgs/container/$(echo ${{ env.REPOSITORY }} | cut -d'/' -f2)"
+
+          echo "### 📦 Docker Image - GitHub Registry" >> $GITHUB_STEP_SUMMARY
+          echo "The Docker image has been published to: [GitHub Package Registry]($PACKAGE_URL)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "#### Tags" >> $GITHUB_STEP_SUMMARY
+          echo "The following tags were created:" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Short SHA:" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          echo "${IMAGE_BASE}:${{ env.SHORT_SHA }}" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Timestamp:" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          echo "${IMAGE_BASE}:${{ env.COMMIT_TIMESTAMP }}" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          if [[ "$GITHUB_REF" == "refs/heads/main" ]]; then
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "Latest:" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            echo "${IMAGE_BASE}:latest" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+          fi
+
+  push_ecr:
+    if: ${{ inputs.push_to_ecr }}
+    needs: docker_build
+    runs-on: ubuntu-latest
+    
+    permissions:
+      contents: read
+      packages: read
+      id-token: write
+
+    outputs:
+      ecr_repository: ${{ steps.repo.outputs.full_path }}
+      pushed_tags: ${{ steps.push.outputs.pushed_tags }}
+
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ${{ inputs.aws_region }}
+          role-to-assume: ${{ inputs.role_to_assume }}
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: Login to ECR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ inputs.ecr_registry }}
+
+      - name: Set repository name
+        id: repo
+        run: |
+          if [[ -z "${{ inputs.ecr_repository }}" ]]; then
+            # Extract repository name from github.repository
+            REPO_NAME=$(echo "${{ github.repository }}" | cut -d '/' -f 2)
+            echo "name=$REPO_NAME" >> $GITHUB_OUTPUT
+          else
+            echo "name=${{ inputs.ecr_repository }}" >> $GITHUB_OUTPUT
+          fi
+          
+          FULL_PATH="${{ inputs.ecr_registry }}/$REPO_NAME"
+          echo "full_path=$FULL_PATH" >> $GITHUB_OUTPUT
+          echo "Repository will be: $FULL_PATH"
+
+      - name: Verify source image exists
+        run: |
+          echo "Verifying source image: ${{ needs.docker_build.outputs.image }}"
+          docker buildx imagetools inspect ${{ needs.docker_build.outputs.image }}
+
+      - name: Push image to ECR
+        id: push
+        env:
+          GITHUB_REF: ${{ github.ref }}
+          REPO_PATH: ${{ steps.repo.outputs.full_path }}
+          SOURCE_IMAGE: ${{ needs.docker_build.outputs.image }}
+          SHORT_SHA: ${{ needs.docker_build.outputs.short_sha }}
+          COMMIT_TIMESTAMP: ${{ needs.docker_build.outputs.commit_timestamp }}
+        run: |
+          PUSHED_TAGS=""
+          
+          # Push with commit-based tags
+          echo "Pushing short SHA tag: $SHORT_SHA"
+          docker buildx imagetools create \
+            --tag ${REPO_PATH}:${SHORT_SHA} \
+            ${SOURCE_IMAGE}
+          PUSHED_TAGS="$SHORT_SHA"
+          echo "✅ Successfully pushed: ${REPO_PATH}:${SHORT_SHA}"
+          
+          echo "Pushing timestamp tag: $COMMIT_TIMESTAMP"
+          docker buildx imagetools create \
+            --tag ${REPO_PATH}:${COMMIT_TIMESTAMP} \
+            ${SOURCE_IMAGE}
+          PUSHED_TAGS="$PUSHED_TAGS,$COMMIT_TIMESTAMP"
+          echo "✅ Successfully pushed: ${REPO_PATH}:${COMMIT_TIMESTAMP}"
+
+          # Push with default tag if on main branch
+          if [[ "$GITHUB_REF" == "refs/heads/main" ]]; then
+            echo "On main branch, pushing default tag: ${{ inputs.ecr_default_tag }}"
+            docker buildx imagetools create \
+              --tag ${REPO_PATH}:${{ inputs.ecr_default_tag }} \
+              ${SOURCE_IMAGE}
+            PUSHED_TAGS="$PUSHED_TAGS,${{ inputs.ecr_default_tag }}"
+            echo "✅ Successfully pushed: ${REPO_PATH}:${{ inputs.ecr_default_tag }}"
+          fi
+          
+          echo "pushed_tags=$PUSHED_TAGS" >> $GITHUB_OUTPUT
+
+      - name: ECR Upload Summary
+        env:
+          REPO_PATH: ${{ steps.repo.outputs.full_path }}
+          PUSHED_TAGS: ${{ steps.push.outputs.pushed_tags }}
+          AWS_REGION: ${{ inputs.aws_region }}
+          SOURCE_IMAGE: ${{ needs.docker_build.outputs.image }}
+        run: |
+          ECR_CONSOLE_URL="https://${{ env.AWS_REGION }}.console.aws.amazon.com/ecr/repositories/private/${{ steps.repo.outputs.name }}"
+          
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 🚀 ECR Upload Complete" >> $GITHUB_STEP_SUMMARY
+          echo "Successfully uploaded Docker image to Amazon ECR!" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          echo "#### Source Image" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          echo "${{ env.SOURCE_IMAGE }}" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          echo "#### ECR Repository" >> $GITHUB_STEP_SUMMARY
+          echo "[View in AWS Console]($ECR_CONSOLE_URL)" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          echo "${{ env.REPO_PATH }}" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          echo "#### Pushed Tags" >> $GITHUB_STEP_SUMMARY
+          for TAG in $(echo $PUSHED_TAGS | tr ',' '\n'); do
+            if [[ -n "$TAG" ]]; then
+              echo "- \`${REPO_PATH}:${TAG}\`" >> $GITHUB_STEP_SUMMARY
+            fi
+          done
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          echo "#### Pull Commands" >> $GITHUB_STEP_SUMMARY
+          echo "To pull this image:" >> $GITHUB_STEP_SUMMARY
+          echo '```bash' >> $GITHUB_STEP_SUMMARY
+          echo "aws ecr get-login-password --region ${{ env.AWS_REGION }} | docker login --username AWS --password-stdin ${{ inputs.ecr_registry }}" >> $GITHUB_STEP_SUMMARY
+          echo "docker pull ${REPO_PATH}:$(echo $PUSHED_TAGS | cut -d',' -f1)" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+
+  push_google:
+    if: ${{ inputs.push_to_google && vars.ENABLE_GCP_PUSH == 'true' }}
+    needs: docker_build
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      packages: read
+      id-token: write
+
+    env:
+      GOOGLE_REPOSITORY: ${{ inputs.google_repository || vars.GOOGLE_ARTIFACT_REGISTRY_REPOSITORY }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Authenticate to Google Cloud
+        id: google_auth
+        uses: google-github-actions/auth@v2
+        with:
+          token_format: access_token
+          project_id: ${{ secrets.GOOGLE_PROJECT_ID }}
+          workload_identity_provider: ${{ secrets.GOOGLE_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GOOGLE_SERVICE_ACCOUNT }}
+
+      - name: Login to Google Artifact Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ inputs.google_registry }}
+          username: oauth2accesstoken
+          password: ${{ steps.google_auth.outputs.access_token }}
+
+      - name: Push images to Google Artifact Registry
+        env:
+          SHORT_SHA: ${{ needs.docker_build.outputs.short_sha }}
+          COMMIT_TIMESTAMP: ${{ needs.docker_build.outputs.commit_timestamp }}
+          SOURCE_IMAGE: ${{ needs.docker_build.outputs.image }}
+          GITHUB_REF: ${{ github.ref }}
+        run: |
+          PUSHED_TAGS=""
+          
+          # Push short SHA tag
+          echo "Pushing short SHA tag: $SHORT_SHA"
+          docker buildx imagetools create \
+            --tag ${{ env.GOOGLE_REPOSITORY }}:${SHORT_SHA} \
+            ${SOURCE_IMAGE}
+          PUSHED_TAGS="$SHORT_SHA"
+          echo "✅ Successfully pushed: ${{ env.GOOGLE_REPOSITORY }}:${SHORT_SHA}"
+          
+          # Push timestamp tag
+          echo "Pushing timestamp tag: $COMMIT_TIMESTAMP"
+          docker buildx imagetools create \
+            --tag ${{ env.GOOGLE_REPOSITORY }}:${COMMIT_TIMESTAMP} \
+            ${SOURCE_IMAGE}
+          PUSHED_TAGS="$PUSHED_TAGS,$COMMIT_TIMESTAMP"
+          echo "✅ Successfully pushed: ${{ env.GOOGLE_REPOSITORY }}:${COMMIT_TIMESTAMP}"
+          
+          # Push latest tag if on main branch
+          if [[ "$GITHUB_REF" == "refs/heads/main" ]]; then
+            echo "On main branch, pushing latest tag"
+            docker buildx imagetools create \
+              --tag ${{ env.GOOGLE_REPOSITORY }}:latest \
+              ${SOURCE_IMAGE}
+            PUSHED_TAGS="$PUSHED_TAGS,latest"
+            echo "✅ Successfully pushed: ${{ env.GOOGLE_REPOSITORY }}:latest"
+          fi
+          
+          echo "pushed_tags=$PUSHED_TAGS" >> $GITHUB_OUTPUT
+
+      - name: Google Registry Summary
+        env:
+          GOOGLE_REPOSITORY: ${{ env.GOOGLE_REPOSITORY }}
+          SOURCE_IMAGE: ${{ needs.docker_build.outputs.image }}
+        run: |
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 🌐 Google Artifact Registry Upload Complete" >> $GITHUB_STEP_SUMMARY
+          echo "Successfully uploaded Docker image to Google Artifact Registry!" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          echo "#### Source Image" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          echo "${{ env.SOURCE_IMAGE }}" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          echo "#### Google Repository" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          echo "${{ env.GOOGLE_REPOSITORY }}" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY 
