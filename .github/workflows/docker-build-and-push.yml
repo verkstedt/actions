@@ -62,6 +62,12 @@ on:
         type: string
         default: ""
       
+      # Build arguments
+      build_args:
+        description: "Build arguments for Docker build (multiline string)"
+        type: string
+        default: ""
+      
     outputs:
       image:
         value: ${{ jobs.docker_build.outputs.image }}
@@ -148,6 +154,7 @@ jobs:
           push: ${{ inputs.push_to_github }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+          build-args: ${{ inputs.build_args }}
 
       - name: GitHub Registry Summary
         if: ${{ inputs.push_to_github }}
