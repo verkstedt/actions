@@ -154,7 +154,8 @@ jobs:
           push: ${{ inputs.push_to_github }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-          build-args: ${{ inputs.build_args }}
+          build-args: |
+            ${{ secrets.build_args }}
 
       - name: GitHub Registry Summary
         if: ${{ inputs.push_to_github }}
