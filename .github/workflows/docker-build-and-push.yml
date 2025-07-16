@@ -1,6 +1,9 @@
 name: Reusable Build and Push Docker Image
 on:
   workflow_call:
+    secrets:
+      build_args:
+        description: "Build arguments for Docker build (multiline string)"
     inputs:
       # Build configuration
       context:
@@ -59,12 +62,6 @@ on:
         default: "europe-west3-docker.pkg.dev"
       google_repository:
         description: "Google Artifact Registry repository path"
-        type: string
-        default: ""
-      
-      # Build arguments
-      build_args:
-        description: "Build arguments for Docker build (multiline string)"
         type: string
         default: ""
       
