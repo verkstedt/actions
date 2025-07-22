@@ -178,7 +178,7 @@ When a GH commit URL is included in commit message, link the commit from said co
 Template:
 <https://github.com/verkstedt/.github/tree/main/workflow-templates/docker-build-push.yaml>
 
-Build docker image and push to registries. When version change is detected, also create git tag.
+Build Docker image and push it to the registries. When a version change is detected, also create a git tag.
 
 See [docker-build-push.yaml](./.github/workflows/docker-build-push.yaml) for details.
 
