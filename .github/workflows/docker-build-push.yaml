@@ -391,10 +391,10 @@ jobs:
           then
             # Extract repository name from github.repository
             REPO_NAME=$(echo "${GITHUB_REPOSITORY}" | cut -d '/' -f 2)
-            echo "name=$REPO_NAME" >> "$GITHUB_OUTPUT"
           else
-            echo "name=${AMAZON_ECR_REPOSITORY}" >> "$GITHUB_OUTPUT"
+            REPO_NAME="${AMAZON_ECR_REPOSITORY}"
           fi
+          echo "name=$REPO_NAME" >> "$GITHUB_OUTPUT"
 
           FULL_PATH="${AMAZON_ECR_REGISTRY}/$REPO_NAME"
           echo "full_path=$FULL_PATH" >> "$GITHUB_OUTPUT"
