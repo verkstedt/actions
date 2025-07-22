@@ -237,8 +237,6 @@ jobs:
           context: ${{ inputs.context }}
           file: ${{ inputs.dockerfile }}
           platforms: ${{ inputs.platforms }}
-          tags: |
-            ${{ steps.names.outputs.main_tag }}
           build-args: |
             ${{ secrets.BUILD_ARGS }}
 
