@@ -97,6 +97,11 @@ on:
         type: string
         default: ''
 
+    outputs:
+      version_change:
+        description: 'Whether the version has changed'
+        value: ${{ jobs.push_github.outputs.version_change }}
+
 jobs:
   push_github:
     name: 'Push to GHCR (GitHub Container Registry)'
