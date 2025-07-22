@@ -312,7 +312,7 @@ jobs:
         run: |
           if [ -n "${{ secrets.build_env }}" ]
           then
-            echo "WARNING: build_env secret is deprecated, use env_vars instead." 1>&2
+            echo "::warning::build_env secret is deprecated, use env_vars instead."
             echo "${{ secrets.build_env }}" >> "$GITHUB_ENV"
           fi
 

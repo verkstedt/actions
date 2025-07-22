@@ -14,25 +14,25 @@ jobs:
 
           if [ -z "${{ vars.JIRA_DOMAIN }}" ]
           then
-            echo "ERROR: Missing var JIRA_DOMAIN. Set it to the origin you are accessing jira on, e.g. https://example.atlassian.net. It’s a good idea to set it on organisation level." 1>&2
+            echo "::error::Missing var JIRA_DOMAIN. Set it to the origin you are accessing jira on, e.g. https://example.atlassian.net. It’s a good idea to set it on organisation level."
             exit_code=78
           fi
 
           if [ -z "${{ vars.JIRA_USER }}" ]
           then
-            echo "ERROR: Missing var JIRA_USER. E-mail address of user to run this automation as. It’s a good idea to set it on organisation level." 1>&2
+            echo "::error::Missing var JIRA_USER. E-mail address of user to run this automation as. It’s a good idea to set it on organisation level."
             exit_code=78
           fi
 
           if [ -z "${{ secrets.JIRA_API_TOKEN }}" ]
           then
-            echo "ERROR: Missing secret JIRA_API_TOKEN. Generate one at https://id.atlassian.com/manage-profile/security/api-tokens . It’s a good idea to set it on organisation level." 1>&2
+            echo "::error::Missing secret JIRA_API_TOKEN. Generate one at https://id.atlassian.com/manage-profile/security/api-tokens . It’s a good idea to set it on organisation level."
             exit_code=78
           fi
 
           if [ -z "${{ vars.JIRA_STATUS_PR_DRAFT}}${{ vars.JIRA_STATUS_PR_READY }}${{ vars.JIRA_STATUS_PR_MERGED }}" ]
           then
-            echo "ERROR: Missing var JIRA_STATUS_PR_DRAFT, JIRA_STATUS_PR_READY or JIRA_STATUS_PR_MERGED. Set any of them to the status names you want to transition issues to when PRs are in draft, ready or merged state. It’s a good idea to set them on organisation level." 1>&2
+            echo "::error::Missing var JIRA_STATUS_PR_DRAFT, JIRA_STATUS_PR_READY or JIRA_STATUS_PR_MERGED. Set any of them to the status names you want to transition issues to when PRs are in draft, ready or merged state. It’s a good idea to set them on organisation level."
             exit_code=78
           fi
 

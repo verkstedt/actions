@@ -25,7 +25,7 @@ jobs:
           if [ -z "${{ secrets.CHROMATIC_PROJECT_TOKEN }}" ]
           then
             # shellcheck disable=SC1111
-            echo "ERROR Missing secret CHROMATIC_PROJECT_TOKEN. You can get it https://www.chromatic.com/start, then open your project and go to “Manage” → “Configure”." 1>&2
+            echo "::error::Missing secret CHROMATIC_PROJECT_TOKEN. You can get it https://www.chromatic.com/start, then open your project and go to “Manage” → “Configure”."
             exit_code=78
           fi
 

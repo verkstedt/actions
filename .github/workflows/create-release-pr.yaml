@@ -50,7 +50,7 @@ jobs:
           # Check if tag exists
           if ! git ls-remote --tags origin "$OLD_VERSION_GIT_TAG" &>/dev/null
           then
-            echo "ERROR: Previous version tag $OLD_VERSION_GIT_TAG not found." 2>&1
+            echo "::error::Previous version tag $OLD_VERSION_GIT_TAG not found." 2>&1
             exit 65 # EX_DATAERR
           fi
           echo "old_version_git_tag=$OLD_VERSION_GIT_TAG" | tee -a "$GITHUB_OUTPUT"
