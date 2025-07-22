@@ -31,13 +31,13 @@ jobs:
           if [ -z "${{ secrets.SLACK_BOT_TOKEN }}" ]
           then
             # shellcheck disable=SC1111
-            echo "::error::Missing secret SLACK_BOT_TOKEN. Go to https://api.slack.com/apps/, create a bot, go to “OAuth & Permissions”. Add chate:write permission and grab a token."
+            echo "ERROR: Missing secret SLACK_BOT_TOKEN. Go to https://api.slack.com/apps/, create a bot, go to “OAuth & Permissions”. Add chate:write permission and grab a token." 1>&2
             exit_code=78
           fi
 
           if [ -z "${{ vars.SLACK_CHANNEL_ID }}" ]
           then
-            echo "::error::Missing var SLACK_CHANNEL_ID. This is _not_ a channel name. You can grab the ID from page URL."
+            echo "ERROR: Missing var SLACK_CHANNEL_ID. This is _not_ a channel name. You can grab the ID from page URL." 1>&2
             exit_code=78
           fi
 
