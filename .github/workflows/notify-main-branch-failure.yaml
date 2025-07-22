@@ -31,7 +31,7 @@ jobs:
           if [ -z "${{ secrets.SLACK_BOT_TOKEN }}" ]
           then
             # shellcheck disable=SC1111
-            echo "ERROR: Missing secret SLACK_BOT_TOKEN. Go to https://api.slack.com/apps/, create a bot, go to “OAuth & Permissions”. Add chate:write permission and grab a token." 1>&2
+            echo "ERROR: Missing secret SLACK_BOT_TOKEN. Go to https://api.slack.com/apps/, create a bot, go to “OAuth & Permissions”. Add chat:write permission and grab a token." 1>&2
             exit_code=78
           fi
 
