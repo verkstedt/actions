@@ -190,6 +190,7 @@ Template:
 Create a PR that bumps up the version.
 
 See [create-release-pr.yaml](./.github/workflows/create-release-pr.yaml) for details.
+
 ## Deploying new versions of actions and workflows
 
 You might have noticed that main branch in this repository is called
