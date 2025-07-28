@@ -166,33 +166,39 @@ jobs:
             const releaseNotes = ${{ toJson(steps.release_notes.outputs.content) }};
 
             const newSectionContent = [
-              `## ${newVersion}`,
+              `## ${newVersion} <a id="user-content-${newVersion}" href="#user-content-${newVersion}">🔗</a>`,
               '',
-              releaseNotes,
-              ''
+              releaseNotes.trim(),
             ].join('\n');
 
-            let oldContent = '';
+            let oldContent = ''
             try {
               oldContent = fs.readFileSync('CHANGELOG.md', 'utf8');
-            } catch (error) {
+            } catch {
               // File doesn't exist, will create new one
             }
 
             const lines = oldContent.split('\n');
             const headerLineIndex = lines.findIndex(line => line.match(/^# Changelog/));
 
-            let before = ''
-            let after = ''
+            let before = '';
+            let after = '';
             if (headerLineIndex === -1) {
               before = '# Changelog';
-              after = oldContent
+              after = oldContent;
             } else {
-              before = lines.slice(0, headerLineIndex + 1).join('\n')
-              after = lines.slice(headerLineIndex + 1).join('\n')
+              before = lines.slice(0, headerLineIndex + 1).join('\n');
+              after = lines.slice(headerLineIndex + 1).join('\n');
             }
 
-            const newContent = `${before.trim()}\n\n${newSectionContent}\n\n${after.trim()}`;
+            const newContent = [
+              before,
+              newSectionContent,
+              after,
+            ]
+              .map(section => section.trim())
+              .join('\n\n')
+              .trim() + '\n';
 
             fs.writeFileSync('CHANGELOG.md', newContent);
 
