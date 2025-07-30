@@ -61,16 +61,20 @@ jobs:
             core.setOutput('source_tag', shortSha);
 
             // Extract version without 'v' prefix
-            const version = release.data.tag_name.replace('v', '');
+            const version = release.data.tag_name.replace(/^v/, '');
+            const isPreRelease = version.includes('-');
 
             // Create semantic version parts
-            const [major, minor, patch] = version.split('.');
+            const [major, minor] = version.split('.');
             const versionTags = [
-              release.data.tag_name,         // Original tag (vX.Y.Z)
-              version,                  // X.Y.Z
+              release.data.tag_name,    // Original tag (vX.Y.Z[-pre][+build])
+              version,                  // X.Y.Z[-pre][+build]
               `${major}.${minor}`,      // X.Y
               major                     // X
             ];
+            if (!isPreRelease) {
+              versionTags.push('latest')
+            }
 
             core.setOutput('version_tags', versionTags.join(','));
 
@@ -107,7 +111,6 @@ jobs:
 
     env:
       GOOGLE_ARTIFACT_REGISTRY_REPOSITORY: ${{ vars.GOOGLE_ARTIFACT_REGISTRY_REPOSITORY }}
-      GOOGLE_ARTIFACT_REGISTRY_DEFAULT_TAG: ${{ vars.GOOGLE_ARTIFACT_REGISTRY_DEFAULT_TAG }}
 
     steps:
       - name: Checkout
