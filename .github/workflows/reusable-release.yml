@@ -3,12 +3,12 @@ on:
   workflow_call:
     inputs:
       version:
-        description: "Version number (e.g., 1.0.0). If empty, will auto-increment patch version."
+        description: 'Version number (e.g., 1.0.0). If empty, will auto-increment patch version.'
         required: false
         type: string
     outputs:
       version:
-        description: "The version that was released"
+        description: 'The version that was released'
         value: ${{ jobs.release.outputs.version }}
 
 jobs:
@@ -48,11 +48,11 @@ jobs:
                 owner: context.repo.owner,
                 repo: context.repo.repo
               });
-            
+
               // Remove 'v' prefix if present
               const currentVersion = latestRelease.tag_name.replace('v', '');
               const [major, minor, patch] = currentVersion.split('.').map(Number);
-            
+
               // Increment patch version
               const nextVersion = `${major}.${minor + 1}.0`;
               core.setOutput('version', nextVersion);
