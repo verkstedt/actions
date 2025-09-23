@@ -244,16 +244,11 @@ jobs:
               core.setOutput('browsers', Array.from(browsers).join(' '));
             }
 
-      - name: Install browsers system dependencies
+      - name: Install browsers (with system deps)
         if: steps.browsers.outputs.browsers != ''
+        working-directory: ${{ inputs.working-directory }}
         run: |
-          npx playwright install-deps ${{ steps.browsers.outputs.browsers }}
-
-      - name: Install browsers
-        if: steps.browsers.outputs.browsers != ''
-        run: |
-          npx playwright install ${{ steps.browsers.outputs.browsers }}
-
+          npx playwright install --with-deps ${{ steps.browsers.outputs.browsers }}
       - name: Test units
         working-directory: ${{ inputs.working-directory }}
         run: npm run test:unit
