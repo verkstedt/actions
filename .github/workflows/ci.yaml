@@ -218,6 +218,42 @@ jobs:
           working-directory: ${{ inputs.working-directory }}
           github-npm-registry-personal-access-token: ${{ secrets.GH_NPM_REGISTRY_PERSONAL_ACCESS_TOKEN }}
 
+      - name: Check if we need to install browsers
+        id: browsers
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { existsSync } = require('fs');
+            const fileName = [
+              './vitest.config.ts',
+              './vitest.config.js',
+            ].find(f => existsSync(f));
+
+            if (fileName) {
+              let vitestConfig = require(fileName);
+              vitestConfig = vitestConfig?.default || vitestConfig;
+              const browsers = new Set(
+                vitestConfig.test?.projects
+                  ?.filter(proj => proj.test?.browser?.enabled)
+                  .filter(proj => [undefined, 'playwright'].includes(proj.test?.browser?.provider))
+                  .flatMap(proj => proj.test?.browser?.instances ?? [{ browser: 'chromium' }])
+                  .filter(Boolean)
+                  .map(instance => instance?.browser)
+              );
+              console.log('Needed browsers:', browsers);
+              core.setOutput('browsers', Array.from(browsers).join(' '));
+            }
+
+      - name: Install browsers system dependencies
+        if: steps.browsers.outputs.browsers != ''
+        run: |
+          npx playwright install-deps ${{ steps.browsers.outputs.browsers }}
+
+      - name: Install browsers
+        if: steps.browsers.outputs.browsers != ''
+        run: |
+          npx playwright install ${{ steps.browsers.outputs.browsers }}
+
       - name: Test units
         working-directory: ${{ inputs.working-directory }}
         run: npm run test:unit
