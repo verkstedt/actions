@@ -1,13 +1,13 @@
-# Create Release PR
+# Create Release
 #
 # Template to use with this workflow:
-# https://github.com/verkstedt/.github/tree/main/workflow-templates/create-release-pr.yaml
+# https://github.com/verkstedt/.github/tree/main/workflow-templates/create-release.yaml
 #
-# Creates a release PR with:
-# - Bumped version in package.json (patch, minor, major, or prerelease)
-# - CHANGELOG.md containing release notes since last release
+# Pushes a commit that updates version data directly to the main branch.
+#
+# Requires GitHub token with persmissions to do that.
 
-name: Create Release PR
+name: Create Release
 
 on:
   workflow_call:
@@ -19,7 +19,7 @@ on:
 
 jobs:
   release:
-    name: 'Create Release PR'
+    name: 'Create Release'
     runs-on: ubuntu-latest
 
     permissions:

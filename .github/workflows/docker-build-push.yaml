@@ -5,12 +5,11 @@
 #
 # Build and push Docker images to multiple registries:
 # - GitHub Container Registry (GHCR)
-# - Amazon ECR (AWS Elastic Container Registry), if enabled
-# - Google Artifact Registry, if enabled
+# - Amazon ECR (AWS Elastic Container Registry)
+# - Google Artifact Registry
 #
 # Will tag all images with:
-# - date of the build (format: %Y%m%d%H%M%S)
-# - sha of the commit (`sha-<short_sha>`)
+# - sha of the commit (`git-<short_sha>`)
 #
 # If version change is detected:
 # - NO (meant for preview deployment)
@@ -20,8 +19,6 @@
 #   - if version is not prerelease also with:
 #     - `latest`
 #     - `v<major>` and `v<major>.<minor>`
-#   - create a git tag `v<new_version>`
-#   - register GitHub release
 
 name: Docker Build and Push
 on:
@@ -167,7 +164,7 @@ jobs:
           VERSION_CHANGE: ${{ steps.commit_details.outputs.version_change }}
           NEW_VERSION: ${{ steps.commit_details.outputs.new_version }}
         run: |
-          MAIN_TAG="sha-${SHORT_SHA}"
+          MAIN_TAG="git-${SHORT_SHA}"
           TAGS="$MAIN_TAG ${COMMIT_TIMESTAMP}"
           if [ "${VERSION_CHANGE}" = "false" ]
           then
@@ -277,79 +274,6 @@ jobs:
 
           ${{ steps.tags.outputs.tags_list_md }}
           EOF
-
-  create_git_tag:
-    name: 'Create Git Version Tag'
-    needs: push_github
-    if: ${{ needs.push_github.outputs.version_change == 'true' }}
-    runs-on: ubuntu-latest
-
-    permissions:
-      contents: write
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 1
-          token: ${{ secrets.TAG_PUSH_GITHUB_TOKEN }}
-
-      - name: 'Create git version tag'
-        id: tag
-        env:
-          NEW_VERSION: ${{ needs.push_github.outputs.new_version }}
-        run: |
-          git config --global user.name "github-actions[bot]"
-          git config --global user.email "github-actions[bot]@users.noreply.github.com"
-
-          TAG="v${NEW_VERSION}"
-          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
-
-          # Check if tag already exists locally or remotely
-          if git ls-remote --tags origin | grep -q "refs/tags/${TAG}$"
-          then
-            echo "Version tag '${TAG}' already exists." 1>&2
-            exit 65 # EX_DATAERR
-          fi
-
-          # Extract changes from CHANGELOG.md
-          CHANGES="$(
-            awk \
-              "/^## ${NEW_VERSION}$/,/^## .*$/{if(/^## ${NEW_VERSION}$/) next; if(/^## .*$/) exit; print}" \
-              CHANGELOG.md
-          )"
-          {
-            echo "changes<<EOF"
-            echo "$CHANGES"
-            echo "EOF"
-          } >> "$GITHUB_OUTPUT"
-
-          git tag "$TAG" --annotate -m "$TAG" -m "$CHANGES"
-          git push origin "$TAG"
-
-      - name: 'Create GitHub Release'
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const newVersion = ${{ toJson(needs.push_github.outputs.new_version) }};
-            const tagName = ${{ toJson(steps.tag.outputs.tag) }};
-            const changes = ${{ toJson(steps.tag.outputs.changes) }};
-
-            const isPrerelease = newVersion.includes('-');
-
-            await github.rest.repos.createRelease({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              tag_name: tagName,
-              name: tagName,
-              body: changes,
-              draft: false,
-              prerelease: isPrerelease,
-              // 'legacy' will compare sempantic versions
-              make_latest: isPrerelease ? 'false' : 'legacy',
-            });
-
-            console.log(`Created release ${tagName}`);
 
   push_amazon:
     name: 'Push to Amazon ECR (AWS Elastic Container Registry)'
