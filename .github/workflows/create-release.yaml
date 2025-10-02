@@ -16,6 +16,10 @@ on:
         description: 'Type of release (major, minor, patch, or prerelease)'
         type: string
         default: 'patch'
+      working-directory:
+        description: 'Working directory (where package.json is located)'
+        type: string
+        default: '.'
 
 jobs:
   release:
@@ -27,258 +31,131 @@ jobs:
       pull-requests: write
       issues: write
 
-    outputs:
-      old_version: ${{ steps.version_info.outputs.old_version }}
-      new_version: ${{ steps.version_info.outputs.new_version }}
-      pr_number: ${{ steps.create_pr.outputs.pull-request-number }}
-      pr_url: ${{ steps.create_pr.outputs.pull-request-url }}
-
     steps:
-      - name: Checkout
-        uses: actions/checkout@v5
-        with:
-          fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Get current version info
-        id: version_info
+      - name: Verify inputs
         run: |
-          OLD_VERSION="$(jq -r '.version' package.json)"
-          echo "old_version=$OLD_VERSION" | tee -a "$GITHUB_OUTPUT"
-
-          OLD_VERSION_GIT_TAG="v$OLD_VERSION"
-          # Check if tag exists
-          if ! git ls-remote --tags origin "$OLD_VERSION_GIT_TAG" &>/dev/null
+          if ! echo "${{ inputs.release_type }}" | grep -qE '^(major|minor|patch|prerelease)$'
           then
-            echo "ERROR: Previous version tag $OLD_VERSION_GIT_TAG not found." 2>&1
-            exit 65 # EX_DATAERR
+            echo "Invalid release_type: ${{ inputs.release_type }}. Must be one of: major, minor, patch, prerelease."
+            exit 64 # EX_USAGE
           fi
-          echo "old_version_git_tag=$OLD_VERSION_GIT_TAG" | tee -a "$GITHUB_OUTPUT"
 
-      - name: Bump version
-        id: bump_version
-        uses: actions/github-script@v8
-        with:
-          # Manipulating package.json instead of using `yarn version` to bump up
-          # the version, because `yarn` also wastefully run `yarn install`
-          script: |
-            const fs = require('fs');
-            const releaseType = ${{ toJson(inputs.release_type) }};
+          if [ "${{ inputs.release_type }}" = "prerelease" ]
+          then
+            echo "ERROR: Prerelease not supported yet." # TODO Support prerelease
+            exit 64 # EX_USAGE
+          fi
 
-            // Read package.json
-            const packageJson = JSON.parse(fs.readFileSync('package.json', 'utf8'));
-            const oldVersion = packageJson.version;
-
-            let newVersion;
-            switch (releaseType) {
-              case 'major': {
-                const versionMatch = oldVersion.match(/^(\d+)\./);
-                if (!versionMatch) {
-                  throw new Error(`Invalid version format for major bump: ${oldVersion}`);
-                }
-                const major = parseInt(versionMatch[1]);
-                newVersion = `${major + 1}.0.0`;
-                break;
-              }
-              case 'minor': {
-                const versionMatch = oldVersion.match(/^(\d+)\.(\d+)\./);
-                if (!versionMatch) {
-                  throw new Error(`Invalid version format for minor bump: ${oldVersion}`);
-                }
-                const [, major, minor] = versionMatch;
-                newVersion = `${major}.${parseInt(minor) + 1}.0`;
-                break;
-              }
-              case 'patch': {
-                const versionMatch = oldVersion.match(/^(\d+)\.(\d+)\.(\d+)($|-|\+)/);
-                if (!versionMatch) {
-                  throw new Error(`Invalid version format for patch bump: ${oldVersion}`);
-                }
-                const [, major, minor, patch] = versionMatch;
-                newVersion = `${major}.${minor}.${parseInt(patch) + 1}`;
-                break;
-              }
-              case 'prerelease': {
-                const versionMatch = oldVersion.match(/^(\d+)\.(\d+)\.(\d+)(?:-(\d+))?$/);
-                if (!versionMatch) {
-                  throw new Error(`Invalid version format for prerelease bump: ${oldVersion}`);
-                }
-                let [, major, minor, patch, prerelease] = versionMatch;
-                prerelease = prerelease ? parseInt(prerelease) : null;
-                const newPrerelease = prerelease !== null ? prerelease + 1 : 0;
-                newVersion = `${major}.${minor}.${patch}-${newPrerelease}`;
-                break;
-              }
-              default:
-                throw new Error(`Invalid release type: ${releaseType}`);
-            }
-
-            // Update package.json
-            packageJson.version = newVersion;
-            fs.writeFileSync('package.json', JSON.stringify(packageJson, null, 2) + '\n');
-
-            core.setOutput('new_version', newVersion);
-            core.setOutput('new_version_git_tag', `v${newVersion}`);
-            core.setOutput('new_version_branch_name', `release/v${newVersion}`);
-
-      - name: Generate release notes
-        id: release_notes
-        uses: actions/github-script@v8
-        with:
-          script: |
-            const newVersion = ${{ toJson(steps.bump_version.outputs.new_version) }};
-            const newTag = ${{ toJson(steps.bump_version.outputs.new_version_git_tag) }};
-            const newBranchName = ${{ toJson(steps.bump_version.outputs.new_version_branch_name) }};
-            const previousTag = ${{ toJson(steps.version_info.outputs.old_version_git_tag) }};
-            const targetCommitish = context.sha;
-
-            // Generate release notes using GitHub API
-            const { data: releaseNotes } = await github.rest.repos.generateReleaseNotes({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              // Note: This git tag is not created here. It will only be pushed
-              // in docker-build-and-push workflow after PR created by this
-              // workflow is merged.
-              tag_name: newTag,
-              target_commitish: targetCommitish,
-              previous_tag_name: previousTag
-            });
-
-            // Increase header levels by one
-            const changes = releaseNotes.body.replace(/^(#{1,5})\s/gm, '#$1 ');
-
-            core.setOutput('content', changes);
-
-            // Output includes link that compares old tag to new one, but new one will only be created
-            // after this PR is merged, so we’ll output also a patched version of the link
-            core.setOutput('content_draft', changes.replace(
-                new RegExp(`\.\.\.${newTag}`),
-                `\.\.\.${newBranchName}`
-            ));
-
-      - name: Update or create CHANGELOG.md
-        uses: actions/github-script@v8
-        with:
-          script: |
-            const fs = require('fs');
-
-            const newVersion = ${{ toJson(steps.bump_version.outputs.new_version) }};
-            const releaseNotes = ${{ toJson(steps.release_notes.outputs.content) }};
-
-            const newSectionContent = [
-              `## ${newVersion} <a id="user-content-${newVersion}" href="#user-content-${newVersion}">🔗</a>`,
-              '',
-              releaseNotes.trim(),
-            ].join('\n');
-
-            let oldContent = ''
-            try {
-              oldContent = fs.readFileSync('CHANGELOG.md', 'utf8');
-            } catch {
-              // File doesn't exist, will create new one
-            }
-
-            const lines = oldContent.split('\n');
-            const headerLineIndex = lines.findIndex(line => line.match(/^# Changelog/));
-
-            let before = '';
-            let after = '';
-            if (headerLineIndex === -1) {
-              before = '# Changelog';
-              after = oldContent;
-            } else {
-              before = lines.slice(0, headerLineIndex + 1).join('\n');
-              after = lines.slice(headerLineIndex + 1).join('\n');
-            }
-
-            const newContent = [
-              before,
-              newSectionContent,
-              after,
-            ]
-              .map(section => section.trim())
-              .join('\n\n')
-              .trim() + '\n';
-
-            fs.writeFileSync('CHANGELOG.md', newContent);
-
-      - name: Commit changes
-        id: commit
+      - name: Set environment variables
         env:
-          BRANCH_NAME: ${{ steps.bump_version.outputs.new_version_branch_name }}
-          NEW_VERSION: ${{ steps.bump_version.outputs.new_version }}
-          RELEASE_NOTES: ${{ steps.release_notes.outputs.content }}
+          ENV_VARS: ${{ secrets.env_vars }}
         run: |
-          git config --local user.name "github-actions[bot]"
-          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          echo "$ENV_VARS" >> "$GITHUB_ENV"
 
-          echo "branch_name=$BRANCH_NAME" | tee -a "$GITHUB_OUTPUT"
-          git switch -c "$BRANCH_NAME"
-
-          git add package.json CHANGELOG.md
-          git commit -m "$NEW_VERSION" -m "$RELEASE_NOTES"
-          git push -u origin "$BRANCH_NAME"
-
-      - name: Create Pull Request
-        id: create_pr
-        uses: actions/github-script@v8
+      - name: Setup
+        id: setup
+        uses: verkstedt/actions/setup@v1
         with:
-          script: |
-            const newVersion = ${{ toJson(steps.bump_version.outputs.new_version) }};
-            const branchName = ${{ toJson(steps.commit.outputs.branch_name) }};
-            const releaseNotes = ${{ toJson(steps.release_notes.outputs.content_draft) }};
+          working-directory: ${{ inputs.working-directory }}
+          github-npm-registry-personal-access-token: ${{ secrets.GH_NPM_REGISTRY_PERSONAL_ACCESS_TOKEN }}
 
-            // Create pull request
-            const { data: pr } = await github.rest.pulls.create({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              title: `Release ${newVersion}`,
-              head: branchName,
-              base: 'test-github-actions', // DEBUG TODO Change to main when ready
-              body: `## Changes\n\n${releaseNotes}`,
-              draft: false
-            });
-
-            // Add labels
-            await github.rest.issues.addLabels({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: pr.number,
-              labels: ['release', 'automated']
-            });
-
-            core.setOutput('pull-request-number', pr.number);
-            core.setOutput('pull-request-url', pr.html_url);
-
-      - name: Summary
+      - name: Release
         env:
-          OLD_VERSION: ${{ steps.version_info.outputs.old_version }}
-          NEW_VERSION: ${{ steps.bump_version.outputs.new_version }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Note: This script doesn’t access steps.*.outputs and
+          # inputs.* directly to make it easier to copy it to separate
+          # file for testing
+          PACKAGE_MANAGER: ${{ steps.setup.outputs.package-manager }}
           RELEASE_TYPE: ${{ inputs.release_type }}
-          PR_NUMBER: ${{ steps.create_pr.outputs.pull-request-number }}
-          PR_URL: ${{ steps.create_pr.outputs.pull-request-url }}
-          CHANGES: ${{ steps.release_notes.outputs.content_draft }}
         run: |
-          cat >> "$GITHUB_STEP_SUMMARY" << EOF
-          # 🚀 Release ${NEW_VERSION}
+          echo "::group::Prepare semantic-release configuration"
+          # TODO Move this to separate package, that can be installed, together with dependencies
+          release_config_mjs="$( mktemp --suffix=.mjs )"
+          cat > "$release_config_mjs" << 'RELEASE_CONFIG_MJS_EOF'
+          /**
+          * @type {import('semantic-release').GlobalConfig}
+          */
+          export default {
+            plugins: [
+              ["@semantic-release/exec", {
+                // Do not analyse commits to determine release type
+                analyzeCommitsCmd: `echo ${process.env.RELEASE_TYPE}`,
+                // Update version.txt, if exists
+                prepareCmd: 'if [ -f version.txt ]; then echo "${nextRelease.version}" > version.txt; fi',
+                // Use GitHub API to generate release notes
+                generateNotesCmd: `
+                  gh api \
+                    -X POST \
+                    repos/:owner/:repo/releases/generate-notes \
+                    -f tag_name='\${nextRelease.gitTag}' \
+                    -f previous_tag_name='\${lastRelease.gitTag}' \
+                    --jq '"# " + .name + "\n\n" + .body'
+                `,
+                // Write release notes to GitHub Actions summary
+                successCmd: `echo '\${nextRelease.notes}' >> \$GITHUB_STEP_SUMMARY`,
+              }],
+              // Update version package.json, do not publish to npm registry
+              ['@semantic-release/npm', {
+                npmPublish: false
+              }],
+              // Write changelog
+              ['@semantic-release/changelog'],
+              // Commit and push changed files
+              ['@semantic-release/git', {
+                assets: ['CHANGELOG.md', 'package.json', 'package-lock.json', 'version.txt'],
+                message: 'chore(release): ${nextRelease.version}\n\n\${nextRelease.notes}'
+              }],
+              // Register a GitHub release
+              ['@semantic-release/github'],
+            ]
+          }
+          RELEASE_CONFIG_MJS_EOF
+          echo "::endgroup::"
 
-          ## Version Changes
+          # Clean up
+          trap 'rm -fv "$release_config_mjs"' EXIT INT TERM
 
-          - **Previous version:** \`${OLD_VERSION}\`
-          - **Release type:** \`${RELEASE_TYPE}\`
-          - **New version:** \`${NEW_VERSION}\`
+          # FIXME This feels wrong, but couldn’t find a way of running semantic-release without having plugins installed
+          echo "::group::Install semantic-release plugins"
+          npm_pkg_args=$(
+            node --input-type=module --eval "
+              const { default: config } = await import(process.argv[1], { assert: { type: 'module' } });
+              process.stdout.write(
+                config.plugins
+                  .map(p => Array.isArray(p) ? p[0] : p)
+                  .filter(p => ! /^(\\.\\/|\\.\\.\\/|\/)/.test(p))
+                  .join('\\n')
+              );
+            " "$release_config_mjs" |
+              # Skip plugins bundled with semantic-release
+              # https://semantic-release.gitbook.io/semantic-release/usage/plugins#default-plugins
+              # Docs also list @semantic-release/npm, but it doesn’t seem true
+              grep -vE '@semantic-release/commit-analyzer|@semantic-release/release-notes-generator|@semantic-release/github'
+          )
 
-          ## Pull Request
+          if [ -n "$npm_pkg_args" ]
+          then
+            case "$PACKAGE_MANAGER" in
+              yarn)
+                # shellcheck disable=SC2086
+                yarn add -D $npm_pkg_args
+                ;;
+              npm)
+                # shellcheck disable=SC2086
+                npm install -D $npm_pkg_args
+                ;;
+              *)
+                echo "Unsupported package manager: $PACKAGE_MANAGER"
+                exit 69 # EX_UNAVAILABLE
+                ;;
+            esac
 
-          - [#${PR_NUMBER}](${PR_URL})
+            git restore package.json || :
+            git restore package-lock.json || :
+            git restore yarn.lock || :
+          fi
+          echo "::endgroup::"
 
-          ## Next Steps
-
-          1. Review and merge the pull request to complete the release
-          2. Merging will trigger workflow that will publish the new release
-
-          ## Release Notes
-
-          ${CHANGES}
-
-          EOF
+          echo "::group::Run semantic-release"
+          npx --yes semantic-release --extends "$release_config_mjs" "$@"
+          echo "::endgroup::"
