@@ -19,6 +19,9 @@ outputs:
   scripts:
     description: "Comma–separated list of available npm scripts. Includes comma at the beginning and the end, so you can use contains(needs.setup.outputs.scripts, ',script-name,')"
     value: ${{ steps.scripts.outputs.scripts }}
+  package-manager:
+    description: 'Detected package manager (npm or yarn)'
+    value: ${{ steps.package-manager.outputs.package-manager }}
 
 runs:
   using: composite
