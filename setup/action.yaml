@@ -123,11 +123,14 @@ runs:
         fi
 
     - name: Verify the integrity of provenance attestations and registry signatures for installed dependencies
-      if: steps.cache.outputs.cache-hit != 'true' && steps.package-manager.outputs['package-manager'] = 'npm'
+      if: steps.cache.outputs.cache-hit != 'true' && steps.package-manager.outputs['package-manager'] == 'npm'
       working-directory: ${{ inputs.working-directory }}
       shell: bash
       run: |
-        npm audit signatures
+        if [ 0 -lt "$( jq -r '( .dependencies + .devDependencies ) // {} | to_entries | length' package.json )" ]
+        then
+          npm audit signatures
+        fi
 
     - name: Run prepare npm script
       if: >
