@@ -92,7 +92,7 @@ jobs:
                     --jq '"# " + .name + "\n\n" + .body'
                 `,
                 // Write release notes to GitHub Actions summary
-                successCmd: 'echo ${nextRelease.notes} >> $GITHUB_STEP_SUMMARY',
+                successCmd: `echo '\${nextRelease.notes}' >> \$GITHUB_STEP_SUMMARY`,
               }],
               // Update version package.json, do not publish to npm registry
               ['@semantic-release/npm', {
