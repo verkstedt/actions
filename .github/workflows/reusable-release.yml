@@ -29,7 +29,7 @@ jobs:
         id: commit_details
         run: |
           COMMIT=$(git rev-parse HEAD)
-          echo "commit=${COMMIT}" >> $GITHUB_OUTPUT
+          echo "commit=${COMMIT}" >> "$GITHUB_OUTPUT"
 
       - name: Determine Version
         id: version
