@@ -182,14 +182,14 @@ Build Docker image and push it to the registries. When a version change is detec
 
 See [docker-build-push.yaml](./.github/workflows/docker-build-push.yaml) for details.
 
-### Create Release PR
+### Create Release
 
 Template:
-<https://github.com/verkstedt/.github/tree/main/workflow-templates/create-release-pr.yaml>
+<https://github.com/verkstedt/.github/tree/main/workflow-templates/create-release.yaml>
 
-Create a PR that bumps up the version.
+Bump up a version.
 
-See [create-release-pr.yaml](./.github/workflows/create-release-pr.yaml) for details.
+See [create-release.yaml](./.github/workflows/create-release.yaml) for details.
 
 ## Deploying new versions of actions and workflows
 
