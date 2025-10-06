@@ -91,6 +91,7 @@ jobs:
           VERSION_TAGS: ${{ steps.release_details.outputs.version_tags }}
         run: |
           # Create all semantic version tags
+          # shellcheck disable=SC2086
           for TAG in ${VERSION_TAGS//,/ }; do
             docker buildx imagetools create \
               -t ghcr.io/${{ github.repository }}:${TAG} \
@@ -145,6 +146,7 @@ jobs:
           GITHUB_REF: ${{ github.ref }}
         run: |
           # push all semantic version tags
+          # shellcheck disable=SC2086
           for TAG in ${VERSION_TAGS//,/ }; do
             docker buildx imagetools create \
               --tag ${{ env.GOOGLE_ARTIFACT_REGISTRY_REPOSITORY }}:${TAG} \
