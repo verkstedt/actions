@@ -76,7 +76,7 @@ jobs:
 
       - name: Setup
         id: setup
-        uses: verkstedt/actions/setup@v1
+        uses: verkstedt/actions/setup@feat/create-release
         with:
           token: ${{ steps.app-token.outputs.token }}
           github-npm-registry-personal-access-token: ${{ secrets.GH_NPM_REGISTRY_PERSONAL_ACCESS_TOKEN }}
