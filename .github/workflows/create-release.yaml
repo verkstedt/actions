@@ -1,13 +1,13 @@
-# Create Release PR
+# Create Release
 #
 # Template to use with this workflow:
-# https://github.com/verkstedt/.github/tree/main/workflow-templates/create-release-pr.yaml
+# https://github.com/verkstedt/.github/tree/main/workflow-templates/create-release.yaml
 #
-# Creates a release PR with:
-# - Bumped version in package.json (patch, minor, major, or prerelease)
-# - CHANGELOG.md containing release notes since last release
+# Pushes a commit that updates version data directly to the main branch.
+#
+# Requires GitHub token with persmissions to do that.
 
-name: Create Release PR
+name: Create Release
 
 on:
   workflow_call:
@@ -19,7 +19,7 @@ on:
 
 jobs:
   release:
-    name: 'Create Release PR'
+    name: 'Create Release'
     runs-on: ubuntu-latest
 
     permissions:
@@ -35,7 +35,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
@@ -57,7 +57,7 @@ jobs:
 
       - name: Bump version
         id: bump_version
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         with:
           # Manipulating package.json instead of using `yarn version` to bump up
           # the version, because `yarn` also wastefully run `yarn install`
@@ -123,7 +123,7 @@ jobs:
 
       - name: Generate release notes
         id: release_notes
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         with:
           script: |
             const newVersion = ${{ toJson(steps.bump_version.outputs.new_version) }};
@@ -157,7 +157,7 @@ jobs:
             ));
 
       - name: Update or create CHANGELOG.md
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         with:
           script: |
             const fs = require('fs');
@@ -221,7 +221,7 @@ jobs:
 
       - name: Create Pull Request
         id: create_pr
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         with:
           script: |
             const newVersion = ${{ toJson(steps.bump_version.outputs.new_version) }};
