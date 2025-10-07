@@ -11,7 +11,7 @@ inputs:
     required: false
     default: '.'
   token:
-    description: 'GitHub token. Defaults to `secrets.GITHUB_TOKEN`.'
+    description: 'GitHub token. Defaults to `github.token`.'
     required: false
     default: ${{ github.token }}
   github-npm-registry-personal-access-token:

@@ -3,9 +3,16 @@
 # Template to use with this workflow:
 # https://github.com/verkstedt/.github/tree/main/workflow-templates/create-release.yaml
 #
-# Pushes a commit that updates version data directly to the main branch.
+# - Bump the version up (`package.json` and — if it exists — `version.txt`)
+# - Add release notes in `CHANGELOG.md`
+# - Commit and push
+# - Create git version tag
+# - Create GitHub release
+# - Send slack notification
 #
-# Requires GitHub token with persmissions to do that.
+# Requires `CREATE_RELEASE_APP_ID` variable and
+# `CREATE_RELEASE_APP_PRIVATE_KEY` secret. Convinient to set it at
+# organisation level.
 
 name: Create Release
 

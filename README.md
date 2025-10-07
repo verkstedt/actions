@@ -178,8 +178,6 @@ When a GH commit URL is included in commit message, link the commit from said co
 Template:
 <https://github.com/verkstedt/.github/tree/main/workflow-templates/create-release.yaml>
 
-Bump up a version.
-
 See [create-release.yaml](./.github/workflows/create-release.yaml) for details.
 
 ## Deploying new versions of actions and workflows
