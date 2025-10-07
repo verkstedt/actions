@@ -371,27 +371,12 @@ jobs:
 
       # Build and Push as separate steps, so we can see durations
 
-      - name: 'Build'
+      - name: 'Build and Push'
         uses: docker/build-push-action@v6
         with:
-          push: false
+          push: ${{ inputs.dry-run == false }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-          context: ${{ inputs.context }}
-          file: ${{ inputs.dockerfile }}
-          platforms: ${{ inputs.platforms }}
-          provenance: true
-          tags: |
-            ${{ steps.tags.outputs.tags }}
-          build-args: |
-            ${{ secrets.BUILD_ARGS }}
-
-      - name: 'Push'
-        if: inputs.dry-run == false
-        uses: docker/build-push-action@v6
-        with:
-          push: true
-          cache-from: type=gha
           context: ${{ inputs.context }}
           file: ${{ inputs.dockerfile }}
           platforms: ${{ inputs.platforms }}
