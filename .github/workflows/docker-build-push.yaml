@@ -1,0 +1,533 @@
+# Docker Build and Push
+#
+# Template to use with this workflow:
+# https://github.com/verkstedt/.github/tree/main/workflow-templates/docker-build-push.yaml
+#
+# Build and push Docker images to multiple registries:
+# - GitHub Container Registry (GHCR)
+# - Amazon ECR (AWS Elastic Container Registry), if enabled
+# - Google Artifact Registry, if enabled
+#
+# Will tag all images with:
+# - date of the build (format: %Y%m%d%H%M%S)
+# - sha of the commit (`sha-<short_sha>`)
+#
+# If version change is detected:
+# - NO (meant for preview deployment)
+#   - tag with `edge`
+# - YES (meant for production deployment, unless it’s prerelease)
+#   - tag with `v<new_version>`
+#   - if version is not prerelease also with:
+#     - `latest`
+#     - `v<major>` and `v<major>.<minor>`
+#   - create a git tag `v<new_version>`
+#   - register GitHub release
+
+name: Docker Build and Push
+on:
+  workflow_call:
+    secrets:
+      BUILD_ARGS:
+        description: 'Build arguments for Docker build (multiline string)'
+      GOOGLE_WORKLOAD_IDENTITY_PROVIDER:
+        description: 'Google Cloud workload identity provider'
+      GOOGLE_SERVICE_ACCOUNT:
+        description: 'Google Cloud service account'
+      TAG_PUSH_GITHUB_TOKEN:
+        description: 'GitHub token for pushing tags to the repository (requires `workflow` permission)'
+        required: true
+
+    inputs:
+      previous_git_ref:
+        description: 'Previous git reference (for version comparison)'
+        type: string
+        required: true
+
+      # Build configuration
+      context:
+        description: 'Docker build context path'
+        type: string
+        default: '.'
+      dockerfile:
+        description: 'Path to Dockerfile'
+        type: string
+        default: 'Dockerfile'
+      platforms:
+        description: 'Platforms to build for (comma-separated)'
+        type: string
+        default: 'linux/amd64'
+
+      # Amazon ECR configuration
+      amazon_enable:
+        description: 'Push to Amazon ECR'
+        type: boolean
+        default: false
+      amazon_aws_region:
+        description: 'AWS region for ECR'
+        type: string
+        default: 'eu-central-1'
+      amazon_role_to_assume:
+        description: 'AWS IAM role to assume'
+        type: string
+        default: ''
+      amazon_ecr_registry:
+        description: 'ECR registry URL'
+        type: string
+        default: ''
+      amazon_ecr_repository:
+        description: 'ECR repository name. Defaults to GitHub repository name'
+        type: string
+        default: ''
+
+      # Google Artifact Registry configuration
+      google_enable:
+        description: 'Push to Google Artifact Registry'
+        type: boolean
+        default: false
+      google_project_id:
+        description: 'Google Cloud project ID'
+        type: string
+        default: ''
+      google_registry:
+        description: 'Google Artifact Registry URL'
+        type: string
+        default: 'europe-west3-docker.pkg.dev'
+      google_repository:
+        description: 'Google Artifact Registry repository path'
+        type: string
+        default: ''
+
+jobs:
+  push_github:
+    name: 'Push to GHCR (GitHub Container Registry)'
+    runs-on: ubuntu-latest
+
+    permissions:
+      checks: write
+      contents: read
+      packages: write
+
+    outputs:
+      image: ${{ steps.names.outputs.image }}
+      main_tag: ${{ steps.tags.outputs.main_tag }}
+      tags: ${{ steps.tags.outputs.tags }}
+      tags_list_md: ${{ steps.tags.outputs.tags_list_md }}
+      new_version: ${{ steps.commit_details.outputs.new_version }}
+      old_version: ${{ steps.commit_details.outputs.old_version }}
+      version_change: ${{ steps.commit_details.outputs.version_change }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Get Commit Details
+        id: commit_details
+        env:
+          PREVIOUS_GIT_REF: ${{ inputs.previous_git_ref }}
+        run: |
+          echo "short_sha=$(git rev-parse --short HEAD)" | tee -a "$GITHUB_OUTPUT"
+          echo "commit_timestamp=$(git show -s --format=%cd --date=format:%Y%m%d%H%M%S HEAD)" | tee -a "$GITHUB_OUTPUT"
+
+          NEW_VERSION="$(jq -r '.version' package.json)"
+          echo "new_version=$NEW_VERSION" | tee -a "$GITHUB_OUTPUT"
+
+          if [ -z "${PREVIOUS_GIT_REF}" ]
+          then
+            echo "ERROR: No previous git reference provided, cannot determine old version." >&2
+            exit 64 # EX_USAGE
+          else
+            # Try to get the old version from the previous git reference
+            git fetch origin "${PREVIOUS_GIT_REF}" --depth=1 || true
+          fi
+          OLD_VERSION="$(git show "${PREVIOUS_GIT_REF}":package.json 2>/dev/null | jq -r '.version')"
+          if [ -z "$OLD_VERSION" ]
+          then
+            echo "ERROR: Failed to retrieve previous version from git ref '${PREVIOUS_GIT_REF}'" >&2
+            exit 65 # EX_DATAERR
+          fi
+          echo "old_version=$OLD_VERSION" | tee -a "$GITHUB_OUTPUT"
+
+          if [ "$NEW_VERSION" != "$OLD_VERSION" ]
+          then
+            echo "version_change=true" | tee -a "$GITHUB_OUTPUT"
+          else
+            echo "version_change=false" | tee -a "$GITHUB_OUTPUT"
+          fi
+
+      - name: Determine tags to use for all registries
+        id: tags
+        env:
+          SHORT_SHA: ${{ steps.commit_details.outputs.short_sha }}
+          COMMIT_TIMESTAMP: ${{ steps.commit_details.outputs.commit_timestamp }}
+          VERSION_CHANGE: ${{ steps.commit_details.outputs.version_change }}
+          NEW_VERSION: ${{ steps.commit_details.outputs.new_version }}
+        run: |
+          MAIN_TAG="sha-${SHORT_SHA}"
+          TAGS="$MAIN_TAG ${COMMIT_TIMESTAMP}"
+          if [ "${VERSION_CHANGE}" = "false" ]
+          then
+            TAGS="$TAGS edge"
+          else
+            TAGS="$TAGS v${NEW_VERSION}"
+            # For non–prerelease versions, also add (or update) major and minor tags
+            if ! echo "$NEW_VERSION" | grep -q '-'
+            then
+              TAGS="$TAGS latest"
+              TAGS="$TAGS v$( echo "${NEW_VERSION}" | grep -oE '^[0-9]+' )"
+              TAGS="$TAGS v$( echo "${NEW_VERSION}" | grep -oE '^[0-9]+\.[0-9]+' )"
+            fi
+          fi
+          TAGS="$( echo "$TAGS" | tr ' ' '\n' )"
+
+          echo "main_tag=$MAIN_TAG" | tee -a "$GITHUB_OUTPUT"
+
+          {
+            echo "tags<<EOF"
+            echo "$TAGS"
+            echo "EOF"
+          } | tee -a "$GITHUB_OUTPUT"
+
+          {
+            echo "tags_list_md<<EOF"
+            # shellcheck disable=SC2001,2016
+            echo "$TAGS" | sed 's/.*/- \\`&\\`/'
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Determine GitHub Registry image names and tags
+        id: names
+        env:
+          GITHUB_REF: ${{ github.ref }}
+          MAIN_TAG: ${{ steps.tags.outputs.main_tag }}
+          TAGS: ${{ steps.tags.outputs.tags }}
+        run: |
+          REPO_LOWER="$(echo "${GITHUB_REPOSITORY}" | tr '[:upper:]' '[:lower:]')"
+          IMAGE_BASE="ghcr.io/${REPO_LOWER}"
+          echo "image_base=${IMAGE_BASE}" >> "$GITHUB_OUTPUT"
+
+          IMAGE="${IMAGE_BASE}:${MAIN_TAG}"
+          echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
+
+          {
+            echo "tags<<EOF"
+            # shellcheck disable=SC2001
+            echo "${TAGS}" | sed "s~^~${IMAGE_BASE}:~"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build
+        uses: docker/build-push-action@v6
+        with:
+          push: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          context: ${{ inputs.context }}
+          file: ${{ inputs.dockerfile }}
+          platforms: ${{ inputs.platforms }}
+          tags: |
+            ${{ steps.names.outputs.main_tag }}
+          build-args: |
+            ${{ secrets.BUILD_ARGS }}
+
+      - name: Push
+        uses: docker/build-push-action@v6
+        with:
+          push: true
+          cache-from: type=gha
+          context: ${{ inputs.context }}
+          file: ${{ inputs.dockerfile }}
+          platforms: ${{ inputs.platforms }}
+          tags: |
+            ${{ steps.names.outputs.tags }}
+          build-args: |
+            ${{ secrets.BUILD_ARGS }}
+
+      - name: Summary
+        env:
+          COMMIT_TIMESTAMP: ${{ steps.commit_details.outputs.commit_timestamp }}
+          SHORT_SHA: ${{ steps.commit_details.outputs.short_sha }}
+          TAGS: '${{ steps.names.outputs.tags }}'
+          IMAGE_BASE: ${{ steps.names.outputs.image_base }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          PACKAGE_URL="https://github.com/${REPOSITORY}/pkgs/container/$(echo "${REPOSITORY}" | cut -d'/' -f2)"
+
+          cat >> "$GITHUB_STEP_SUMMARY" << EOF
+          # 📦 Docker Image - GitHub Registry
+
+          Docker image has been published to: [GitHub Package Registry]($PACKAGE_URL).
+
+          ## Tags
+
+          ${{ steps.tags.outputs.tags_list_md }}
+          EOF
+
+  create_git_tag:
+    name: 'Create Git Version Tag'
+    needs: push_github
+    if: ${{ needs.push_github.outputs.version_change == 'true' }}
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          token: ${{ secrets.TAG_PUSH_GITHUB_TOKEN }}
+
+      - name: 'Create git version tag'
+        id: tag
+        env:
+          NEW_VERSION: ${{ needs.push_github.outputs.new_version }}
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+
+          TAG="v${NEW_VERSION}"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+
+          # Check if tag already exists locally or remotely
+          if git ls-remote --tags origin | grep -q "refs/tags/${TAG}$"
+          then
+            echo "Version tag '${TAG}' already exists." 1>&2
+            exit 65 # EX_DATAERR
+          fi
+
+          # Extract changes from CHANGELOG.md
+          CHANGES="$(
+            awk \
+              "/^## ${NEW_VERSION}$/,/^## .*$/{if(/^## ${NEW_VERSION}$/) next; if(/^## .*$/) exit; print}" \
+              CHANGELOG.md
+          )"
+          {
+            echo "changes<<EOF"
+            echo "$CHANGES"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+          git tag "$TAG" --annotate -m "$TAG" -m "$CHANGES"
+          git push origin "$TAG"
+
+      - name: 'Create GitHub Release'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const newVersion = ${{ toJson(needs.push_github.outputs.new_version) }};
+            const tagName = ${{ toJson(steps.tag.outputs.tag) }};
+            const changes = ${{ toJson(steps.tag.outputs.changes) }};
+
+            const isPrerelease = newVersion.includes('-');
+
+            await github.rest.repos.createRelease({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              tag_name: tagName,
+              name: tagName,
+              body: changes,
+              draft: false,
+              prerelease: isPrerelease,
+              // 'legacy' will compare sempantic versions
+              make_latest: isPrerelease ? 'false' : 'legacy',
+            });
+
+            console.log(`Created release ${tagName}`);
+
+  push_amazon:
+    name: 'Push to Amazon ECR (AWS Elastic Container Registry)'
+    if: ${{ inputs.amazon_enable }}
+    needs: push_github
+    runs-on: ubuntu-latest
+
+    permissions:
+      packages: read
+      id-token: write
+
+    steps:
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ${{ inputs.amazon_aws_region }}
+          role-to-assume: ${{ inputs.amazon_role_to_assume }}
+
+      - name: Login to ECR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ inputs.amazon_ecr_registry }}
+
+      - name: Determine repository name
+        id: names
+        env:
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          AMAZON_ECR_REPOSITORY: ${{ inputs.amazon_ecr_repository }}
+          AMAZON_ECR_REGISTRY: ${{ inputs.amazon_ecr_registry }}
+        run: |
+          if [ -z "${AMAZON_ECR_REPOSITORY}" ]
+          then
+            # Extract repository name from github.repository
+            REPO_NAME=$(echo "${GITHUB_REPOSITORY}" | cut -d '/' -f 2)
+          else
+            REPO_NAME="${AMAZON_ECR_REPOSITORY}"
+          fi
+          echo "name=$REPO_NAME" >> "$GITHUB_OUTPUT"
+
+          FULL_PATH="${AMAZON_ECR_REGISTRY}/$REPO_NAME"
+          echo "full_path=$FULL_PATH" >> "$GITHUB_OUTPUT"
+          echo "Repository will be: $FULL_PATH"
+
+      - name: Verify source image exists
+        run: |
+          docker buildx imagetools inspect "${{ needs.push_github.outputs.image }}"
+
+      - name: Push
+        env:
+          REPO_PATH: ${{ steps.names.outputs.full_path }}
+          SOURCE_IMAGE: ${{ needs.push_github.outputs.image }}
+          TAGS: ${{ needs.push_github.outputs.tags }}
+        run: |
+          # shellcheck disable=SC2086
+          for TAG in $TAGS
+          do
+            docker buildx imagetools create \
+              --tag "${REPO_PATH}:${TAG}" \
+              "${SOURCE_IMAGE}"
+          done
+
+      - name: Summary
+        env:
+          REPO_PATH: ${{ steps.names.outputs.full_path }}
+          AWS_REGION: ${{ inputs.amazon_aws_region }}
+          SOURCE_IMAGE: ${{ needs.push_github.outputs.image }}
+          TAGS: ${{ needs.push_github.outputs.tags }}
+          NAME: ${{ steps.names.outputs.name }}
+          TAGS_LIST_MD: ${{ needs.push_github.outputs.tags_list_md }}
+          AMAZON_ECR_REGISTRY: ${{ inputs.amazon_ecr_registry }}
+          MAIN_TAG: ${{ needs.push_github.outputs.main_tag }}
+        run: |
+          PACKAGE_URL="https://${AWS_REGION}.console.aws.amazon.com/ecr/repositories/private/${NAME}"
+
+          cat >> "$GITHUB_STEP_SUMMARY" << EOF
+          # 📦 Docker Image - Amazon ECR
+
+          Docker image has been published to: [Amazon ECR]($PACKAGE_URL).
+
+          ## Source Image
+
+          \`\`\`
+          ${SOURCE_IMAGE}
+          \`\`\`
+
+          ## Tags
+
+          ${TAGS_LIST_MD}
+
+          ## Pull Commands
+
+          To pull this image:
+
+          \`\`\`sh
+          aws ecr get-login-password --region ${AWS_REGION} | docker login --username AWS --password-stdin ${AMAZON_ECR_REGISTRY}
+          docker pull ${REPO_PATH}:$(echo "${MAIN_TAG}" | cut -d',' -f1)
+          \`\`\`
+          EOF
+
+  push_google:
+    name: 'Push to Google Cloud Artifact Registry'
+    if: ${{ inputs.google_enable }}
+    needs: push_github
+    runs-on: ubuntu-latest
+
+    permissions:
+      packages: read
+      id-token: write
+
+    steps:
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Authenticate to Google Cloud
+        id: google_auth
+        uses: google-github-actions/auth@v2
+        with:
+          token_format: access_token
+          project_id: ${{ inputs.google_project_id }}
+          workload_identity_provider: ${{ secrets.GOOGLE_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GOOGLE_SERVICE_ACCOUNT }}
+
+      - name: Login to Google Artifact Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ inputs.google_registry }}
+          username: oauth2accesstoken
+          password: ${{ steps.google_auth.outputs.access_token }}
+
+      - name: Verify source image exists
+        env:
+          SOURCE_IMAGE: ${{ needs.push_github.outputs.image }}
+        run: |
+          docker buildx imagetools inspect "${SOURCE_IMAGE}"
+
+      - name: Push
+        env:
+          SOURCE_IMAGE: ${{ needs.push_github.outputs.image }}
+          TAGS: ${{ needs.push_github.outputs.tags }}
+          GOOGLE_REPOSITORY: ${{ inputs.google_repository }}
+        run: |
+          # shellcheck disable=SC2086
+          for TAG in $TAGS
+          do
+            docker buildx imagetools create \
+              --tag "${GOOGLE_REPOSITORY}:${TAG}" \
+              "${SOURCE_IMAGE}"
+          done
+
+      - name: Summary
+        env:
+          SOURCE_IMAGE: ${{ needs.push_github.outputs.image }}
+          GOOGLE_REPOSITORY: ${{ inputs.google_repository }}
+          TAGS_LIST_MD: ${{ needs.push_github.outputs.tags_list_md }}
+        run: |
+          PACKAGE_URL="${GOOGLE_REPOSITORY}"
+
+          cat >> "$GITHUB_STEP_SUMMARY" << EOF
+
+          # 📦 Docker Image - Google Artifact Registry
+
+          Docker image has been published to: [Google Artifact Registry]($PACKAGE_URL).
+
+          ## Source Image
+
+          \`\`\`
+          ${SOURCE_IMAGE}
+          \`\`\`
+
+          ## Tags
+
+          ${TAGS_LIST_MD}
+          EOF
