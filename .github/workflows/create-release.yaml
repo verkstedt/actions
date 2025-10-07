@@ -16,6 +16,10 @@ on:
         description: 'Type of release (major, minor, patch, or prerelease)'
         type: string
         default: 'patch'
+      dry-run:
+        description: 'Dry–run'
+        type: boolean
+        default: false
 
 jobs:
   release:
@@ -152,5 +156,9 @@ jobs:
           echo "::endgroup::"
 
           echo "::group::Run semantic-release"
+          if [ "${{ inputs.dry-run }}" = "true" ]
+          then
+            set -- "$@" --dry-run
+          fi
           npx --yes semantic-release --extends "$release_config_mjs" "$@"
           echo "::endgroup::"
