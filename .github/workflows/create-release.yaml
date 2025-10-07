@@ -84,7 +84,6 @@ jobs:
           RELEASE_TYPE: ${{ inputs.release-type }}
         run: |
           echo "::group::Prepare semantic-release configuration"
-          # TODO Move this to separate package, that can be installed, together with dependencies
           release_config_mjs="$( mktemp --suffix=.mjs )"
           cat > "$release_config_mjs" << 'RELEASE_CONFIG_MJS_EOF'
 
@@ -134,7 +133,6 @@ jobs:
           # Clean up
           trap 'rm -fv "$release_config_mjs"' EXIT INT TERM
 
-          # FIXME This feels wrong, but couldn’t find a way of running semantic-release without having plugins installed
           echo "::group::Install semantic-release plugins"
           npm_pkg_args=$(
             node --input-type=module --eval "
