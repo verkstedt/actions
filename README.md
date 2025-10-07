@@ -173,6 +173,15 @@ Template:
 
 When a GH commit URL is included in commit message, link the commit from said comment.
 
+### Create Release PR
+
+Template:
+<https://github.com/verkstedt/.github/tree/main/workflow-templates/create-release-pr.yaml>
+
+Create a PR that bumps up the version.
+
+See [create-release-pr.yaml](./.github/workflows/create-release-pr.yaml) for details.
+
 ## Deploying new versions of actions and workflows
 
 You might have noticed that main branch in this repository is called

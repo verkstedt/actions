@@ -1,0 +1,278 @@
+# Create Release PR
+#
+# Template to use with this workflow:
+# https://github.com/verkstedt/.github/tree/main/workflow-templates/create-release-pr.yaml
+#
+# Creates a release PR with:
+# - Bumped version in package.json (patch, minor, major, or prerelease)
+# - CHANGELOG.md containing release notes since last release
+
+name: Create Release PR
+
+on:
+  workflow_call:
+    inputs:
+      release_type:
+        description: 'Type of release (major, minor, patch, or prerelease)'
+        type: string
+        default: 'patch'
+
+jobs:
+  release:
+    name: 'Create Release PR'
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+
+    outputs:
+      old_version: ${{ steps.version_info.outputs.old_version }}
+      new_version: ${{ steps.version_info.outputs.new_version }}
+      pr_number: ${{ steps.create_pr.outputs.pull-request-number }}
+      pr_url: ${{ steps.create_pr.outputs.pull-request-url }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Get current version info
+        id: version_info
+        run: |
+          OLD_VERSION="$(jq -r '.version' package.json)"
+          echo "old_version=$OLD_VERSION" | tee -a "$GITHUB_OUTPUT"
+
+          OLD_VERSION_GIT_TAG="v$OLD_VERSION"
+          # Check if tag exists
+          if ! git ls-remote --tags origin "$OLD_VERSION_GIT_TAG" &>/dev/null
+          then
+            echo "ERROR: Previous version tag $OLD_VERSION_GIT_TAG not found." 2>&1
+            exit 65 # EX_DATAERR
+          fi
+          echo "old_version_git_tag=$OLD_VERSION_GIT_TAG" | tee -a "$GITHUB_OUTPUT"
+
+      - name: Bump version
+        id: bump_version
+        uses: actions/github-script@v7
+        with:
+          # Manipulating package.json instead of using `yarn version` to bump up
+          # the version, because `yarn` also wastefully run `yarn install`
+          script: |
+            const fs = require('fs');
+            const releaseType = ${{ toJson(inputs.release_type) }};
+
+            // Read package.json
+            const packageJson = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+            const oldVersion = packageJson.version;
+
+            let newVersion;
+            switch (releaseType) {
+              case 'major': {
+                const versionMatch = oldVersion.match(/^(\d+)\./);
+                if (!versionMatch) {
+                  throw new Error(`Invalid version format for major bump: ${oldVersion}`);
+                }
+                const major = parseInt(versionMatch[1]);
+                newVersion = `${major + 1}.0.0`;
+                break;
+              }
+              case 'minor': {
+                const versionMatch = oldVersion.match(/^(\d+)\.(\d+)\./);
+                if (!versionMatch) {
+                  throw new Error(`Invalid version format for minor bump: ${oldVersion}`);
+                }
+                const [, major, minor] = versionMatch;
+                newVersion = `${major}.${parseInt(minor) + 1}.0`;
+                break;
+              }
+              case 'patch': {
+                const versionMatch = oldVersion.match(/^(\d+)\.(\d+)\.(\d+)($|-|\+)/);
+                if (!versionMatch) {
+                  throw new Error(`Invalid version format for patch bump: ${oldVersion}`);
+                }
+                const [, major, minor, patch] = versionMatch;
+                newVersion = `${major}.${minor}.${parseInt(patch) + 1}`;
+                break;
+              }
+              case 'prerelease': {
+                const versionMatch = oldVersion.match(/^(\d+)\.(\d+)\.(\d+)(?:-(\d+))?$/);
+                if (!versionMatch) {
+                  throw new Error(`Invalid version format for prerelease bump: ${oldVersion}`);
+                }
+                let [, major, minor, patch, prerelease] = versionMatch;
+                prerelease = prerelease ? parseInt(prerelease) : null;
+                const newPrerelease = prerelease !== null ? prerelease + 1 : 0;
+                newVersion = `${major}.${minor}.${patch}-${newPrerelease}`;
+                break;
+              }
+              default:
+                throw new Error(`Invalid release type: ${releaseType}`);
+            }
+
+            // Update package.json
+            packageJson.version = newVersion;
+            fs.writeFileSync('package.json', JSON.stringify(packageJson, null, 2) + '\n');
+
+            core.setOutput('new_version', newVersion);
+            core.setOutput('new_version_git_tag', `v${newVersion}`);
+            core.setOutput('new_version_branch_name', `release/v${newVersion}`);
+
+      - name: Generate release notes
+        id: release_notes
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const newVersion = ${{ toJson(steps.bump_version.outputs.new_version) }};
+            const newTag = ${{ toJson(steps.bump_version.outputs.new_version_git_tag) }};
+            const newBranchName = ${{ toJson(steps.bump_version.outputs.new_version_branch_name) }};
+            const previousTag = ${{ toJson(steps.version_info.outputs.old_version_git_tag) }};
+            const targetCommitish = context.sha;
+
+            // Generate release notes using GitHub API
+            const { data: releaseNotes } = await github.rest.repos.generateReleaseNotes({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              // Note: This git tag is not created here. It will only be pushed
+              // in docker-build-and-push workflow after PR created by this
+              // workflow is merged.
+              tag_name: newTag,
+              target_commitish: targetCommitish,
+              previous_tag_name: previousTag
+            });
+
+            // Increase header levels by one
+            const changes = releaseNotes.body.replace(/^(#{1,5})\s/gm, '#$1 ');
+
+            core.setOutput('content', changes);
+
+            // Output includes link that compares old tag to new one, but new one will only be created
+            // after this PR is merged, so we’ll output also a patched version of the link
+            core.setOutput('content_draft', changes.replace(
+                new RegExp(`\.\.\.${newTag}`),
+                `\.\.\.${newBranchName}`
+            ));
+
+      - name: Update or create CHANGELOG.md
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+
+            const newVersion = ${{ toJson(steps.bump_version.outputs.new_version) }};
+            const releaseNotes = ${{ toJson(steps.release_notes.outputs.content) }};
+
+            const newSectionContent = [
+              `## ${newVersion}`,
+              '',
+              releaseNotes,
+              ''
+            ].join('\n');
+
+            let oldContent = '';
+            try {
+              oldContent = fs.readFileSync('CHANGELOG.md', 'utf8');
+            } catch (error) {
+              // File doesn't exist, will create new one
+            }
+
+            const lines = oldContent.split('\n');
+            const headerLineIndex = lines.findIndex(line => line.match(/^# Changelog/));
+
+            let before = ''
+            let after = ''
+            if (headerLineIndex === -1) {
+              before = '# Changelog';
+              after = oldContent
+            } else {
+              before = lines.slice(0, headerLineIndex + 1).join('\n')
+              after = lines.slice(headerLineIndex + 1).join('\n')
+            }
+
+            const newContent = `${before.trim()}\n\n${newSectionContent}\n\n${after.trim()}`;
+
+            fs.writeFileSync('CHANGELOG.md', newContent);
+
+      - name: Commit changes
+        id: commit
+        env:
+          BRANCH_NAME: ${{ steps.bump_version.outputs.new_version_branch_name }}
+          NEW_VERSION: ${{ steps.bump_version.outputs.new_version }}
+          RELEASE_NOTES: ${{ steps.release_notes.outputs.content }}
+        run: |
+          git config --local user.name "github-actions[bot]"
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+
+          echo "branch_name=$BRANCH_NAME" | tee -a "$GITHUB_OUTPUT"
+          git switch -c "$BRANCH_NAME"
+
+          git add package.json CHANGELOG.md
+          git commit -m "$NEW_VERSION" -m "$RELEASE_NOTES"
+          git push -u origin "$BRANCH_NAME"
+
+      - name: Create Pull Request
+        id: create_pr
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const newVersion = ${{ toJson(steps.bump_version.outputs.new_version) }};
+            const branchName = ${{ toJson(steps.commit.outputs.branch_name) }};
+            const releaseNotes = ${{ toJson(steps.release_notes.outputs.content_draft) }};
+
+            // Create pull request
+            const { data: pr } = await github.rest.pulls.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `Release ${newVersion}`,
+              head: branchName,
+              base: 'test-github-actions', // DEBUG TODO Change to main when ready
+              body: `## Changes\n\n${releaseNotes}`,
+              draft: false
+            });
+
+            // Add labels
+            await github.rest.issues.addLabels({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: pr.number,
+              labels: ['release', 'automated']
+            });
+
+            core.setOutput('pull-request-number', pr.number);
+            core.setOutput('pull-request-url', pr.html_url);
+
+      - name: Summary
+        env:
+          OLD_VERSION: ${{ steps.version_info.outputs.old_version }}
+          NEW_VERSION: ${{ steps.bump_version.outputs.new_version }}
+          RELEASE_TYPE: ${{ inputs.release_type }}
+          PR_NUMBER: ${{ steps.create_pr.outputs.pull-request-number }}
+          PR_URL: ${{ steps.create_pr.outputs.pull-request-url }}
+          CHANGES: ${{ steps.release_notes.outputs.content_draft }}
+        run: |
+          cat >> "$GITHUB_STEP_SUMMARY" << EOF
+          # 🚀 Release ${NEW_VERSION}
+
+          ## Version Changes
+
+          - **Previous version:** \`${OLD_VERSION}\`
+          - **Release type:** \`${RELEASE_TYPE}\`
+          - **New version:** \`${NEW_VERSION}\`
+
+          ## Pull Request
+
+          - [#${PR_NUMBER}](${PR_URL})
+
+          ## Next Steps
+
+          1. Review and merge the pull request to complete the release
+          2. Merging will trigger workflow that will publish the new release
+
+          ## Release Notes
+
+          ${CHANGES}
+
+          EOF
