@@ -172,3 +172,10 @@ jobs:
           fi
           npx --yes semantic-release --extends "$release_config_mjs" "$@"
           echo "::endgroup::"
+
+      - name: Notify
+        uses: verkstedt/actions/notify-status@v1
+        with:
+          status: success
+          slack-bot-token: ${{ secrets.SLACK_BOT_TOKEN }}
+          slack-channel-id: ${{ vars.SLACK_CHANNEL_ID }}
