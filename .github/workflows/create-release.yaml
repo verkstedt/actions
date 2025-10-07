@@ -71,6 +71,7 @@ jobs:
           # TODO Move this to separate package, that can be installed, together with dependencies
           release_config_mjs="$( mktemp --suffix=.mjs )"
           cat > "$release_config_mjs" << 'RELEASE_CONFIG_MJS_EOF'
+
           /**
           * @type {import('semantic-release').GlobalConfig}
           */
@@ -102,7 +103,10 @@ jobs:
               // Commit and push changed files
               ['@semantic-release/git', {
                 assets: ['CHANGELOG.md', 'package.json', 'package-lock.json', 'version.txt'],
-                message: 'chore(release): ${nextRelease.version}\n\n\${nextRelease.notes}'
+                message: [
+                  'chore(release): ${nextRelease.version}',
+                  '${nextRelease.notes}',
+              ].join('\n\n'),
               }],
               // Register a GitHub release
               ['@semantic-release/github'],
@@ -154,6 +158,12 @@ jobs:
             git restore yarn.lock || :
           fi
           echo "::endgroup::"
+
+          # Not really semantically true, because semanit-release is
+          # both the author and commiter, but with this we’ll have a
+          # nice info in git of who triggered the release
+          export GIT_COMMITTER_NAME="$GITHUB_ACTOR"
+          export GIT_COMMITTER_EMAIL="$GITHUB_ACTOR_ID+$GITHUB_ACTOR@users.noreply.github.com"
 
           echo "::group::Run semantic-release"
           if [ "${{ inputs.dry-run }}" = "true" ]
