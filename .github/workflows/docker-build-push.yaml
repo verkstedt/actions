@@ -5,8 +5,8 @@
 #
 # Build and push Docker images to multiple registries:
 # - GitHub Container Registry (GHCR)
-# - Amazon ECR (AWS Elastic Container Registry)
 # - Google Artifact Registry
+# - Amazon ECR (AWS Elastic Container Registry)
 #
 # Will tag all images with:
 # - sha of the commit (`git-<short_sha>`)
@@ -122,6 +122,9 @@ jobs:
       id-token: write
 
     steps:
+      - name: 'Checkout'
+        uses: actions/checkout@v5
+
       - name: 'GitHub Container Registry: Setup'
         id: github
         run: |
@@ -276,9 +279,6 @@ jobs:
             echo "::error::No container registry is enabled for pushing." >&2
             exit 64 # EX_USAGE
           fi
-
-      - name: 'Checkout'
-        uses: actions/checkout@v5
 
       - name: 'Determine tags to use'
         id: tags
