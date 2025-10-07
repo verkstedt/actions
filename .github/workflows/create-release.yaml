@@ -36,13 +36,13 @@ jobs:
         run: |
           if ! echo "${{ inputs.release-type }}" | grep -qE '^(major|minor|patch|prerelease)$'
           then
-            echo "Invalid release-type: ${{ inputs.release-type }}. Must be one of: major, minor, patch, prerelease."
+            echo "::error::Invalid release-type: ${{ inputs.release-type }}. Must be one of: major, minor, patch, prerelease."
             exit 64 # EX_USAGE
           fi
 
           if [ "${{ inputs.release-type }}" = "prerelease" ]
           then
-            echo "ERROR: Prerelease not supported yet." # TODO Support prerelease
+            echo "::error::Prerelease not supported (yet)."
             exit 64 # EX_USAGE
           fi
 
@@ -148,7 +148,7 @@ jobs:
                 npm install -D $npm_pkg_args
                 ;;
               *)
-                echo "Unsupported package manager: $PACKAGE_MANAGER"
+                echo "::error::Unsupported package manager: $PACKAGE_MANAGER"
                 exit 69 # EX_UNAVAILABLE
                 ;;
             esac
