@@ -24,13 +24,13 @@ runs:
   using: composite
   steps:
     - name: Checkout
-      uses: actions/checkout@v4
+      uses: actions/checkout@v5
       with:
         fetch-depth: ${{ inputs.fetch-depth }}
         ref: ${{ github.event.pull_request.head.ref || github.ref }}
 
     - name: Setup Node.js
-      uses: actions/setup-node@v4
+      uses: actions/setup-node@v5
       with:
         node-version-file: '${{ inputs.working-directory }}/.nvmrc'
 
