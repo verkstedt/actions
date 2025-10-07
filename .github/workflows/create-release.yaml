@@ -16,10 +16,6 @@ on:
         description: 'Type of release (major, minor, patch, or prerelease)'
         type: string
         default: 'patch'
-      working-directory:
-        description: 'Working directory (where package.json is located)'
-        type: string
-        default: '.'
 
 jobs:
   release:
@@ -56,7 +52,6 @@ jobs:
         id: setup
         uses: verkstedt/actions/setup@v1
         with:
-          working-directory: ${{ inputs.working-directory }}
           github-npm-registry-personal-access-token: ${{ secrets.GH_NPM_REGISTRY_PERSONAL_ACCESS_TOKEN }}
 
       - name: Release
