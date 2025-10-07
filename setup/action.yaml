@@ -19,18 +19,21 @@ outputs:
   scripts:
     description: "Comma–separated list of available npm scripts. Includes comma at the beginning and the end, so you can use contains(needs.setup.outputs.scripts, ',script-name,')"
     value: ${{ steps.scripts.outputs.scripts }}
+  package-manager:
+    description: 'Detected package manager (npm or yarn)'
+    value: ${{ steps.package-manager.outputs.package-manager }}
 
 runs:
   using: composite
   steps:
     - name: Checkout
-      uses: actions/checkout@v4
+      uses: actions/checkout@v5
       with:
         fetch-depth: ${{ inputs.fetch-depth }}
         ref: ${{ github.event.pull_request.head.ref || github.ref }}
 
     - name: Setup Node.js
-      uses: actions/setup-node@v4
+      uses: actions/setup-node@v5
       with:
         node-version-file: '${{ inputs.working-directory }}/.nvmrc'
 
@@ -83,6 +86,22 @@ runs:
       run: |
         echo "//npm.pkg.github.com/:_authToken=${{ inputs.github-npm-registry-personal-access-token }}" >> ~/.npmrc
 
+    - name: Determine package manager
+      id: package-manager
+      working-directory: ${{ inputs.working-directory }}
+      shell: bash
+      run: |
+        if [ -e "yarn.lock" ]
+        then
+          echo "package-manager=yarn" >> "$GITHUB_OUTPUT"
+        elif [ -e "package-lock.json" ]
+        then
+          echo "package-manager=npm" >> "$GITHUB_OUTPUT"
+        else
+          echo "ERROR: Could not determine package manager. Neither package-lock.json nor yarn.lock found." >&2
+          exit 66 # EX_NOINPUT
+        fi
+
     - name: Install dependencies
       if: steps.cache.outputs.cache-hit != 'true'
       working-directory: ${{ inputs.working-directory }}
@@ -96,11 +115,21 @@ runs:
           export GH_REGISTRY_TOKEN="$GITHUB_NPM_REGISTRY_PERSONAL_ACCESS_TOKEN"
         fi
 
-        if [ -e "yarn.lock" ]
+        if [ "${{ steps.package-manager.outputs['package-manager'] }}" = "yarn" ]
         then
           yarn install --immutable
         else
           npm ci
+        fi
+
+    - name: Verify the integrity of provenance attestations and registry signatures for installed dependencies
+      if: steps.cache.outputs.cache-hit != 'true' && steps.package-manager.outputs['package-manager'] == 'npm'
+      working-directory: ${{ inputs.working-directory }}
+      shell: bash
+      run: |
+        if [ 0 -lt "$( jq -r '( .dependencies + .devDependencies ) // {} | to_entries | length' package.json )" ]
+        then
+          npm audit signatures
         fi
 
     - name: Run prepare npm script
