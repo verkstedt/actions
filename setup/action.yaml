@@ -10,6 +10,10 @@ inputs:
     description: 'Directory in which to run things in.'
     required: false
     default: '.'
+  token:
+    description: 'GitHub token. Defaults to `secrets.GITHUB_TOKEN`.'
+    required: false
+    default: ${{ github.token }}
   github-npm-registry-personal-access-token:
     description: 'GitHub personal access token for npm registry authentication. You can create one at https://github.com/settings/tokens/new (scopes: `read:packages`, `repo` and `read:org`). If not set, will use secrets.GITHUB_TOKEN, which is enough for most cases.'
     required: false
@@ -31,6 +35,7 @@ runs:
       with:
         fetch-depth: ${{ inputs.fetch-depth }}
         ref: ${{ github.event.pull_request.head.ref || github.ref }}
+        token: ${{ inputs.token }}
 
     - name: Setup Node.js
       uses: actions/setup-node@v5
