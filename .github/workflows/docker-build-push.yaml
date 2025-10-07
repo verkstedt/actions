@@ -48,70 +48,70 @@ on:
         default: 'linux/amd64'
 
       # GitHub Container Registry
-      github_enable:
+      github-enable:
         description: 'Push to GitHub Container Registry'
         type: boolean
         default: true
-      github_package_name:
+      github-package-name:
         description: 'GitHub Container Registry package name. Defaults to GitHub repository name'
         type: string
         default: ''
 
       # Google Artifact Registry
-      google_enable:
+      google-enable:
         description: 'Push to Google Artifact Registry'
         type: boolean
         default: false
-      google_workload_identity_provider:
-        description: 'Google Cloud workload identity provider. Required, if google_enable is true'
+      google-workload-identity-provider:
+        description: 'Google Cloud workload identity provider. Required, if google-enable is true'
         type: string
         default: ''
-      google_service_account:
-        description: 'Google Cloud service account email. Required, if google_enable is true'
+      google-service-account:
+        description: 'Google Cloud service account email. Required, if google-enable is true'
         type: string
         default: ''
-      google_project:
-        description: 'Google Cloud project ID. Required, if google_enable is true'
+      google-project:
+        description: 'Google Cloud project ID. Required, if google-enable is true'
         type: string
         default: ''
-      google_registry_location:
-        description: 'Google Artifact Registry location. Required, if google_enable is true'
+      google-registry-location:
+        description: 'Google Artifact Registry location. Required, if google-enable is true'
         type: string
         default: ''
-      google_repository:
-        description: 'Google Artifact Registry repository path. Required, if google_enable is true'
+      google-repository:
+        description: 'Google Artifact Registry repository path. Required, if google-enable is true'
         type: string
         default: ''
-      google_package_name:
+      google-package-name:
         description: 'Google Artifact Registry package name. Defaults to GitHub repository name'
         type: string
         default: ''
 
       # Amazon Elastic Container Registry
-      amazon_enable:
+      amazon-enable:
         description: 'Push to Amazon ECR'
         type: boolean
         default: false
-      amazon_aws_region:
-        description: 'Amazon AWS region. Required, if amazon_enable is true'
+      amazon-aws-region:
+        description: 'Amazon AWS region. Required, if amazon-enable is true'
         type: string
         default: ''
-      amazon_aws_account_id:
-        description: 'Amazon AWS account ID. Required, if amazon_enable is true'
+      amazon-aws-account-id:
+        description: 'Amazon AWS account ID. Required, if amazon-enable is true'
         type: string
         default: ''
-      amazon_role_to_assume:
-        description: 'Amazon AWS IAM role to assume. Required, if amazon_enable is true'
+      amazon-role-to-assume:
+        description: 'Amazon AWS IAM role to assume. Required, if amazon-enable is true'
         type: string
         default: ''
-      amazon_package_name:
+      amazon-package-name:
         description: 'Amazon ECR package name. Defaults to GitHub repository name'
         type: string
         default: ''
 
 jobs:
-  build_publish:
-    name: 'Docker Build and Publish'
+  build-push:
+    name: 'Docker Build and Push'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -122,7 +122,7 @@ jobs:
       - name: 'GitHub Container Registry: Setup'
         id: github
         run: |
-          if [ "${{ inputs.github_enable }}" != "true" ]
+          if [ "${{ inputs.github-enable }}" != "true" ]
           then
             echo "enabled=false" | tee -a "$GITHUB_OUTPUT"
           else
@@ -142,7 +142,7 @@ jobs:
             registry="ghcr.io/${{ github.repository_owner }}"
             echo "registry=$registry" | tee -a "$GITHUB_OUTPUT"
 
-            package_name="${{ inputs.github_package_name }}"
+            package_name="${{ inputs.github-package-name }}"
             if [ -z "$package_name" ]
             then
               package_name="${{ github.event.repository.name }}"
@@ -163,19 +163,19 @@ jobs:
       - name: 'Google Artifact Registry: Setup'
         id: google
         run: |
-          if [ "${{ inputs.google_enable }}" != "true" ]
+          if [ "${{ inputs.google-enable }}" != "true" ]
           then
             echo "enabled=false" | tee -a "$GITHUB_OUTPUT"
           else
             missing_inputs=''
             missing_secrets=''
 
-            [ -n "${{ inputs.google_project }}" ] || missing_inputs="$missing_inputs google_project"
-            [ -n "${{ inputs.google_registry_location }}" ] || missing_inputs="$missing_inputs google_registry_location"
-            [ -n "${{ inputs.google_repository }}" ]|| missing_inputs="$missing_inputs google_repository"
+            [ -n "${{ inputs.google-project }}" ] || missing_inputs="$missing_inputs google-project"
+            [ -n "${{ inputs.google-registry-location }}" ] || missing_inputs="$missing_inputs google-registry-location"
+            [ -n "${{ inputs.google-repository }}" ]|| missing_inputs="$missing_inputs google-repository"
 
-            [ -n "${{ inputs.google_workload_identity_provider }}" ] || missing_inputs="$missing_inputs google_workload_identity_provider"
-            [ -n "${{ inputs.google_service_account }}" ] || missing_inputs="$missing_inputs google_service_account"
+            [ -n "${{ inputs.google-workload-identity-provider }}" ] || missing_inputs="$missing_inputs google-workload-identity-provider"
+            [ -n "${{ inputs.google-service-account }}" ] || missing_inputs="$missing_inputs google-service-account"
 
             if [ -n "$missing_inputs$missing_secrets" ]
             then
@@ -185,10 +185,10 @@ jobs:
 
             # :LOCATION-docker.pkg.dev/:PROJECT/:REPOSITORY/:IMAGE_NAME
 
-            registry="${{ inputs.google_registry_location }}-docker.pkg.dev/${{ inputs.google_project }}/${{ inputs.google_repository }}"
+            registry="${{ inputs.google-registry-location }}-docker.pkg.dev/${{ inputs.google-project }}/${{ inputs.google-repository }}"
             echo "registry=$registry" | tee -a "$GITHUB_OUTPUT"
 
-            package_name="${{ inputs.google_package_name }}"
+            package_name="${{ inputs.google-package-name }}"
             if [ -z "$package_name" ]
             then
               package_name="${{ github.event.repository.name }}"
@@ -204,9 +204,9 @@ jobs:
         uses: google-github-actions/auth@v3
         with:
           token_format: access_token
-          project_id: ${{ inputs.google_project }}
-          workload_identity_provider: ${{ inputs.google_workload_identity_provider }}
-          service_account: ${{ inputs.google_service_account }}
+          project_id: ${{ inputs.google-project }}
+          workload_identity_provider: ${{ inputs.google-workload-identity-provider }}
+          service_account: ${{ inputs.google-service-account }}
 
       - name: 'Google Artifact Registry: Authenticate to Google Artifact Registry'
         if: steps.google.outputs.enabled == 'true'
@@ -219,16 +219,16 @@ jobs:
       - name: 'Amazon Elastic Container Registry: Setup'
         id: amazon
         run: |
-          if [ "${{ inputs.amazon_enable }}" != "true" ]
+          if [ "${{ inputs.amazon-enable }}" != "true" ]
           then
             echo "enabled=false" | tee -a "$GITHUB_OUTPUT"
           else
             missing_inputs=''
             missing_secrets=''
 
-            [ -n "${{ inputs.amazon_aws_account_id }}" ] || missing_inputs="$missing_inputs amazon_aws_account_id"
-            [ -n "${{ inputs.amazon_aws_region }}" ] || missing_inputs="$missing_inputs amazon_aws_region"
-            [ -n "${{ inputs.amazon_role_to_assume }}" ] || missing_inputs="$missing_inputs amazon_role_to_assume"
+            [ -n "${{ inputs.amazon-aws-account-id }}" ] || missing_inputs="$missing_inputs amazon-aws-account-id"
+            [ -n "${{ inputs.amazon-aws-region }}" ] || missing_inputs="$missing_inputs amazon-aws-region"
+            [ -n "${{ inputs.amazon-role-to-assume }}" ] || missing_inputs="$missing_inputs amazon-role-to-assume"
 
             if [ -n "$missing_inputs$missing_secrets" ]
             then
@@ -238,10 +238,10 @@ jobs:
 
             # :AWS_ACCOUNT_ID.dkr.ecr.:REGION.amazonaws.com/:IMAGE_NAME
 
-            registry="${{ inputs.amazon_aws_account_id }}.dkr.ecr.${{ inputs.amazon_aws_region }}.amazonaws.com"
+            registry="${{ inputs.amazon-aws-account-id }}.dkr.ecr.${{ inputs.amazon-aws-region }}.amazonaws.com"
             echo "registry=$registry" | tee -a "$GITHUB_OUTPUT"
 
-            package_name="${{ inputs.amazon_package_name }}"
+            package_name="${{ inputs.amazon-package-name }}"
             if [ -z "$package_name" ]
             then
               package_name="${{ github.event.repository.name }}"
@@ -255,8 +255,8 @@ jobs:
         if: steps.amazon.outputs.enabled == 'true'
         uses: aws-actions/configure-aws-credentials@v5
         with:
-          aws-region: ${{ inputs.amazon_aws_region }}
-          role-to-assume: ${{ inputs.amazon_role_to_assume }}
+          aws-region: ${{ inputs.amazon-aws-region }}
+          role-to-assume: ${{ inputs.amazon-role-to-assume }}
 
       - name: 'Amazon Elastic Container Registry: Authenticate to Amazon Elastic Container Registry'
         if: steps.amazon.outputs.enabled == 'true'
