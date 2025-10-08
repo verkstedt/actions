@@ -100,10 +100,26 @@ jobs:
           export default {
             plugins: [
               ["@semantic-release/exec", {
+                // WARNING: Escaping here is tricky.
+                // semantic-release interpolates some ${…} variables,
+                // but because these shell commands are inside a JavaScript
+                // string literals (so we can write them multi–line), we
+                // have to escape $ in semantic-release (and shell
+                // variables, if we use ${foo} not $foo) to avoid them
+                // being expanded by JavaScript before semantic-release
+                // sees them.
+
                 // Do not analyse commits to determine release type
-                analyzeCommitsCmd: `echo ${process.env.RELEASE_TYPE}`,
+                analyzeCommitsCmd: `
+                  echo $RELEASE_TYPE
+                `.replace(/^\s+/, ''),
                 // Update version.txt, if exists
-                prepareCmd: 'if [ -f version.txt ]; then echo "${nextRelease.version}" > version.txt; fi',
+                prepareCmd: `
+                  if [ -f version.txt ]
+                  then
+                    echo "\${nextRelease.version}" > version.txt
+                  fi
+                `.replace(/^\s+/, ''),
                 // Use GitHub API to generate release notes
                 generateNotesCmd: `
                   gh api \
@@ -112,9 +128,13 @@ jobs:
                     -f tag_name='\${nextRelease.gitTag}' \
                     -f previous_tag_name='\${lastRelease.gitTag}' \
                     --jq '"# " + .name + "\n\n" + .body'
-                `,
+                `.replace(/^\s+/, ''),
                 // Write release notes to GitHub Actions summary
-                successCmd: `cat << 'STEP_SUMMARY' >> ${process.env.GITHUB_STEP_SUMMARY}\n\${nextRelease.notes}\nSTEP_SUMMARY`,
+                successCmd: `
+                  cat << 'STEP_SUMMARY' >> $GITHUB_STEP_SUMMARY
+                  \${nextRelease.notes}
+                  STEP_SUMMARY
+                `.replace(/^\s+/, ''),
               }],
               // Update version package.json, do not publish to npm registry
               ['@semantic-release/npm', {
