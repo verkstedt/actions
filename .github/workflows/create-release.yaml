@@ -122,11 +122,16 @@ jobs:
                 `.replace(/^\s+/, ''),
                 // Use GitHub API to generate release notes
                 generateNotesCmd: `
+                  lastGitTag="\${lastRelease.gitTag}"
+                  set -- -f tag_name='\${nextRelease.gitTag}'
+                  if [ -n "$lastTag" ]
+                  then
+                    set -- "$@" -f previous_tag_name='\${lastGitTag}'
+                  fi
                   gh api \
                     -X POST \
                     repos/:owner/:repo/releases/generate-notes \
-                    -f tag_name='\${nextRelease.gitTag}' \
-                    -f previous_tag_name='\${lastRelease.gitTag}' \
+                    "$@" \
                     --jq '"# " + .name + "\n\n" + .body'
                 `.replace(/^\s+/, ''),
                 // Write release notes to GitHub Actions summary
