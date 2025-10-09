@@ -59,14 +59,14 @@ jobs:
         run: |
           echo "$ENV_VARS" >> "$GITHUB_ENV"
 
-      - name: 'GitHub App token: Obtain token'
+      - name: 'GitHub App token: Token'
         id: app-token
         uses: actions/create-github-app-token@v2
         with:
           app-id: ${{ vars.CREATE_RELEASE_APP_ID }}
           private-key: ${{ secrets.CREATE_RELEASE_APP_PRIVATE_KEY }}
 
-      - name: 'GitHub App token: Get User ID'
+      - name: 'GitHub App token: App Data'
         id: app-token-data
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
