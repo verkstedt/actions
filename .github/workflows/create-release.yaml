@@ -95,8 +95,8 @@ jobs:
           cat > "$release_config_mjs" << 'RELEASE_CONFIG_MJS_EOF'
 
           /**
-          * @type {import('semantic-release').GlobalConfig}
-          */
+           * @type {import('semantic-release').GlobalConfig}
+           */
           export default {
             plugins: [
               ["@semantic-release/exec", {
@@ -112,14 +112,14 @@ jobs:
                 // Do not analyse commits to determine release type
                 analyzeCommitsCmd: `
                   echo $RELEASE_TYPE
-                `.replace(/^\s+/, ''),
+                `.trim().replaceAll(/^\s+/g, ''),
                 // Update version.txt, if exists
                 prepareCmd: `
                   if [ -f version.txt ]
                   then
                     echo "\${nextRelease.version}" > version.txt
                   fi
-                `.replace(/^\s+/, ''),
+                `.trim().replaceAll(/^\s+/g, ''),
                 // Use GitHub API to generate release notes
                 generateNotesCmd: `
                   lastGitTag="\${lastRelease.gitTag}"
@@ -133,13 +133,13 @@ jobs:
                     repos/:owner/:repo/releases/generate-notes \
                     "$@" \
                     --jq '"# " + .name + "\n\n" + .body'
-                `.replace(/^\s+/, ''),
+                `.trim().replaceAll(/^\s+/g, ''),
                 // Write release notes to GitHub Actions summary
                 successCmd: `
                   cat << 'STEP_SUMMARY' >> $GITHUB_STEP_SUMMARY
                   \${nextRelease.notes}
                   STEP_SUMMARY
-                `.replace(/^\s+/, ''),
+                `.trim().replaceAll(/^\s+/g, ''),
               }],
               // Update version package.json, do not publish to npm registry
               ['@semantic-release/npm', {
@@ -160,7 +160,7 @@ jobs:
                 successComment:
                   `
                     :tada: This PR is included in version [\${nextRelease.version}](<github_release_url>).
-                  `.replace(/\s+/g, '')
+                  `.trim().replaceAll(/\s+/g, '')
               }],
             ]
           }
