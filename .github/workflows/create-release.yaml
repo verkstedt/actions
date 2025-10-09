@@ -134,6 +134,11 @@ jobs:
                   then
                     set -- "$@" -f previous_tag_name=$lastGitTag
                   fi
+                  # Note: We need to include name of the release,
+                  # because it will not be added to CHANGELOG otherwise.
+                  # Sad side–effect of this is that it’s also included
+                  # in GitHub release notes and git commit message, even
+                  # though it’s included as subject of these as well.
                   gh api \
                     -X POST \
                     repos/:owner/:repo/releases/generate-notes \
@@ -164,10 +169,11 @@ jobs:
               // Register a GitHub release
               ['@semantic-release/github', {
                 successComment: unindent(`
-                  <% _.forEach(releases, function(release) { %>
-                  :tada: This PR has been included in [<%= release.name %>](<%= release.url %>).
+                  :tada: This PR has been included in version **\${nextRelease.version}**
 
-                  <% } ); %>
+                  <% _.forEach(releases, function(release) { if (release.url) { %>
+                  - [<%= release.name %>](<%= release.url %>)
+                  <% } } ); %>
                 `),
               }],
             ]
