@@ -124,9 +124,9 @@ jobs:
                 generateNotesCmd: `
                   lastGitTag="\${lastRelease.gitTag}"
                   set -- -f tag_name='\${nextRelease.gitTag}'
-                  if [ -n "$lastTag" ]
+                  if [ -n "$lastGitTag" ]
                   then
-                    set -- "$@" -f previous_tag_name='\${lastGitTag}'
+                    set -- "$@" -f previous_tag_name=$lastGitTag
                   fi
                   gh api \
                     -X POST \
