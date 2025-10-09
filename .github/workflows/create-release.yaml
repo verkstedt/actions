@@ -159,8 +159,11 @@ jobs:
               ['@semantic-release/github', {
                 successComment:
                   `
-                    :tada: This PR is included in version [\${nextRelease.version}](<github_release_url>).
-                  `.trim().replaceAll(/\s+/g, '')
+                    <% _.forEach(releases, function(release) { %>
+                    :tada: This PR has been included in [<%= release.name %>](<%= release.url %>).
+
+                    <% }); %>
+                  `.trim().replaceAll(/^\s+/g, '')
               }],
             ]
           }
