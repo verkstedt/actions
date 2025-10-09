@@ -94,6 +94,12 @@ jobs:
           release_config_mjs="$( mktemp --suffix=.mjs )"
           cat > "$release_config_mjs" << 'RELEASE_CONFIG_MJS_EOF'
 
+          function unindent(text) {
+            const textTrimLines = text.replaceAll(/(^\n+|\n+$)/g, '');
+            const [indent] = textTrimLines.match(/^\s*/m);
+            return textTrimLines.replaceAll(new RegExp('^' + indent, 'gm'), '');
+          }
+
           /**
            * @type {import('semantic-release').GlobalConfig}
            */
@@ -110,18 +116,18 @@ jobs:
                 // sees them.
 
                 // Do not analyse commits to determine release type
-                analyzeCommitsCmd: `
+                analyzeCommitsCmd: unindent(`
                   echo $RELEASE_TYPE
-                `.trim().replaceAll(/^\s+/g, ''),
+                `),
                 // Update version.txt, if exists
-                prepareCmd: `
+                prepareCmd: unindent(`
                   if [ -f version.txt ]
                   then
                     echo "\${nextRelease.version}" > version.txt
                   fi
-                `.trim().replaceAll(/^\s+/g, ''),
+                `),
                 // Use GitHub API to generate release notes
-                generateNotesCmd: `
+                generateNotesCmd: unindent(`
                   lastGitTag="\${lastRelease.gitTag}"
                   set -- -f tag_name='\${nextRelease.gitTag}'
                   if [ -n "$lastGitTag" ]
@@ -133,13 +139,13 @@ jobs:
                     repos/:owner/:repo/releases/generate-notes \
                     "$@" \
                     --jq '"# " + .name + "\n\n" + .body'
-                `.trim().replaceAll(/^\s+/g, ''),
+                `),
                 // Write release notes to GitHub Actions summary
-                successCmd: `
+                successCmd: unindent(`
                   cat << 'STEP_SUMMARY' >> $GITHUB_STEP_SUMMARY
                   \${nextRelease.notes}
                   STEP_SUMMARY
-                `.trim().replaceAll(/^\s+/g, ''),
+                `),
               }],
               // Update version package.json, do not publish to npm registry
               ['@semantic-release/npm', {
@@ -157,13 +163,12 @@ jobs:
               }],
               // Register a GitHub release
               ['@semantic-release/github', {
-                successComment:
-                  `
-                    <% _.forEach(releases, function(release) { %>
-                    :tada: This PR has been included in [<%= release.name %>](<%= release.url %>).
+                successComment: unindent(`
+                  <% _.forEach(releases, function(release) { %>
+                  :tada: This PR has been included in [<%= release.name %>](<%= release.url %>).
 
-                    <% }); %>
-                  `.trim().replaceAll(/^\s+/g, '')
+                  <% } ); %>
+                `),
               }],
             ]
           }
