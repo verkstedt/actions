@@ -156,7 +156,12 @@ jobs:
               ].join('\n\n'),
               }],
               // Register a GitHub release
-              ['@semantic-release/github'],
+              ['@semantic-release/github', {
+                successComment:
+                  `
+                    :tada: This PR is included in version [\${nextRelease.version}](<github_release_url>).
+                  `.replace(/\s+/g, '')
+              }],
             ]
           }
           RELEASE_CONFIG_MJS_EOF
