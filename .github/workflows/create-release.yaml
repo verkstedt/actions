@@ -1,7 +1,9 @@
-# Create Release
-#
-# Template to use with this workflow:
-# https://github.com/verkstedt/.github/tree/main/workflow-templates/create-release.yaml
+name: Create Release
+
+# Uses `semantic-release` under the hood, but we did not want to force
+# devs to be pedantic with commit messages, so instead we take GitHub
+# approach and list only merged PRs in the release notes and allow
+# releaser to decide if it’s major, minor or patch release.
 #
 # - Push a commit bumping up a version:
 #   - Version in `package.json` and — if it exists — `version.txt`
@@ -9,6 +11,9 @@
 # - Create git version tag
 # - Create GitHub release
 # - Send slack notification
+#
+#
+# # Authentication
 #
 # This workflow needs higher permissions to be able to push to main
 # branch etc. We obtain it using a GitHub app. App needs to have these
@@ -21,8 +26,6 @@
 # Install it and and set `CREATE_RELEASE_APP_ID` and
 # `CREATE_RELEASE_APP_PRIVATE_KEY` secrets. Convinent to do so on the
 # organisation level.
-
-name: Create Release
 
 on:
   workflow_call:
