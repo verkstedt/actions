@@ -287,7 +287,7 @@ jobs:
           TAGS="$( echo "$TAGS" | tr ' ' '\n' )"
 
           {
-            echo "Tagging image with:"
+            echo "## Tags"
             echo
             # shellcheck disable=SC2001,SC2016
             echo "$TAGS" | sed 's/.*/- `&`/'
@@ -315,7 +315,7 @@ jobs:
           )"
 
           {
-            echo "Pushing to:"
+            echo "## Registries"
             echo
             # shellcheck disable=SC2001
             echo "$URLS" | sed 's|^|- https://|'
