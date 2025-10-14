@@ -337,6 +337,12 @@ jobs:
             echo "EOF"
           } | tee -a "$GITHUB_OUTPUT"
 
+          {
+            echo '## Platforms'
+            echo
+            echo "${{ inputs.platforms }}" | tr ',' '\n' | sed 's/^/- /'
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: 'Set up QEMU'
         uses: docker/setup-qemu-action@v3
 
