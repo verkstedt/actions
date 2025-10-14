@@ -143,7 +143,7 @@ jobs:
 
             [ -n "${{ vars.DOCKER_GOOGLE_PROJECT }}" ] || missing_vars="$missing_vars DOCKER_GOOGLE_PROJECT"
             [ -n "${{ vars.DOCKER_GOOGLE_REGISTRY_LOCATION }}" ] || missing_vars="$missing_vars DOCKER_GOOGLE_REGISTRY_LOCATION"
-            [ -n "${{ vars.DOCKER_GOOGLE_REPOSITORY }}" ]|| missing_vars="$missing_vars DOCKER_GOOGLE_REPOSITORY"
+            [ -n "${{ vars.DOCKER_GOOGLE_REPOSITORY }}" ] || missing_vars="$missing_vars DOCKER_GOOGLE_REPOSITORY"
 
             [ -n "${{ vars.DOCKER_GOOGLE_WORKLOAD_IDENTITY_PROVIDER }}" ] || missing_vars="$missing_vars DOCKER_GOOGLE_WORKLOAD_IDENTITY_PROVIDER"
             [ -n "${{ vars.DOCKER_GOOGLE_SERVICE_ACCOUNT }}" ] || missing_vars="$missing_vars DOCKER_GOOGLE_SERVICE_ACCOUNT"
@@ -226,8 +226,8 @@ jobs:
         if: steps.amazon.outputs.enabled == 'true'
         uses: aws-actions/configure-aws-credentials@v5
         with:
-          aws_region: ${{ vars.DOCKER_AMAZON_AWS_REGION }}
-          role_to_assume: ${{ vars.DOCKER_AMAZON_ROLE_TO_ASSUME }}
+          aws-region: ${{ vars.DOCKER_AMAZON_AWS_REGION }}
+          role-to-assume: ${{ vars.DOCKER_AMAZON_ROLE_TO_ASSUME }}
 
       - name: 'Amazon Elastic Container Registry: Authenticate to Amazon Elastic Container Registry'
         if: steps.amazon.outputs.enabled == 'true'
