@@ -1,22 +1,15 @@
-# Docker Build and Push
+# Docker Build and Push to multiple registries
 #
-# Template to use with this workflow:
-# https://github.com/verkstedt/.github/tree/main/workflow-templates/docker-build-push.yaml
-#
-# Build and push Docker images to multiple registries:
-# - GitHub Container Registry (GHCR)
-# - Google Artifact Registry
-# - Amazon ECR (AWS Elastic Container Registry)
-#
-# Will tag all images with:
+# Will tag the image with:
 # - sha of the commit (`git-<short_sha>`)
 # - if pushed to main branch:
 #   - `edge`
 # - if triggered by version tag push:
-#   - tag with `v<new_version>`
-#   - if version is not prerelease also with:
+#   - `v<new_version>`
+#   - if version is NOT prerelease also with:
 #     - `latest`
 #     - `v<major>` and `v<major>.<minor>`
+#
 #
 # # GitHub actions variables
 #
@@ -24,11 +17,13 @@
 # repositories in different repos, set everything in org and change only
 # `DOCKER_…_ENABLE` in repos.
 #
+#
 # ## GitHub Container Registry
 #
 # - `DOCKER_GITHUB_ENABLE=true`
-# - if you don’t want to use repo name as package name, also set
-#   `DOCKER_GITHUB_PACKAGE_NAME`
+# - if you don’t want to use repo name as package name, you can set
+#   `DOCKER_GITHUB_PACKAGE_NAME` in your repo
+#
 #
 # ##  Google Artifact Registry
 #
@@ -38,8 +33,8 @@
 # - `DOCKER_GOOGLE_PROJECT`
 # - `DOCKER_GOOGLE_REGISTRY_LOCATION`
 # - `DOCKER_GOOGLE_REPOSITORY`
-# - if you don’t want to use repo name as package name, also set
-#   `DOCKER_GOOGLE_PACKAGE_NAME`
+# - if you don’t want to use repo name as package name, you can set
+#   `DOCKER_GOOGLE_PACKAGE_NAME` in your repo
 #
 # Depending on your setup, you might also need to run a command like
 # this (replace `$…` with your values):
@@ -52,14 +47,15 @@
 #   --member="principalSet://iam.googleapis.com/projects/$PROJECT_ID/locations/global/workloadIdentityPools/github/attribute.repository/$REPO_ORG/$REPO_NAME"
 # ```
 #
+#
 # ## Amazon ECR
 #
 # - `DOCKER_AMAZON_ENABLE=true`
 # - `DOCKER_AMAZON_AWS_REGION`
 # - `DOCKER_AMAZON_AWS_ACCOUNT_ID`
 # - `DOCKER_AMAZON_ROLE_TO_ASSUME`
-# - if you don’t want to use repo name as package name, also set
-#   `DOCKER_AMAZON_PACKAGE_NAME`
+# - if you don’t want to use repo name as package name, you can set
+#   `DOCKER_AMAZON_PACKAGE_NAME` in your repo
 
 name: Docker Build and Push
 on:
@@ -68,7 +64,7 @@ on:
       BUILD_ARGS:
         description: 'Build arguments for Docker build (multiline string)'
       SLACK_BOT_TOKEN:
-        description: 'Slack bot token, to notify a Slack channel of successful deployment'
+        description: 'Slack bot token, to notify a Slack channel of successful run'
         required: true
 
     inputs:
@@ -76,11 +72,10 @@ on:
         description: 'Dry run mode (no pushing to registries)'
         type: boolean
         default: false
-      # Build configuration
       platforms:
         description: 'Platforms to build for, e.g. linux/amd64,linux/arm64'
         type: string
-        default: 'linux/amd64'
+        default: ''
 
 jobs:
   build-push:
@@ -250,9 +245,17 @@ jobs:
             exit 64 # EX_USAGE
           fi
 
-      - name: 'Determine tags to use'
-        id: tags
+      - name: 'Determine platforms and tags to use'
+        id: config
         run: |
+          platforms="${{ inputs.platforms || vars.DOCKER_PLATFORMS || 'linux/amd64' }}"
+          echo "platforms=$platforms" | tee -a "$GITHUB_OUTPUT"
+          {
+            echo '## Platforms'
+            echo
+            echo "$platforms" | tr ',' '\n' | sed 's/^/- /'
+          } >> "$GITHUB_STEP_SUMMARY"
+
           # `git-<SHORT_SHA>`
           TAGS="git-$( git rev-parse --short HEAD )"
 
@@ -338,19 +341,11 @@ jobs:
             echo "EOF"
           } | tee -a "$GITHUB_OUTPUT"
 
-          {
-            echo '## Platforms'
-            echo
-            echo "${{ inputs.platforms }}" | tr ',' '\n' | sed 's/^/- /'
-          } >> "$GITHUB_STEP_SUMMARY"
-
       - name: 'Set up QEMU'
         uses: docker/setup-qemu-action@v3
 
       - name: 'Set up Docker Buildx'
         uses: docker/setup-buildx-action@v3
-
-      # Build and Push as separate steps, so we can see durations
 
       - name: 'Build and Push'
         uses: docker/build-push-action@v6
@@ -360,15 +355,13 @@ jobs:
           cache-to: type=gha,mode=max
           context: ${{ vars.DOCKER_CONTEXT }}
           file: ${{ vars.DOCKER_DOCKERFILE }}
-          platforms: ${{ inputs.platforms }}
+          platforms: ${{ steps.config.outputs.platforms }}
           provenance: true
-          tags: |
-            ${{ steps.tags.outputs.tags }}
-          build-args: |
-            ${{ secrets.BUILD_ARGS }}
+          tags: ${{ steps.config.outputs.tags }}
+          build-args: ${{ secrets.BUILD_ARGS }}
 
       - name: Notify
-        if: steps.tags.outputs.tagged-with-latest == 'true' && inputs.dry-run != true
+        if: steps.config.outputs.tagged-with-latest == 'true' && inputs.dry-run != true
         uses: verkstedt/actions/notify-status@v1
         with:
           status: success
