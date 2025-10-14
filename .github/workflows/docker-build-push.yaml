@@ -162,7 +162,7 @@ jobs:
 
             # :LOCATION-docker.pkg.dev/:PROJECT/:REPOSITORY/:IMAGE_NAME
 
-            registry="${{ vars.DOCKER_GOOGLE_REGISTRY_LOCATION }}_docker.pkg.dev/${{ vars.DOCKER_GOOGLE_PROJECT }}/${{ vars.DOCKER_GOOGLE_REPOSITORY }}"
+            registry="${{ vars.DOCKER_GOOGLE_REGISTRY_LOCATION }}-docker.pkg.dev/${{ vars.DOCKER_GOOGLE_PROJECT }}/${{ vars.DOCKER_GOOGLE_REPOSITORY }}"
             echo "registry=$registry" | tee -a "$GITHUB_OUTPUT"
 
             package_name="${{ vars.DOCKER_GOOGLE_PACKAGE_NAME }}"
