@@ -10,14 +10,13 @@
 #
 # Will tag all images with:
 # - sha of the commit (`git-<short_sha>`)
-# - then depending if version change is detected:
-#   - NO (meant for preview deployment)
-#     - `edge`
-#   - YES (meant for production deployment, unless it’s prerelease)
-#     - tag with `v<new_version>`
-#     - if version is not prerelease also with:
-#       - `latest`
-#       - `v<major>` and `v<major>.<minor>`
+# - if pushed to main branch:
+#   - `edge`
+# - if triggered by version tag push:
+#   - tag with `v<new_version>`
+#   - if version is not prerelease also with:
+#     - `latest`
+#     - `v<major>` and `v<major>.<minor>`
 #
 # # GitHub actions variables
 #
@@ -254,29 +253,33 @@ jobs:
       - name: 'Determine tags to use'
         id: tags
         run: |
-          # Always include `git-<SHORT_SHA>`
+          # `git-<SHORT_SHA>`
           TAGS="git-$( git rev-parse --short HEAD )"
 
+          # `edge`, if HEAD points at main branch
+          # Note: Even might’ve been triggered by a tag push.
+          git fetch origin main --depth=1
+          if [ "$( git rev-parse HEAD )" = "$( git rev-parse origin/main )" ]
+          then
+            TAGS="$TAGS edge"
+          fi
+
+          # `latest` and version tags
           # Note: This is a glob, not a regular rexpression, so [0-9]*
           # acts as /[0-9].*/ in regex. This might match more than
           # intended, but it’s a trade–off not to complicate things.
           version_glob="v[0-9]*.[0-9]*.[0-9]*"
-
           VERSION_TAG="$(
             git describe --tags --abbrev=0 --exact --match="$version_glob" 2>/dev/null || :
           )"
-
-          if [ -z "$VERSION_TAG" ]
+          if [ -n "$VERSION_TAG" ]
           then
-            # Use “edge” if not building a tagged version
-            TAGS="$TAGS edge"
-          else
             TAGS="$TAGS ${VERSION_TAG}"
+            # not a pre-release
             if ! echo "$VERSION_TAG" | grep -q '-'
             then
               TAGS="$TAGS $( echo "${VERSION_TAG}" | grep -oE '^v[0-9]+\.[0-9]+' )"
               TAGS="$TAGS $( echo "${VERSION_TAG}" | grep -oE '^v[0-9]+' )"
-              # Use “latest” if tagging a non–prerelease version
               TAGS="$TAGS latest"
             fi
           fi
