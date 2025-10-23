@@ -41,6 +41,7 @@ const config = {
         `),
       },
     ],
+
     // Use GitHub API to generate release notes
     [
       '@semantic-release/exec',
@@ -65,6 +66,7 @@ const config = {
         `),
       },
     ],
+
     // Update version.txt, if it exists
     [
       '@semantic-release/exec',
@@ -77,6 +79,7 @@ const config = {
         `),
       },
     ],
+
     // Update version package.json, do not publish to npm registry
     [
       '@semantic-release/npm',
@@ -84,8 +87,10 @@ const config = {
         npmPublish: false,
       },
     ],
+
     // Write release notes to CHANGELOG.md
     ['@semantic-release/changelog'],
+
     // Write release notes to GitHub Actions summary
     [
       '@semantic-release/exec',
@@ -104,6 +109,28 @@ const config = {
         `),
       },
     ],
+
+    // Write release notes to GitHub Actions output
+    [
+      '@semantic-release/exec',
+      {
+        verifyConditionsCmd: unindent(`
+          if [ -z "$GITHUB_OUTPUT" ]
+          then
+            echo "ERROR: GITHUB_OUTPUT environment needs to be set." 2>&1
+            exit 64 # EX_USAGE
+          fi
+        `),
+        successCmd: unindent(`
+          {
+            echo 'release-notes<<RELEASE_NOTES_EOF'
+            echo "\${nextRelease.notes}"
+            echo 'RELEASE_NOTES_EOF'
+          } | tee -a $GITHUB_OUTPUT
+        `),
+      },
+    ],
+
     // Commit and push changed files
     [
       '@semantic-release/git',
@@ -121,6 +148,7 @@ const config = {
         `),
       },
     ],
+
     // Register a GitHub release
     [
       '@semantic-release/github',

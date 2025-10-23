@@ -11,6 +11,10 @@ inputs:
   slack-channel-id:
     description: 'This is _not_ a channel name. You can grab the ID from page URL.'
     required: true
+  text:
+    description: 'Optional custom text to include in the message.'
+    required: false
+    default: ''
 
 runs:
   using: composite
@@ -30,7 +34,17 @@ runs:
                 "type": "section",
                 "text": {
                   "type": "mrkdwn",
-                  "text": "<!here> *${{ inputs.status == 'failure' && '🔴 FAILED' || inputs.status == 'success' && '🟢' || '🟡' }}* ${{ github.workflow }}: ${{ github.repository }} @ ${{ github.head_ref || github.ref_name }}"
+                  "text": ${{
+                    toJson(format(
+                      '<!here> *{1}* {2}: {3} @ {4}{0}{0}{5}',
+                      fromJson('"\n"'),
+                      inputs.status == 'failure' && '🔴 FAILED' || inputs.status == 'success' && '🟢' || '🟡',
+                      github.workflow,
+                      github.repository,
+                      github.head_ref || github.ref_name,
+                      inputs.text
+                    ))
+                  }}
                 }
               },
               {
@@ -56,7 +70,14 @@ runs:
                 "elements": [
                   {
                     "type": "mrkdwn",
-                    "text": "*Logs:* <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|GH Actions>"
+                    "text": ${{
+                      toJson(format(
+                        '*Logs:* <{0}/{1}/actions/runs/{2}|GH Actions>',
+                        github.server_url,
+                        github.repository,
+                        github.run_id
+                      ))
+                    }}
                   }
                 ]
               }

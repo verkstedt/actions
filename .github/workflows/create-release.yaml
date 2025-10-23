@@ -113,6 +113,7 @@ jobs:
             > "$release_config_mjs"
 
       - name: Release
+        id: release
         env:
           # Note: This script doesn’t access steps.*.outputs and
           # inputs.* directly to make it easier to copy it to separate
@@ -173,13 +174,35 @@ jobs:
           fi
           export RELEASE_TYPE
           export GITHUB_STEP_SUMMARY
+          export GITHUB_OUTPUT # Note: It will add some outputs
           npx --yes semantic-release --extends "$RELEASE_CONFIG_MJS" "$@"
           echo "::endgroup::"
 
+      - name: Convert release notes to Slack’s markdown–like markup
+        id: slack-release-notes
+        env:
+          TEXT: ${{ steps.release.outputs.release-notes }}
+        run: |
+          if [ -n "$TEXT" ]
+          then
+            mkdir -p "$RUNNER_TEMP/slackify-markdown"
+            cd "$RUNNER_TEMP/slackify-markdown"
+            echo '{}' > package.json
+            npm install slackify-markdown
+            TEXT=$( node -e 'process.stdout.write(require("slackify-markdown")(process.argv[1]))' "$TEXT" )
+          fi
+
+          {
+            echo 'text<<TEXT_EOL'
+            echo "$TEXT"
+            echo 'TEXT_EOL'
+          } | tee -a "$GITHUB_OUTPUT"
+
       - name: Notify
         if: inputs.dry-run != true
-        uses: verkstedt/actions/notify-status@v1
+        uses: verkstedt/actions/notify-status@feat/create-release
         with:
           status: success
           slack-bot-token: ${{ secrets.SLACK_BOT_TOKEN }}
           slack-channel-id: ${{ vars.SLACK_CHANNEL_ID }}
+          text: ${{ steps.slack-release-notes.outputs.text }}
