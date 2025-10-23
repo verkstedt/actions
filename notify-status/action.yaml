@@ -21,6 +21,8 @@ runs:
         SLACK_BOT_TOKEN: ${{ inputs.slack-bot-token }}
       with:
         channel-id: ${{ inputs.slack-channel-id }}
+        # TIP: Use
+        # https://app.slack.com/block-kit-builder/ to preview
         payload: |
           {
             "blocks": [
@@ -28,7 +30,7 @@ runs:
                 "type": "section",
                 "text": {
                   "type": "mrkdwn",
-                  "text": "<!here> ${{ github.repository }} @ ${{ github.head_ref || github.ref_name }}, ${{ github.workflow }}"
+                  "text": "<!here> *${{ inputs.status == 'failure' && '🔴 FAILED' || inputs.status == 'success' && '🟢' || '🟡' }}* ${{ github.workflow }}: ${{ github.repository }} @ ${{ github.head_ref || github.ref_name }}"
                 }
               },
               {
@@ -47,25 +49,14 @@ runs:
                     "type": "mrkdwn",
                     "text": "<${{ github.event.sender.html_url }}|${{ github.event.sender.login }}>"
                   }
-                ]
-              }
-            ],
-            "attachments": [
+              ]
+              },
               {
-                "color": "${{ inputs.status == 'failure' && 'db0909' || inputs.status == 'success' && '28a745' || '333333' }}",
-                "blocks": [
+                "type": "context",
+                "elements": [
                   {
-                    "type": "section",
-                    "fields": [
-                      {
-                        "type": "mrkdwn",
-                        "text": "*Status:*\n${{ inputs.status }}"
-                      },
-                      {
-                        "type": "mrkdwn",
-                        "text": "*Logs:*\n<${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|GH Actions>"
-                      }
-                    ]
+                    "type": "mrkdwn",
+                    "text": "*Logs:* <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|GH Actions>"
                   }
                 ]
               }
