@@ -49,7 +49,7 @@ const config = {
         generateNotesCmd: unindent(`
           lastGitTag="\${lastRelease.gitTag}"
           set -- -f tag_name='\${nextRelease.gitTag}'
-          if [ -n "$lastGitTag" ]
+          if [ -n "$lastGitTag" ] && [ "$lastGitTag" != "null" ]
           then
             set -- "$@" -f previous_tag_name=$lastGitTag
           fi
