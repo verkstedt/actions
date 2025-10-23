@@ -92,6 +92,26 @@ jobs:
           token: ${{ steps.app-token.outputs.token }}
           github-npm-registry-personal-access-token: ${{ secrets.GH_NPM_REGISTRY_PERSONAL_ACCESS_TOKEN }}
 
+      - name: Download semantic-release config
+        id: release-config
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        # Unfortunatelly when using reusable workflows, GitHub doesn’t
+        # expose paths to these workflows in any way, so we need to
+        # hardcode repo and reference and fetch the file manually 🙄
+        run: |
+          config_repo="verkstedt/actions"
+          config_ref="feat/create-release" # TODO DEBUG Change to v1 before merging
+          config_path="create-release/semantic-release.config.mjs"
+
+          release_config_mjs="$RUNNER_TEMP/$( basename "$config_path" )"
+          echo "path=$release_config_mjs" | tee -a "$GITHUB_OUTPUT"
+
+          gh api \
+            -H 'Accept: application/vnd.github.raw' \
+            "/repos/${config_repo}/contents/${config_path}?ref=${config_ref}" \
+            > "$release_config_mjs"
+
       - name: Release
         env:
           # Note: This script doesn’t access steps.*.outputs and
@@ -100,128 +120,24 @@ jobs:
           GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
           PACKAGE_MANAGER: ${{ steps.setup.outputs.package-manager }}
           RELEASE_TYPE: ${{ inputs.release-type }}
+          RELEASE_CONFIG_MJS: ${{ steps.release-config.outputs.path }}
         run: |
-          echo "::group::Prepare semantic-release configuration"
-          release_config_mjs="$( mktemp --suffix=.mjs )"
-          cat > "$release_config_mjs" << 'RELEASE_CONFIG_MJS_EOF'
-
-          function unindent(text) {
-            const textTrimLines = text.replaceAll(/(^\n+|\n+$)/g, '');
-            const [indent] = textTrimLines.match(/^\s*/m);
-            return textTrimLines.replaceAll(new RegExp('^' + indent, 'gm'), '');
-          }
-
-          /**
-           * @type {import('semantic-release').GlobalConfig}
-           */
-          export default {
-            plugins: [
-              ["@semantic-release/exec", {
-                // WARNING: Escaping here is tricky.
-                // semantic-release interpolates some ${…} variables,
-                // but because these shell commands are inside a JavaScript
-                // string literals (so we can write them multi–line), we
-                // have to escape $ in semantic-release (and shell
-                // variables, if we use ${foo} not $foo) to avoid them
-                // being expanded by JavaScript before semantic-release
-                // sees them.
-
-                // Do not analyse commits to determine release type
-                analyzeCommitsCmd: unindent(`
-                  echo $RELEASE_TYPE
-                `),
-                // Update version.txt, if exists
-                prepareCmd: unindent(`
-                  if [ -f version.txt ]
-                  then
-                    echo "\${nextRelease.version}" > version.txt
-                  fi
-                `),
-                // Use GitHub API to generate release notes
-                generateNotesCmd: unindent(`
-                  lastGitTag="\${lastRelease.gitTag}"
-                  set -- -f tag_name='\${nextRelease.gitTag}'
-                  if [ -n "$lastGitTag" ]
-                  then
-                    set -- "$@" -f previous_tag_name=$lastGitTag
-                  fi
-                  # Note: We need to include name of the release,
-                  # because it will not be added to CHANGELOG otherwise.
-                  # Sad side–effect of this is that it’s also included
-                  # in GitHub release notes and git commit message, even
-                  # though it’s included as subject of these as well.
-                  gh api \
-                    -X POST \
-                    repos/:owner/:repo/releases/generate-notes \
-                    "$@" \
-                    --jq '"# " + .name + "\n\n" + .body'
-                `),
-                // Write release notes to GitHub Actions summary
-                successCmd: unindent(`
-                  cat << 'STEP_SUMMARY' >> $GITHUB_STEP_SUMMARY
-                  \${nextRelease.notes}
-                  STEP_SUMMARY
-                `),
-              }],
-              // Update version package.json, do not publish to npm registry
-              ['@semantic-release/npm', {
-                npmPublish: false
-              }],
-              // Write changelog
-              ['@semantic-release/changelog'],
-              // Commit and push changed files
-              ['@semantic-release/git', {
-                assets: ['CHANGELOG.md', 'package.json', 'package-lock.json', 'version.txt'],
-                message: [
-                  'chore(release): ${nextRelease.version}',
-                  '${nextRelease.notes}',
-              ].join('\n\n'),
-              }],
-              // Register a GitHub release
-              ['@semantic-release/github', {
-                successComment: unindent(`
-                  :tada: This PR has been included in version **\${nextRelease.version}**
-
-                  <% _.forEach(releases, function(release) { if (release.url) { %>
-                  - [<%= release.name %>](<%= release.url %>)
-                  <% } } ); %>
-                `),
-              }],
-            ]
-          }
-          RELEASE_CONFIG_MJS_EOF
-          echo "::endgroup::"
-
-          # Clean up
-          trap 'rm -fv "$release_config_mjs"' EXIT INT TERM
-
           echo "::group::Install semantic-release plugins"
-          npm_pkg_args=$(
-            node --input-type=module --eval "
-              const { default: config } = await import(process.argv[1], { assert: { type: 'module' } });
-              process.stdout.write(
-                config.plugins
-                  .map(p => Array.isArray(p) ? p[0] : p)
-                  .filter(p => ! /^(\\.\\/|\\.\\.\\/|\/)/.test(p))
-                  .join('\\n')
-              );
-            " "$release_config_mjs" |
-              # Skip plugins bundled with semantic-release
-              # https://semantic-release.gitbook.io/semantic-release/usage/plugins#default-plugins
-              # Docs also list @semantic-release/npm, but it doesn’t seem true
-              grep -vE '@semantic-release/commit-analyzer|@semantic-release/release-notes-generator|@semantic-release/github'
-          )
+          install-plugin-pkgs () {
+            # shellcheck disable=SC2046
+            set -- $(
+              node --input-type=module --eval "
+                const { default: config } = await import(process.argv[1], { assert: { type: 'module' } });
+                process.stdout.write(config.plugins.map(p => p[0]).join('\\n'));
+              " "$RELEASE_CONFIG_MJS"
+            )
 
-          if [ -n "$npm_pkg_args" ]
-          then
             case "$PACKAGE_MANAGER" in
               yarn)
-                # shellcheck disable=SC2086
-                yarn add -D $npm_pkg_args
+                yarn add -D "$@"
                 ;;
               npm)
-                # shellcheck disable=SC2086
-                npm install -D $npm_pkg_args
+                npm install -D "$@"
                 ;;
               *)
                 echo "::error::Unsupported package manager: $PACKAGE_MANAGER"
@@ -232,9 +148,11 @@ jobs:
             git restore package.json || :
             git restore package-lock.json || :
             git restore yarn.lock || :
-          fi
+          }
+          install-plugin-pkgs
           echo "::endgroup::"
 
+          echo "::group::Setup git"
           # Use our GitHub app bot as author of the release commit
           GIT_AUTHOR_NAME='${{ steps.app-token.outputs.app-slug }}[bot]'
           GIT_AUTHOR_EMAIL='${{ steps.app-token-data.outputs.user-id }}+${{ steps.app-token.outputs.app-slug }}[bot]@users.noreply.github.com'
@@ -246,13 +164,16 @@ jobs:
           GIT_COMMITTER_NAME="$GITHUB_ACTOR"
           GIT_COMMITTER_EMAIL="$GITHUB_ACTOR_ID+$GITHUB_ACTOR@users.noreply.github.com"
           export GIT_COMMITTER_NAME GIT_COMMITTER_EMAIL
+          echo "::endgroup::"
 
           echo "::group::Run semantic-release"
           if [ "${{ inputs.dry-run }}" = "true" ]
           then
             set -- "$@" --dry-run
           fi
-          npx --yes semantic-release --extends "$release_config_mjs" "$@"
+          export RELEASE_TYPE
+          export GITHUB_STEP_SUMMARY
+          npx --yes semantic-release --extends "$RELEASE_CONFIG_MJS" "$@"
           echo "::endgroup::"
 
       - name: Notify
