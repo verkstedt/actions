@@ -168,7 +168,7 @@ const config = {
 // Require all plugins to be specified as arrays to make it easier to
 // extract them.
 assert.equal(
-  config.plugins.filter((plugin) => !Array.isArray(plugin)),
+  config.plugins.filter((plugin) => !Array.isArray(plugin)).length,
   0,
   "All semantic-release plugins MUST be specified as arrays, i.e. ['plugin-name'], instead of 'plugin-name'."
 )
