@@ -37,7 +37,7 @@ const config = {
           fi
         `),
         analyzeCommitsCmd: unindent(`
-          echo $RELEASE_TYPE
+          echo "$RELEASE_TYPE"
         `),
       },
     ],
@@ -103,7 +103,7 @@ const config = {
           fi
         `),
         successCmd: unindent(`
-          cat << 'STEP_SUMMARY' >> $GITHUB_STEP_SUMMARY
+          cat << 'STEP_SUMMARY' >> "$GITHUB_STEP_SUMMARY"
           \${nextRelease.notes}
           STEP_SUMMARY
         `),
@@ -126,7 +126,7 @@ const config = {
             echo 'release-notes<<RELEASE_NOTES_EOF'
             echo "\${nextRelease.notes}"
             echo 'RELEASE_NOTES_EOF'
-          } | tee -a $GITHUB_OUTPUT
+          } | tee -a "$GITHUB_OUTPUT"
         `),
       },
     ],
