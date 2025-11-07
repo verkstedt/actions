@@ -36,26 +36,27 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Validate inputs
+        run: |
+          if [[ -z "${{ inputs.job-name }}" && -z "${{ inputs.service-name }}" ]]; then
+            echo "Error: at least one of 'job-name' or 'service-name' must be provided"
+            exit 1
+          fi
       - uses: 'google-github-actions/auth@v3'
         with:
           service_account: ${{ inputs.workload-identity-service-account-mail }}
           workload_identity_provider: ${{ inputs.workload-identity-provider }}
-      - name: 'Set up gcloud-cli'
-        uses: 'google-github-actions/setup-gcloud@v3'
-        with:
-          version: '>= 363.0.0'
       - name: 'deploy cloudrun job'
         if: inputs.job-name != ''
         uses: 'google-github-actions/deploy-cloudrun@v3'
         with:
-          image: ${{ inputs.registry }}${{ inputs.artifact-repository }}:${{ inputs.artifact-tag }}
+          image: ${{ inputs.registry }}/${{ inputs.artifact-repository }}:${{ inputs.artifact-tag }}
           region: ${{ inputs.region }}
           job: ${{ inputs.job-name }}
       - name: 'deploy cloudrun service'
         if: inputs.service-name != ''
         uses: 'google-github-actions/deploy-cloudrun@v3'
         with:
-          image: ${{ inputs.registry }}${{ inputs.artifact-repository }}:${{ inputs.artifact-tag }}
+          image: ${{ inputs.registry }}/${{ inputs.artifact-repository }}:${{ inputs.artifact-tag }}
           region: ${{ inputs.region }}
           service: ${{ inputs.service-name }}
-
