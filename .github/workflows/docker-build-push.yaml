@@ -11,10 +11,14 @@
 #     - `v<major>` and `v<major>.<minor>`
 #
 #
-# # GitHub actions variables
+# # Configuration
 #
-# Best to set these on organisation level. If you push to different
-# repositories in different repos, set everything in org and change only
+# All configuration can be provided either as:
+# 1. GitHub Actions variables (vars) - Best to set these on organisation level
+# 2. Workflow inputs - Useful for manual workflows or overriding defaults
+#
+# Inputs take precedence over vars. If you push to different repositories
+# in different repos, set everything in org vars and change only
 # `DOCKER_…_ENABLE` in repos.
 #
 #
@@ -76,6 +80,62 @@ on:
         description: 'Platforms to build for, e.g. linux/amd64,linux/arm64'
         type: string
         default: ''
+      # GitHub Container Registry
+      docker-github-enable:
+        description: 'Enable GitHub Container Registry (true/false)'
+        type: string
+      docker-github-package-name:
+        description: 'Package name for GitHub Container Registry (defaults to repo name)'
+        type: string
+      # Google Artifact Registry
+      docker-google-enable:
+        description: 'Enable Google Artifact Registry (true/false)'
+        type: string
+      docker-google-project:
+        description: 'Google Cloud project ID'
+        type: string
+      docker-google-registry-location:
+        description: 'Google Artifact Registry location'
+        type: string
+      docker-google-repository:
+        description: 'Google Artifact Registry repository name'
+        type: string
+      docker-google-workload-identity-provider:
+        description: 'Google Workload Identity Provider'
+        type: string
+      docker-google-service-account:
+        description: 'Google Service Account email'
+        type: string
+      docker-google-package-name:
+        description: 'Package name for Google Artifact Registry (defaults to repo name)'
+        type: string
+      # Amazon ECR
+      docker-amazon-enable:
+        description: 'Enable Amazon ECR (true/false)'
+        type: string
+      docker-amazon-aws-account-id:
+        description: 'AWS Account ID'
+        type: string
+      docker-amazon-aws-region:
+        description: 'AWS Region'
+        type: string
+      docker-amazon-role-to-assume:
+        description: 'AWS IAM Role ARN to assume'
+        type: string
+      docker-amazon-package-name:
+        description: 'Package name for Amazon ECR (defaults to repo name)'
+        type: string
+      # Docker build settings
+      docker-context:
+        description: 'Docker build context path'
+        type: string
+      docker-dockerfile:
+        description: 'Path to Dockerfile'
+        type: string
+      # Slack
+      slack-channel-id:
+        description: 'Slack channel ID for notifications'
+        type: string
 
 jobs:
   build-push:
@@ -93,7 +153,8 @@ jobs:
       - name: 'GitHub Container Registry: Setup'
         id: github
         run: |
-          if [ "${{ vars.DOCKER_GITHUB_ENABLE }}" != "true" ]
+          DOCKER_GITHUB_ENABLE="${{ inputs.docker-github-enable || vars.DOCKER_GITHUB_ENABLE }}"
+          if [ "$DOCKER_GITHUB_ENABLE" != "true" ]
           then
             echo "enabled=false" | tee -a "$GITHUB_OUTPUT"
           else
@@ -113,7 +174,7 @@ jobs:
             registry="ghcr.io/${{ github.repository_owner }}"
             echo "registry=$registry" | tee -a "$GITHUB_OUTPUT"
 
-            package_name="${{ vars.DOCKER_GITHUB_PACKAGE_NAME }}"
+            package_name="${{ inputs.docker-github-package-name || vars.DOCKER_GITHUB_PACKAGE_NAME }}"
             if [ -z "$package_name" ]
             then
               package_name="${{ github.event.repository.name }}"
@@ -134,19 +195,25 @@ jobs:
       - name: 'Google Artifact Registry: Setup'
         id: google
         run: |
-          if [ "${{ vars.DOCKER_GOOGLE_ENABLE }}" != "true" ]
+          DOCKER_GOOGLE_ENABLE="${{ inputs.docker-google-enable || vars.DOCKER_GOOGLE_ENABLE }}"
+          DOCKER_GOOGLE_PROJECT="${{ inputs.docker-google-project || vars.DOCKER_GOOGLE_PROJECT }}"
+          DOCKER_GOOGLE_REGISTRY_LOCATION="${{ inputs.docker-google-registry-location || vars.DOCKER_GOOGLE_REGISTRY_LOCATION }}"
+          DOCKER_GOOGLE_REPOSITORY="${{ inputs.docker-google-repository || vars.DOCKER_GOOGLE_REPOSITORY }}"
+          DOCKER_GOOGLE_WORKLOAD_IDENTITY_PROVIDER="${{ inputs.docker-google-workload-identity-provider || vars.DOCKER_GOOGLE_WORKLOAD_IDENTITY_PROVIDER }}"
+          DOCKER_GOOGLE_SERVICE_ACCOUNT="${{ inputs.docker-google-service-account || vars.DOCKER_GOOGLE_SERVICE_ACCOUNT }}"
+          
+          if [ "$DOCKER_GOOGLE_ENABLE" != "true" ]
           then
             echo "enabled=false" | tee -a "$GITHUB_OUTPUT"
           else
             missing_vars=''
             missing_secrets=''
 
-            [ -n "${{ vars.DOCKER_GOOGLE_PROJECT }}" ] || missing_vars="$missing_vars DOCKER_GOOGLE_PROJECT"
-            [ -n "${{ vars.DOCKER_GOOGLE_REGISTRY_LOCATION }}" ] || missing_vars="$missing_vars DOCKER_GOOGLE_REGISTRY_LOCATION"
-            [ -n "${{ vars.DOCKER_GOOGLE_REPOSITORY }}" ] || missing_vars="$missing_vars DOCKER_GOOGLE_REPOSITORY"
-
-            [ -n "${{ vars.DOCKER_GOOGLE_WORKLOAD_IDENTITY_PROVIDER }}" ] || missing_vars="$missing_vars DOCKER_GOOGLE_WORKLOAD_IDENTITY_PROVIDER"
-            [ -n "${{ vars.DOCKER_GOOGLE_SERVICE_ACCOUNT }}" ] || missing_vars="$missing_vars DOCKER_GOOGLE_SERVICE_ACCOUNT"
+            [ -n "$DOCKER_GOOGLE_PROJECT" ] || missing_vars="$missing_vars DOCKER_GOOGLE_PROJECT"
+            [ -n "$DOCKER_GOOGLE_REGISTRY_LOCATION" ] || missing_vars="$missing_vars DOCKER_GOOGLE_REGISTRY_LOCATION"
+            [ -n "$DOCKER_GOOGLE_REPOSITORY" ] || missing_vars="$missing_vars DOCKER_GOOGLE_REPOSITORY"
+            [ -n "$DOCKER_GOOGLE_WORKLOAD_IDENTITY_PROVIDER" ] || missing_vars="$missing_vars DOCKER_GOOGLE_WORKLOAD_IDENTITY_PROVIDER"
+            [ -n "$DOCKER_GOOGLE_SERVICE_ACCOUNT" ] || missing_vars="$missing_vars DOCKER_GOOGLE_SERVICE_ACCOUNT"
 
             if [ -n "$missing_vars$missing_secrets" ]
             then
@@ -156,10 +223,10 @@ jobs:
 
             # :LOCATION-docker.pkg.dev/:PROJECT/:REPOSITORY/:IMAGE_NAME
 
-            registry="${{ vars.DOCKER_GOOGLE_REGISTRY_LOCATION }}-docker.pkg.dev/${{ vars.DOCKER_GOOGLE_PROJECT }}/${{ vars.DOCKER_GOOGLE_REPOSITORY }}"
+            registry="$DOCKER_GOOGLE_REGISTRY_LOCATION-docker.pkg.dev/$DOCKER_GOOGLE_PROJECT/$DOCKER_GOOGLE_REPOSITORY"
             echo "registry=$registry" | tee -a "$GITHUB_OUTPUT"
 
-            package_name="${{ vars.DOCKER_GOOGLE_PACKAGE_NAME }}"
+            package_name="${{ inputs.docker-google-package-name || vars.DOCKER_GOOGLE_PACKAGE_NAME }}"
             if [ -z "$package_name" ]
             then
               package_name="${{ github.event.repository.name }}"
@@ -175,9 +242,9 @@ jobs:
         uses: google-github-actions/auth@v3
         with:
           token_format: access_token
-          project_id: ${{ vars.DOCKER_GOOGLE_PROJECT }}
-          workload_identity_provider: ${{ vars.DOCKER_GOOGLE_WORKLOAD_IDENTITY_PROVIDER }}
-          service_account: ${{ vars.DOCKER_GOOGLE_SERVICE_ACCOUNT }}
+          project_id: ${{ inputs.docker-google-project || vars.DOCKER_GOOGLE_PROJECT }}
+          workload_identity_provider: ${{ inputs.docker-google-workload-identity-provider || vars.DOCKER_GOOGLE_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ inputs.docker-google-service-account || vars.DOCKER_GOOGLE_SERVICE_ACCOUNT }}
 
       - name: 'Google Artifact Registry: Authenticate to Google Artifact Registry'
         if: steps.google.outputs.enabled == 'true'
@@ -190,16 +257,21 @@ jobs:
       - name: 'Amazon Elastic Container Registry: Setup'
         id: amazon
         run: |
-          if [ "${{ vars.DOCKER_AMAZON_ENABLE }}" != "true" ]
+          DOCKER_AMAZON_ENABLE="${{ inputs.docker-amazon-enable || vars.DOCKER_AMAZON_ENABLE }}"
+          DOCKER_AMAZON_AWS_ACCOUNT_ID="${{ inputs.docker-amazon-aws-account-id || vars.DOCKER_AMAZON_AWS_ACCOUNT_ID }}"
+          DOCKER_AMAZON_AWS_REGION="${{ inputs.docker-amazon-aws-region || vars.DOCKER_AMAZON_AWS_REGION }}"
+          DOCKER_AMAZON_ROLE_TO_ASSUME="${{ inputs.docker-amazon-role-to-assume || vars.DOCKER_AMAZON_ROLE_TO_ASSUME }}"
+          
+          if [ "$DOCKER_AMAZON_ENABLE" != "true" ]
           then
             echo "enabled=false" | tee -a "$GITHUB_OUTPUT"
           else
             missing_vars=''
             missing_secrets=''
 
-            [ -n "${{ vars.DOCKER_AMAZON_AWS_ACCOUNT_ID }}" ] || missing_vars="$missing_vars DOCKER_AMAZON_AWS_ACCOUNT_ID"
-            [ -n "${{ vars.DOCKER_AMAZON_AWS_REGION }}" ] || missing_vars="$missing_vars DOCKER_AMAZON_AWS_REGION"
-            [ -n "${{ vars.DOCKER_AMAZON_ROLE_TO_ASSUME }}" ] || missing_vars="$missing_vars DOCKER_AMAZON_ROLE_TO_ASSUME"
+            [ -n "$DOCKER_AMAZON_AWS_ACCOUNT_ID" ] || missing_vars="$missing_vars DOCKER_AMAZON_AWS_ACCOUNT_ID"
+            [ -n "$DOCKER_AMAZON_AWS_REGION" ] || missing_vars="$missing_vars DOCKER_AMAZON_AWS_REGION"
+            [ -n "$DOCKER_AMAZON_ROLE_TO_ASSUME" ] || missing_vars="$missing_vars DOCKER_AMAZON_ROLE_TO_ASSUME"
 
             if [ -n "$missing_vars$missing_secrets" ]
             then
@@ -209,10 +281,10 @@ jobs:
 
             # :AWS_ACCOUNT_ID.dkr.ecr.:REGION.amazonaws.com/:IMAGE_NAME
 
-            registry="${{ vars.DOCKER_AMAZON_AWS_ACCOUNT_ID }}.dkr.ecr.${{ vars.DOCKER_AMAZON_AWS_REGION }}.amazonaws.com"
+            registry="$DOCKER_AMAZON_AWS_ACCOUNT_ID.dkr.ecr.$DOCKER_AMAZON_AWS_REGION.amazonaws.com"
             echo "registry=$registry" | tee -a "$GITHUB_OUTPUT"
 
-            package_name="${{ vars.DOCKER_AMAZON_PACKAGE_NAME }}"
+            package_name="${{ inputs.docker-amazon-package-name || vars.DOCKER_AMAZON_PACKAGE_NAME }}"
             if [ -z "$package_name" ]
             then
               package_name="${{ github.event.repository.name }}"
@@ -226,8 +298,8 @@ jobs:
         if: steps.amazon.outputs.enabled == 'true'
         uses: aws-actions/configure-aws-credentials@v5
         with:
-          aws-region: ${{ vars.DOCKER_AMAZON_AWS_REGION }}
-          role-to-assume: ${{ vars.DOCKER_AMAZON_ROLE_TO_ASSUME }}
+          aws-region: ${{ inputs.docker-amazon-aws-region || vars.DOCKER_AMAZON_AWS_REGION }}
+          role-to-assume: ${{ inputs.docker-amazon-role-to-assume || vars.DOCKER_AMAZON_ROLE_TO_ASSUME }}
 
       - name: 'Amazon Elastic Container Registry: Authenticate to Amazon Elastic Container Registry'
         if: steps.amazon.outputs.enabled == 'true'
@@ -353,8 +425,8 @@ jobs:
           push: ${{ inputs.dry-run != true }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-          context: ${{ vars.DOCKER_CONTEXT }}
-          file: ${{ vars.DOCKER_DOCKERFILE }}
+          context: ${{ inputs.docker-context || vars.DOCKER_CONTEXT }}
+          file: ${{ inputs.docker-dockerfile || vars.DOCKER_DOCKERFILE }}
           platforms: ${{ steps.config.outputs.platforms }}
           provenance: true
           tags: ${{ steps.config.outputs.tags }}
@@ -366,4 +438,4 @@ jobs:
         with:
           status: success
           slack-bot-token: ${{ secrets.SLACK_BOT_TOKEN }}
-          slack-channel-id: ${{ vars.SLACK_CHANNEL_ID }}
+          slack-channel-id: ${{ inputs.slack-channel-id || vars.SLACK_CHANNEL_ID }}
