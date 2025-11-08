@@ -21,6 +21,10 @@ on:
       region:
         required: true
         type: string
+      flags:
+        type: string
+      container:
+        type: string
       workload-identity-provider:
         required: true
         type: string
@@ -46,6 +50,14 @@ jobs:
         with:
           service_account: ${{ inputs.workload-identity-service-account-mail }}
           workload_identity_provider: ${{ inputs.workload-identity-provider }}
+      - name: 'Prepare deployment flags field'
+        id: flags
+        run: |
+          FLAGS="${{ inputs.flags }}"
+          if [ -n "${{ inputs.container }}" ]; then
+            FLAGS="$FLAGS --container ${{ inputs.container }}"
+          fi
+          echo "flags=$FLAGS" >> "$GITHUB_OUTPUT"
       - name: 'deploy cloudrun job'
         if: inputs.job-name != ''
         uses: 'google-github-actions/deploy-cloudrun@v3'
@@ -53,6 +65,7 @@ jobs:
           image: ${{ inputs.registry }}/${{ inputs.artifact-repository }}:${{ inputs.artifact-tag }}
           region: ${{ inputs.region }}
           job: ${{ inputs.job-name }}
+          flags: ${{ steps.flags.outputs.flags }}
       - name: 'deploy cloudrun service'
         if: inputs.service-name != ''
         uses: 'google-github-actions/deploy-cloudrun@v3'
@@ -60,3 +73,4 @@ jobs:
           image: ${{ inputs.registry }}/${{ inputs.artifact-repository }}:${{ inputs.artifact-tag }}
           region: ${{ inputs.region }}
           service: ${{ inputs.service-name }}
+          flags: ${{ steps.flags.outputs.flags }}
