@@ -79,5 +79,4 @@ jobs:
           $CMD "$NAME" \
             ${CONTAINER_FLAG} \
             --image "$IMAGE" \
-            --region "${{ inputs.region }}" \
-            ${EXTRA_FLAGS}
+            --region "${{ inputs.region }}" ${EXTRA_FLAGS}
