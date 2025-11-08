@@ -77,6 +77,4 @@ jobs:
           fi
           
           $CMD "$NAME" \
-            ${CONTAINER_FLAG} \
-            --image "$IMAGE" \
-            --region "${{ inputs.region }}" ${EXTRA_FLAGS}
+            ${CONTAINER_FLAG} --image="$IMAGE" --region="${{ inputs.region }}" ${EXTRA_FLAGS}
