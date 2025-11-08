@@ -50,27 +50,34 @@ jobs:
         with:
           service_account: ${{ inputs.workload-identity-service-account-mail }}
           workload_identity_provider: ${{ inputs.workload-identity-provider }}
-      - name: 'Prepare deployment flags field'
+      - name: 'Set up gcloud CLI'
+        uses: 'google-github-actions/setup-gcloud@v3'
+        with:
+          version: '>= 363.0.0'
+      - name: 'Prepare deployment flags'
         id: flags
         run: |
-          FLAGS="${{ inputs.flags }}"
           if [ -n "${{ inputs.container }}" ]; then
-            FLAGS="$FLAGS --container ${{ inputs.container }}"
+            echo "container_flag=--container ${{ inputs.container }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "container_flag=" >> "$GITHUB_OUTPUT"
           fi
-          echo "flags=$FLAGS" >> "$GITHUB_OUTPUT"
-      - name: 'deploy cloudrun job'
-        if: inputs.job-name != ''
-        uses: 'google-github-actions/deploy-cloudrun@v3'
-        with:
-          image: ${{ inputs.registry }}/${{ inputs.artifact-repository }}:${{ inputs.artifact-tag }}
-          region: ${{ inputs.region }}
-          job: ${{ inputs.job-name }}
-          flags: ${{ steps.flags.outputs.flags }}
-      - name: 'deploy cloudrun service'
-        if: inputs.service-name != ''
-        uses: 'google-github-actions/deploy-cloudrun@v3'
-        with:
-          image: ${{ inputs.registry }}/${{ inputs.artifact-repository }}:${{ inputs.artifact-tag }}
-          region: ${{ inputs.region }}
-          service: ${{ inputs.service-name }}
-          flags: ${{ steps.flags.outputs.flags }}
+      - name: 'deploy cloudrun'
+        run: |
+          IMAGE="${{ inputs.registry }}/${{ inputs.artifact-repository }}:${{ inputs.artifact-tag }}"
+          CONTAINER_FLAG="${{ steps.flags.outputs.container_flag }}"
+          EXTRA_FLAGS="${{ inputs.flags }}"
+          
+          if [ -n "${{ inputs.job-name }}" ]; then
+            NAME="${{ inputs.job-name }}"
+            CMD="gcloud run jobs deploy"
+          else
+            NAME="${{ inputs.service-name }}"
+            CMD="gcloud run deploy"
+          fi
+          
+          $CMD "$NAME" \
+            ${CONTAINER_FLAG} \
+            --image "$IMAGE" \
+            --region "${{ inputs.region }}" \
+            ${EXTRA_FLAGS}
