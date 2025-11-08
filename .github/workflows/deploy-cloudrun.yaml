@@ -69,12 +69,15 @@ jobs:
           EXTRA_FLAGS="${{ inputs.flags }}"
           
           if [ -n "${{ inputs.job-name }}" ]; then
-            NAME="${{ inputs.job-name }}"
-            CMD="gcloud run jobs deploy"
+            gcloud run jobs deploy "${{ inputs.job-name }}" \
+              ${CONTAINER_FLAG} \
+              --image "$IMAGE" \
+              --region "${{ inputs.region }}" \
+              ${EXTRA_FLAGS}
           else
-            NAME="${{ inputs.service-name }}"
-            CMD="gcloud run deploy"
+            gcloud run deploy "${{ inputs.service-name }}" \
+              ${CONTAINER_FLAG} \
+              --image "$IMAGE" \
+              --region "${{ inputs.region }}" \
+              ${EXTRA_FLAGS}
           fi
-          
-          $CMD "$NAME" \
-            ${CONTAINER_FLAG} --image="$IMAGE" --region="${{ inputs.region }}" ${EXTRA_FLAGS}
