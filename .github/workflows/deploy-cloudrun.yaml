@@ -67,17 +67,15 @@ jobs:
           IMAGE="${{ inputs.registry }}/${{ inputs.artifact-repository }}:${{ inputs.artifact-tag }}"
           CONTAINER_FLAG="${{ steps.flags.outputs.container_flag }}"
           EXTRA_FLAGS="${{ inputs.flags }}"
-          
+          gcloud set region "${{ inputs.region }}"
           if [ -n "${{ inputs.job-name }}" ]; then
-            gcloud run jobs deploy "${{ inputs.job-name }}" \
+            gcloud beta run jobs deploy "${{ inputs.job-name }}" \
               ${CONTAINER_FLAG} \
               --image "$IMAGE" \
-              --region "${{ inputs.region }}" \
               ${EXTRA_FLAGS}
           else
             gcloud run deploy "${{ inputs.service-name }}" \
               ${CONTAINER_FLAG} \
               --image "$IMAGE" \
-              --region "${{ inputs.region }}" \
               ${EXTRA_FLAGS}
           fi
