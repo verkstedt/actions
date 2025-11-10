@@ -173,6 +173,16 @@ Template:
 
 When a GH commit URL is included in commit message, link the commit from said comment.
 
+### Cloudrun Deployment
+
+Template:
+<https://github.com/verkstedt/.github/tree/main/workflow-templates/deploy-cloudrun.yaml>
+
+Deploy images to google cloudrun services or jobs.
+
+See [deploy-cloudrun.yaml](./.github/workflows/deploy-cloudrun.yaml) for details.
+
+
 ## Deploying new versions of actions and workflows
 
 You might have noticed that main branch in this repository is called

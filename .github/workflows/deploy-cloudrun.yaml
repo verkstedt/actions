@@ -4,31 +4,41 @@ on:
   workflow_call:
     inputs:
       job-name:
+        description: 'Name of the Cloud Run job to deploy'
         required: false
         type: string
       service-name:
+        description: 'Name of the Cloud Run service to deploy'
         required: false
         type: string
       registry:
+        description: 'Container registry URL (e.g., gcr.io, europe-west3-docker.pkg.dev)'
         required: true
         type: string
       artifact-repository:
+        description: 'Repository name in the artifact registry'
         required: true
         type: string
       artifact-tag:
+        description: 'Tag of the container image to deploy'
         required: true
         type: string
       region:
+        description: 'GCP region where the Cloud Run resource will be deployed'
         required: true
         type: string
       flags:
+        description: 'Additional flags to pass to the gcloud deploy command'
         type: string
       container:
+        description: 'Container name for multi-container deployments'
         type: string
       workload-identity-provider:
+        description: 'Workload Identity Provider for authentication'
         required: true
         type: string
       workload-identity-service-account-mail:
+        description: 'Service account email for Workload Identity'
         required: true
         type: string
 jobs:
@@ -63,12 +73,14 @@ jobs:
           else
             echo "container_flag=" >> "$GITHUB_OUTPUT"
           fi
+      # we cannot use google-github-actions/deploy-cloudrun here due to:
+      # https://github.com/google-github-actions/deploy-cloudrun/issues/558
       - name: 'deploy cloudrun'
         run: |
           IMAGE="${{ inputs.registry }}/${{ inputs.artifact-repository }}:${{ inputs.artifact-tag }}"
           CONTAINER_FLAG="${{ steps.flags.outputs.container_flag }}"
           EXTRA_FLAGS="${{ inputs.flags }}"
-          gcloud config set run/region ${{ inputs.region }}
+          gcloud config set run/region "${{ inputs.region }}"
           if [ -n "${{ inputs.job-name }}" ]; then
             gcloud beta run jobs deploy "${{ inputs.job-name }}" \
               ${CONTAINER_FLAG} \
