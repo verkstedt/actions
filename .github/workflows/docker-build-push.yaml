@@ -17,6 +17,9 @@
 # repositories in different repos, set everything in org and change only
 # `DOCKER_…_ENABLE` in repos.
 #
+# - `DOCKER_MUTABLE_TAGS=false`, if you don’t want this workflow to ever
+#    update existing tags (`edge`, `latest`, `v<major>`,
+#    `v<major>.<minor>`), only set new tags.
 #
 # ## GitHub Container Registry
 #
@@ -259,12 +262,15 @@ jobs:
           # `git-<SHORT_SHA>`
           TAGS="git-$( git rev-parse --short HEAD )"
 
-          # `edge`, if HEAD points at main branch
-          # Note: Even might’ve been triggered by a tag push.
-          git fetch origin main --depth=1
-          if [ "$( git rev-parse HEAD )" = "$( git rev-parse origin/main )" ]
+          if [ "${{ vars.DOCKER_MUTABLE_TAGS }}" != "false" ]
           then
-            TAGS="$TAGS edge"
+            # `edge`, if HEAD points at main branch
+            # Note: Even might’ve been triggered by a tag push.
+            git fetch origin main --depth=1
+            if [ "$( git rev-parse HEAD )" = "$( git rev-parse origin/main )" ]
+            then
+              TAGS="$TAGS edge"
+            fi
           fi
 
           # `latest` and version tags
@@ -281,10 +287,13 @@ jobs:
             # not a pre-release
             if ! echo "$VERSION_TAG" | grep -q '-'
             then
-              TAGS="$TAGS $( echo "${VERSION_TAG}" | grep -oE '^v[0-9]+\.[0-9]+' )"
-              TAGS="$TAGS $( echo "${VERSION_TAG}" | grep -oE '^v[0-9]+' )"
-              TAGS="$TAGS latest"
-              echo 'tagged-with-latest=true' | tee -a "$GITHUB_OUTPUT"
+              if [ "${{ vars.DOCKER_MUTABLE_TAGS }}" != "false" ]
+              then
+                TAGS="$TAGS $( echo "${VERSION_TAG}" | grep -oE '^v[0-9]+\.[0-9]+' )"
+                TAGS="$TAGS $( echo "${VERSION_TAG}" | grep -oE '^v[0-9]+' )"
+                TAGS="$TAGS latest"
+              fi
+              echo 'new-version=true' | tee -a "$GITHUB_OUTPUT"
             fi
           fi
 
@@ -361,7 +370,7 @@ jobs:
           build-args: ${{ secrets.BUILD_ARGS }}
 
       - name: Notify
-        if: steps.config.outputs.tagged-with-latest == 'true' && inputs.dry-run != true
+        if: steps.config.outputs.new-version == 'true' && inputs.dry-run != true
         uses: verkstedt/actions/notify-status@v1
         with:
           status: success
