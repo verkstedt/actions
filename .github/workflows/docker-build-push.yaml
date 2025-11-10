@@ -25,14 +25,12 @@
 #
 # ## GitHub Container Registry
 #
-# - `DOCKER_GITHUB_ENABLE=true`
 # - if you don’t want to use repo name as package name, you can set
 #   `DOCKER_GITHUB_PACKAGE_NAME` in your repo
 #
 #
 # ##  Google Artifact Registry
 #
-# - `DOCKER_GOOGLE_ENABLE=true`
 # - `DOCKER_GOOGLE_WORKLOAD_IDENTITY_PROVIDER`
 # - `DOCKER_GOOGLE_SERVICE_ACCOUNT`
 # - `DOCKER_GOOGLE_PROJECT`
@@ -55,7 +53,6 @@
 #
 # ## Amazon ECR
 #
-# - `DOCKER_AMAZON_ENABLE=true`
 # - `DOCKER_AMAZON_AWS_REGION`
 # - `DOCKER_AMAZON_AWS_ACCOUNT_ID`
 # - `DOCKER_AMAZON_ROLE_TO_ASSUME`
@@ -81,6 +78,18 @@ on:
         description: 'Platforms to build for, e.g. linux/amd64,linux/arm64'
         type: string
         default: 'linux/amd64'
+      github:
+        description: 'Enable pushing to GitHub Container Registry'
+        type: boolean
+        default: false
+      google:
+        description: 'Enable pushing to Google Artifact Registry'
+        type: boolean
+        default: false
+      amazon:
+        description: 'Enable pushing to Amazon Elastic Container Registry'
+        type: boolean
+        default: false
 
 jobs:
   build-push:
@@ -98,7 +107,7 @@ jobs:
       - name: 'GitHub Container Registry: Setup'
         id: github
         run: |
-          if [ "${{ vars.DOCKER_GITHUB_ENABLE }}" != "true" ]
+          if [ "${{ inputs.github && 'true' }}" != "true" ]
           then
             echo "enabled=false" | tee -a "$GITHUB_OUTPUT"
           else
@@ -139,7 +148,7 @@ jobs:
       - name: 'Google Artifact Registry: Setup'
         id: google
         run: |
-          if [ "${{ vars.DOCKER_GOOGLE_ENABLE }}" != "true" ]
+          if [ "${{ inputs.google && 'true' }}" != "true" ]
           then
             echo "enabled=false" | tee -a "$GITHUB_OUTPUT"
           else
@@ -195,7 +204,7 @@ jobs:
       - name: 'Amazon Elastic Container Registry: Setup'
         id: amazon
         run: |
-          if [ "${{ vars.DOCKER_AMAZON_ENABLE }}" != "true" ]
+          if [ "${{ inputs.amazon && 'true' }}" != "true" ]
           then
             echo "enabled=false" | tee -a "$GITHUB_OUTPUT"
           else
