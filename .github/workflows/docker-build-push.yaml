@@ -20,6 +20,8 @@
 # - `DOCKER_MUTABLE_TAGS=false`, if you don’t want this workflow to ever
 #    update existing tags (`edge`, `latest`, `v<major>`,
 #    `v<major>.<minor>`), only set new tags.
+# - `DOCKER_SLACK_NOTIFY=false`, if you don’t want do not want slack
+#   notifications when new version is pushed.
 #
 # ## GitHub Container Registry
 #
@@ -370,7 +372,10 @@ jobs:
           build-args: ${{ secrets.BUILD_ARGS }}
 
       - name: Notify
-        if: steps.config.outputs.new-version == 'true' && inputs.dry-run != true
+        if: >
+          steps.config.outputs.new-version == 'true'
+          && inputs.dry-run != true
+          && vars.DOCKER_SLACK_NOTIFY != 'false'
         uses: verkstedt/actions/notify-status@v1
         with:
           status: success
