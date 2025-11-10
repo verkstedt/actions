@@ -3,28 +3,41 @@ description: 'Check out the code, setup Node.js, install dependencies, cache nod
 
 inputs:
   fetch-depth:
-    description: 'Git fetch depth passed to actions/checkout. Pass 0 to fetch full history.'
+    description: >
+      Git fetch depth passed to actions/checkout.
+      Pass 0 to fetch full history.
     required: false
     default: '1'
   working-directory:
-    description: 'Directory in which to run things in.'
+    description: >
+      Directory in which to run things in.
     required: false
     default: '.'
   token:
-    description: 'GitHub token. Defaults to `github.token`.'
+    description: >
+      GitHub token.
+      Defaults to `github.token`.
     required: false
     default: ${{ github.token }}
   github-npm-registry-personal-access-token:
-    description: 'GitHub personal access token for npm registry authentication. You can create one at https://github.com/settings/tokens/new (scopes: `read:packages`, `repo` and `read:org`). If not set, will use secrets.GITHUB_TOKEN, which is enough for most cases.'
+    description: >
+      GitHub personal access token for npm registry authentication.
+      You can create one at https://github.com/settings/tokens/new (scopes: `read:packages`, `repo` and `read:org`).
+      If not set, will use secrets.GITHUB_TOKEN, which is enough for most cases.'
     required: false
     default: ''
 
 outputs:
   scripts:
-    description: "Comma–separated list of available npm scripts. Includes comma at the beginning and the end, so you can use contains(needs.setup.outputs.scripts, ',script-name,')"
+    description: >
+      Comma–separated list of available npm scripts.
+      Includes comma at the beginning and the end, so you can use
+      `contains(needs.setup.outputs.scripts, ',script-name,')`.
     value: ${{ steps.scripts.outputs.scripts }}
   package-manager:
-    description: 'Detected package manager (npm or yarn)'
+    description: >
+      Detected package manager.
+      (npm or yarn)
     value: ${{ steps.package-manager.outputs.package-manager }}
 
 runs:
