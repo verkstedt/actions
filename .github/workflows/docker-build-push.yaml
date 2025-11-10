@@ -75,7 +75,7 @@ on:
       platforms:
         description: 'Platforms to build for, e.g. linux/amd64,linux/arm64'
         type: string
-        default: ''
+        default: 'linux/amd64'
 
 jobs:
   build-push:
@@ -248,7 +248,7 @@ jobs:
       - name: 'Determine platforms and tags to use'
         id: config
         run: |
-          platforms="${{ inputs.platforms || vars.DOCKER_PLATFORMS || 'linux/amd64' }}"
+          platforms="${{ inputs.platforms }}"
           echo "platforms=$platforms" | tee -a "$GITHUB_OUTPUT"
           {
             echo '## Platforms'
