@@ -40,7 +40,7 @@ Read more about [composite actions](https://docs.github.com/en/actions/creating-
 They live in `./.github/workflows/`, as is required by GitHub. Each
 workflow should come with accompanying workflow template.
 
-Reusable workflows SHOULD NOT use `secrets` (apart from GitHub provided
+Reusable workflows SHOULD NOT use `secrets` (apart from GitHub–provided
 ones like `GITHUB_TOKEN`) and `vars`. Only define `inputs`. Inputs
 SHOULD have default values, when possible.
 
@@ -55,6 +55,8 @@ They live in
 
 ![](./screenshots/workflows-by-verkstedt.png)
 
+You can also just copy these template files directly to your repository.
+
 Workflow templates can use `secrets` and `vars`. This allows us to set
 these at organisation level with sane values and only override them in
 repositories when necessary.
@@ -64,14 +66,14 @@ setting up triggers (e.g. “on push to main branch”), calling a reusable
 workflow and for workflows that run on the main branch, sending
 notification on failure.
 
-Read more about [workflow templates](https://docs.github.com/en/actions/using-workflows/creating-starter-workflows-for-your-organization)
-
 > [!NOTE]
-> Why use templates at all? This allows us to change the workflows and
-> see it being reflected in all repositories without having to update
-> all of them. As long as we keep changes backwards–compatible, we don’t
-> ever have to migrate any existing repositories, when we change
-> workflows.
+> Why introduce this additional layer of templates at all?
+>
+> Once a template is copied to a repository, changes to the template itself don't propagate to repositories that used it. Only changes to the reusable workflows in `verkstedt/actions` are automatically reflected across all repositories.
+>
+> This is why we keep templates as short as possible. The more logic we put in templates, the higher the risk of needing breaking changes that would require manually updating every repository that the template was copied to.
+
+Read more about [workflow templates](https://docs.github.com/en/actions/using-workflows/creating-starter-workflows-for-your-organization)
 
 ## Breaking changes
 
