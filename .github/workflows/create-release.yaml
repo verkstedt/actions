@@ -11,33 +11,62 @@ name: Create Release
 # - Create git version tag
 # - Create GitHub release
 # - Send slack notification
-#
-#
-# # Authentication
-#
-# This workflow needs higher permissions to be able to push to main
-# branch etc. We obtain it using a GitHub app. App needs to have these
-# permissions:
-#
-# - Contents: Read & Write
-# - Issues: Read & Write
-# - Pull requests: Read & Write
-#
-# Install it and and set `CREATE_RELEASE_APP_ID` and
-# `CREATE_RELEASE_APP_PRIVATE_KEY` secrets. Convinent to do so on the
-# organisation level.
 
 on:
   workflow_call:
+    secrets:
+      ENV_VARS:
+        description: >
+          Environment variables to set
+          (as multiline string, e.g., `VAR1=value1\nVAR2=value2`)
+        required: false
+      GITHUB_APP_PRIVATE_KEY:
+        description: >
+          GitHub App private key.
+          See `github-app-id` input for more details.
+        required: true
+      GH_NPM_REGISTRY_PERSONAL_ACCESS_TOKEN:
+        description: >
+          Access token with `read:packages` scope to access GitHub npm registry.
+          You probably do not need this. See inputs for `setup` action for more details.
+        required: false
+      SLACK_BOT_TOKEN:
+        description: >
+          Slack bot token.
+          Required if `slack-channel-id` input is set.
+        required: false
     inputs:
       release-type:
-        description: 'Type of release (major, minor, patch, or prerelease)'
+        description: >
+          Type of release
+          (major, minor, patch, or prerelease)
         type: string
         default: 'patch'
       dry-run:
-        description: 'Dry–run'
+        description: >
+          Dry–run
         type: boolean
         default: false
+      env-vars:
+        description: >
+          Environment variables to set
+          (as multiline string, e.g., `VAR1=value1\nVAR2=value2`)
+        type: string
+        default: ''
+      github-app-id:
+        description: >
+          GitHub App ID to use for obtaining a git token capable of pushing to the main branch:
+          Contents: Read & Write,
+          Issues: Read & Write,
+          Pull requests: Read & Write.
+        type: string
+        required: true
+      slack-channel-id:
+        description: >
+          Slack channel ID to send the notification about the release to.
+          Leave empty to disable.
+        type: string
+        required: false
 
 jobs:
   release:
@@ -66,7 +95,7 @@ jobs:
 
       - name: Set environment variables
         env:
-          ENV_VARS: ${{ secrets.env_vars }}
+          ENV_VARS: ${{ secrets.ENV_VARS }}
         run: |
           echo "$ENV_VARS" >> "$GITHUB_ENV"
 
@@ -74,8 +103,8 @@ jobs:
         id: app-token
         uses: actions/create-github-app-token@v2
         with:
-          app-id: ${{ vars.CREATE_RELEASE_APP_ID }}
-          private-key: ${{ secrets.CREATE_RELEASE_APP_PRIVATE_KEY }}
+          app-id: ${{ inputs.github-app-id }}
+          private-key: ${{ secrets.GITHUB_APP_PRIVATE_KEY }}
 
       - name: 'GitHub App token: App Data'
         id: app-token-data
@@ -199,10 +228,10 @@ jobs:
           } | tee -a "$GITHUB_OUTPUT"
 
       - name: Notify
-        if: inputs.dry-run != true
+        if: inputs.dry-run != true && inputs.slack-channel-id
         uses: verkstedt/actions/notify-status@feat/create-release
         with:
           status: success
           slack-bot-token: ${{ secrets.SLACK_BOT_TOKEN }}
-          slack-channel-id: ${{ vars.SLACK_CHANNEL_ID }}
+          slack-channel-id: ${{ inputs.slack-channel-id }}
           text: ${{ steps.slack-release-notes.outputs.text }}
