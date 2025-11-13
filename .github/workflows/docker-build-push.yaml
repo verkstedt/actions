@@ -11,33 +11,7 @@
 #     - `v<major>` and `v<major>.<minor>`
 #
 #
-# # GitHub actions variables
-#
-# Best to set these on organisation level. If you push to different
-# repositories in different repos, set everything in org and change only
-# `DOCKER_…_ENABLE` in repos.
-#
-# - `DOCKER_MUTABLE_TAGS=false`, if you don’t want this workflow to ever
-#    update existing tags (`edge`, `latest`, `v<major>`,
-#    `v<major>.<minor>`), only set new tags.
-# - `DOCKER_SLACK_NOTIFY=false`, if you don’t want do not want slack
-#   notifications when new version is pushed.
-#
-# ## GitHub Container Registry
-#
-# - if you don’t want to use repo name as package name, you can set
-#   `DOCKER_GITHUB_PACKAGE_NAME` in your repo
-#
-#
-# ##  Google Artifact Registry
-#
-# - `DOCKER_GOOGLE_WORKLOAD_IDENTITY_PROVIDER`
-# - `DOCKER_GOOGLE_SERVICE_ACCOUNT`
-# - `DOCKER_GOOGLE_PROJECT`
-# - `DOCKER_GOOGLE_REGISTRY_LOCATION`
-# - `DOCKER_GOOGLE_REPOSITORY`
-# - if you don’t want to use repo name as package name, you can set
-#   `DOCKER_GOOGLE_PACKAGE_NAME` in your repo
+# # Google Artifact Registry
 #
 # Depending on your setup, you might also need to run a command like
 # this (replace `$…` with your values):
@@ -49,47 +23,136 @@
 #   --role=roles/iam.workloadIdentityUser \
 #   --member="principalSet://iam.googleapis.com/projects/$PROJECT_ID/locations/global/workloadIdentityPools/github/attribute.repository/$REPO_ORG/$REPO_NAME"
 # ```
-#
-#
-# ## Amazon ECR
-#
-# - `DOCKER_AMAZON_AWS_REGION`
-# - `DOCKER_AMAZON_AWS_ACCOUNT_ID`
-# - `DOCKER_AMAZON_ROLE_TO_ASSUME`
-# - if you don’t want to use repo name as package name, you can set
-#   `DOCKER_AMAZON_PACKAGE_NAME` in your repo
-
 name: Docker Build and Push
 on:
   workflow_call:
     secrets:
       BUILD_ARGS:
-        description: 'Build arguments for Docker build (multiline string)'
+        description: >
+          Build arguments for Docker build
+          (multiline string)
       SLACK_BOT_TOKEN:
-        description: 'Slack bot token, to notify a Slack channel of successful run'
-        required: true
+        description: >
+          Slack bot token.
+          Required, when `slack-channel-id` is set.
 
     inputs:
       dry-run:
-        description: 'Dry run mode (no pushing to registries)'
+        description: >
+          Dry run mode
+          (no pushing to registries)
         type: boolean
         default: false
       platforms:
-        description: 'Platforms to build for, e.g. linux/amd64,linux/arm64'
+        description: >
+          Platforms to build for,
+          e.g. linux/amd64,linux/arm64
         type: string
         default: 'linux/amd64'
+      docker-context:
+        description: >
+          Docker build context
+        type: string
+        default: '.'
+      docker-file:
+        description: >
+          Path to Dockerfile
+        type: string
+        default: 'Dockerfile'
+      slack-channel-id:
+        description: >
+          Slack channel ID, to notify of successful run.
+          Leave empty to disable.
+        type: string
+        default: ''
+      mutable-tags:
+        description: >
+          Whether to update mutable tags
+          (`edge`, `latest`, `v<major>`, `v<major>.<minor>`)
+          on new version releases.
+        type: boolean
+        default: true
       github:
-        description: 'Enable pushing to GitHub Container Registry'
+        description: >
+          Enable pushing to GitHub Container Registry
         type: boolean
         default: false
+      github-image-name:
+        description: >
+          GitHub Container Registry image name.
+          Leave empty to use repository name.
+        type: string
+        default: ''
       google:
-        description: 'Enable pushing to Google Artifact Registry'
+        description: >
+          Enable pushing to Google Artifact Registry
         type: boolean
         default: false
+      google-project:
+        description: >
+          Google Artifact Registry Google Cloud project ID.
+          Required, if `google` is enabled.
+        type: string
+        default: ''
+      google-registry-location:
+        description: >
+          Google Artifact Registry location.
+          Required, if `google` is enabled.
+        type: string
+        default: ''
+      google-repository:
+        description: >
+          Google Artifact Registry repository name.
+          Required, if `google` is enabled.
+        type: string
+        default: ''
+      google-workload-identity-provider:
+        description: >
+          Google Artifact Registry Workload Identity Provider.
+          Required, if `google` is enabled.
+        type: string
+        default: ''
+      google-service-account:
+        description: >
+          Google Artifact Registry Service Account email.
+          Required, if `google` is enabled.
+        type: string
+        default: ''
+      google-image-name:
+        description: >
+          Google Artifact Registry image name.
+          Leave empty to use repository name.
+        type: string
+        default: ''
       amazon:
-        description: 'Enable pushing to Amazon Elastic Container Registry'
+        description: >
+          Enable pushing to Amazon Elastic Container Registry
         type: boolean
         default: false
+      amazon-aws-account-id:
+        description: >
+          Amazon Elastic Container Registry AWS account ID.
+          Required, if `amazon` is enabled.
+        type: string
+        default: ''
+      amazon-aws-region:
+        description: >
+          Amazon Elastic Container Registry AWS region.
+          Required, if `amazon` is enabled.
+        type: string
+        default: ''
+      amazon-role-to-assume:
+        description: >
+          Amazon Elastic Container Registry role to assume.
+          Required, if `amazon` is enabled.
+        type: string
+        default: ''
+      amazon-image-name:
+        description: >
+          Amazon Elastic Container Registry image name.
+          Leave empty to use repository name.
+        type: string
+        default: ''
 
 jobs:
   build-push:
@@ -111,14 +174,14 @@ jobs:
           then
             echo "enabled=false" | tee -a "$GITHUB_OUTPUT"
           else
-            missing_vars=''
+            missing_inputs=''
             missing_secrets=''
 
             [ -n "${{ secrets.GITHUB_TOKEN }}" ] || missing_secrets="$missing_secrets GITHUB_TOKEN"
 
-            if [ -n "$missing_vars$missing_secrets" ]
+            if [ -n "$missing_inputs$missing_secrets" ]
             then
-              echo "::error::Missing required vars ($missing_vars) or secrets ($missing_secrets)." >&2
+              echo "::error::Missing required inputs ($missing_inputs) or secrets ($missing_secrets)." >&2
               exit 64 # EX_USAGE
             fi
 
@@ -127,12 +190,12 @@ jobs:
             registry="ghcr.io/${{ github.repository_owner }}"
             echo "registry=$registry" | tee -a "$GITHUB_OUTPUT"
 
-            package_name="${{ vars.DOCKER_GITHUB_PACKAGE_NAME }}"
-            if [ -z "$package_name" ]
+            image_name="${{ inputs.github-image-name }}"
+            if [ -z "$image_name" ]
             then
-              package_name="${{ github.event.repository.name }}"
+              image_name="${{ github.event.repository.name }}"
             fi
-            echo "package_name=$package_name" | tee -a "$GITHUB_OUTPUT"
+            echo "image-name=$image_name" | tee -a "$GITHUB_OUTPUT"
 
             echo "enabled=true" | tee -a "$GITHUB_OUTPUT"
           fi
@@ -152,33 +215,33 @@ jobs:
           then
             echo "enabled=false" | tee -a "$GITHUB_OUTPUT"
           else
-            missing_vars=''
+            missing_inputs=''
             missing_secrets=''
 
-            [ -n "${{ vars.DOCKER_GOOGLE_PROJECT }}" ] || missing_vars="$missing_vars DOCKER_GOOGLE_PROJECT"
-            [ -n "${{ vars.DOCKER_GOOGLE_REGISTRY_LOCATION }}" ] || missing_vars="$missing_vars DOCKER_GOOGLE_REGISTRY_LOCATION"
-            [ -n "${{ vars.DOCKER_GOOGLE_REPOSITORY }}" ] || missing_vars="$missing_vars DOCKER_GOOGLE_REPOSITORY"
+            [ -n "${{ inputs.google-project }}" ] || missing_inputs="$missing_inputs google-project"
+            [ -n "${{ inputs.google-registry-location }}" ] || missing_inputs="$missing_inputs google-registry-location"
+            [ -n "${{ inputs.google-repository }}" ] || missing_inputs="$missing_inputs google-repository"
 
-            [ -n "${{ vars.DOCKER_GOOGLE_WORKLOAD_IDENTITY_PROVIDER }}" ] || missing_vars="$missing_vars DOCKER_GOOGLE_WORKLOAD_IDENTITY_PROVIDER"
-            [ -n "${{ vars.DOCKER_GOOGLE_SERVICE_ACCOUNT }}" ] || missing_vars="$missing_vars DOCKER_GOOGLE_SERVICE_ACCOUNT"
+            [ -n "${{ inputs.google-workload-identity-provider }}" ] || missing_inputs="$missing_inputs google-workload-identity_provider"
+            [ -n "${{ inputs.google-service-account }}" ] || missing_inputs="$missing_inputs google-service-account"
 
-            if [ -n "$missing_vars$missing_secrets" ]
+            if [ -n "$missing_inputs$missing_secrets" ]
             then
-              echo "::error::Missing required vars ($missing_vars) or secrets ($missing_secrets)." >&2
+              echo "::error::Missing required vars ($missing_inputs) or secrets ($missing_secrets)." >&2
               exit 64 # EX_USAGE
             fi
 
             # :LOCATION-docker.pkg.dev/:PROJECT/:REPOSITORY/:IMAGE_NAME
 
-            registry="${{ vars.DOCKER_GOOGLE_REGISTRY_LOCATION }}-docker.pkg.dev/${{ vars.DOCKER_GOOGLE_PROJECT }}/${{ vars.DOCKER_GOOGLE_REPOSITORY }}"
+            registry="${{ inputs.google-registry-location }}-docker.pkg.dev/${{ inputs.google-project }}/${{ inputs.google-repository }}"
             echo "registry=$registry" | tee -a "$GITHUB_OUTPUT"
 
-            package_name="${{ vars.DOCKER_GOOGLE_PACKAGE_NAME }}"
-            if [ -z "$package_name" ]
+            image_name="${{ inputs.google-image-name }}"
+            if [ -z "$image_name" ]
             then
-              package_name="${{ github.event.repository.name }}"
+              image_name="${{ github.event.repository.name }}"
             fi
-            echo "package_name=$package_name" | tee -a "$GITHUB_OUTPUT"
+            echo "image-name=$image_name" | tee -a "$GITHUB_OUTPUT"
 
             echo "enabled=true" | tee -a "$GITHUB_OUTPUT"
           fi
@@ -189,9 +252,9 @@ jobs:
         uses: google-github-actions/auth@v3
         with:
           token_format: access_token
-          project_id: ${{ vars.DOCKER_GOOGLE_PROJECT }}
-          workload_identity_provider: ${{ vars.DOCKER_GOOGLE_WORKLOAD_IDENTITY_PROVIDER }}
-          service_account: ${{ vars.DOCKER_GOOGLE_SERVICE_ACCOUNT }}
+          project_id: ${{ inputs.google-project }}
+          workload_identity_provider: ${{ inputs.google-workload-identity-provider }}
+          service_account: ${{ inputs.google-service-account }}
 
       - name: 'Google Artifact Registry: Authenticate to Google Artifact Registry'
         if: steps.google.outputs.enabled == 'true'
@@ -208,30 +271,30 @@ jobs:
           then
             echo "enabled=false" | tee -a "$GITHUB_OUTPUT"
           else
-            missing_vars=''
+            missing_inputs=''
             missing_secrets=''
 
-            [ -n "${{ vars.DOCKER_AMAZON_AWS_ACCOUNT_ID }}" ] || missing_vars="$missing_vars DOCKER_AMAZON_AWS_ACCOUNT_ID"
-            [ -n "${{ vars.DOCKER_AMAZON_AWS_REGION }}" ] || missing_vars="$missing_vars DOCKER_AMAZON_AWS_REGION"
-            [ -n "${{ vars.DOCKER_AMAZON_ROLE_TO_ASSUME }}" ] || missing_vars="$missing_vars DOCKER_AMAZON_ROLE_TO_ASSUME"
+            [ -n "${{ inputs.amazon-aws-account-id }}" ] || missing_inputs="$missing_inputs amazon-aws-account-id"
+            [ -n "${{ inputs.amazon-aws-region }}" ] || missing_inputs="$missing_inputs amazon-aws-region"
+            [ -n "${{ inputs.amazon-role-to-assume }}" ] || missing_inputs="$missing_inputs amazon-role-to-assume"
 
-            if [ -n "$missing_vars$missing_secrets" ]
+            if [ -n "$missing_inputs$missing_secrets" ]
             then
-              echo "::error::Missing required vars ($missing_vars) or secrets ($missing_secrets)." >&2
+              echo "::error::Missing required vars ($missing_inputs) or secrets ($missing_secrets)." >&2
               exit 64 # EX_USAGE
             fi
 
             # :AWS_ACCOUNT_ID.dkr.ecr.:REGION.amazonaws.com/:IMAGE_NAME
 
-            registry="${{ vars.DOCKER_AMAZON_AWS_ACCOUNT_ID }}.dkr.ecr.${{ vars.DOCKER_AMAZON_AWS_REGION }}.amazonaws.com"
+            registry="${{ inputs.amazon-aws-account-id }}.dkr.ecr.${{ inputs.amazon-aws-region }}.amazonaws.com"
             echo "registry=$registry" | tee -a "$GITHUB_OUTPUT"
 
-            package_name="${{ vars.DOCKER_AMAZON_PACKAGE_NAME }}"
-            if [ -z "$package_name" ]
+            image_name="${{ inputs.amazon-image-name }}"
+            if [ -z "$image_name" ]
             then
-              package_name="${{ github.event.repository.name }}"
+              image_name="${{ github.event.repository.name }}"
             fi
-            echo "package_name=$package_name" | tee -a "$GITHUB_OUTPUT"
+            echo "image-name=$image_name" | tee -a "$GITHUB_OUTPUT"
 
             echo "enabled=true" | tee -a "$GITHUB_OUTPUT"
           fi
@@ -240,8 +303,8 @@ jobs:
         if: steps.amazon.outputs.enabled == 'true'
         uses: aws-actions/configure-aws-credentials@v5
         with:
-          aws-region: ${{ vars.DOCKER_AMAZON_AWS_REGION }}
-          role-to-assume: ${{ vars.DOCKER_AMAZON_ROLE_TO_ASSUME }}
+          aws-region: ${{ inputs.amazon-aws-region }}
+          role-to-assume: ${{ inputs.amazon-role-to-assume }}
 
       - name: 'Amazon Elastic Container Registry: Authenticate to Amazon Elastic Container Registry'
         if: steps.amazon.outputs.enabled == 'true'
@@ -273,7 +336,7 @@ jobs:
           # `git-<SHORT_SHA>`
           TAGS="git-$( git rev-parse --short HEAD )"
 
-          if [ "${{ vars.DOCKER_MUTABLE_TAGS }}" != "false" ]
+          if [ "${{ inputs.mutable-tags }}" != "false" ]
           then
             # `edge`, if HEAD points at main branch
             # Note: Even might’ve been triggered by a tag push.
@@ -298,7 +361,7 @@ jobs:
             # not a pre-release
             if ! echo "$VERSION_TAG" | grep -q '-'
             then
-              if [ "${{ vars.DOCKER_MUTABLE_TAGS }}" != "false" ]
+              if [ "${{ inputs.mutable-tags }}" != "false" ]
               then
                 TAGS="$TAGS $( echo "${VERSION_TAG}" | grep -oE '^v[0-9]+\.[0-9]+' )"
                 TAGS="$TAGS $( echo "${VERSION_TAG}" | grep -oE '^v[0-9]+' )"
@@ -322,19 +385,19 @@ jobs:
             # GitHub Container Registry
             if [ "${{ steps.github.outputs.enabled }}" == "true" ]
             then
-              echo "${{ steps.github.outputs.registry }}/${{ steps.github.outputs.package_name }}"
+              echo "${{ steps.github.outputs.registry }}/${{ steps.github.outputs.image-name }}"
             fi
 
             # Google Artifact Registry
             if [ "${{ steps.google.outputs.enabled }}" == "true" ]
             then
-              echo "${{ steps.google.outputs.registry }}/${{ steps.google.outputs.package_name }}"
+              echo "${{ steps.google.outputs.registry }}/${{ steps.google.outputs.image-name }}"
             fi
 
             # Amazon ECR
             if [ "${{ steps.amazon.outputs.enabled }}" == "true" ]
             then
-              echo "${{ steps.amazon.outputs.registry }}/${{ steps.amazon.outputs.package_name }}"
+              echo "${{ steps.amazon.outputs.registry }}/${{ steps.amazon.outputs.image-name }}"
             fi
           )"
 
@@ -373,8 +436,8 @@ jobs:
           push: ${{ inputs.dry-run != true }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-          context: ${{ vars.DOCKER_CONTEXT }}
-          file: ${{ vars.DOCKER_DOCKERFILE }}
+          context: ${{ inputs.docker-context }}
+          file: ${{ inputs.docker-file }}
           platforms: ${{ steps.config.outputs.platforms }}
           provenance: true
           tags: ${{ steps.config.outputs.tags }}
@@ -384,9 +447,9 @@ jobs:
         if: >
           steps.config.outputs.new-version == 'true'
           && inputs.dry-run != true
-          && vars.DOCKER_SLACK_NOTIFY != 'false'
+          && inputs.slack-channel-id
         uses: verkstedt/actions/notify-status@v1
         with:
           status: success
-          slack-bot-token: ${{ secrets.SLACK_BOT_TOKEN }}
-          slack-channel-id: ${{ vars.SLACK_CHANNEL_ID }}
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+          SLACK_CHANNEL_ID: ${{ inputs.slack-channel-id }}
