@@ -1,0 +1,80 @@
+name: 'Setup Google Artifact Registry'
+description: 'Determine the URL and authenticate'
+
+inputs:
+  project:
+    description: >
+      Google Cloud project ID.
+    required: true
+  registry-location:
+    description: >
+      Registry location.
+    required: true
+  repository:
+    description: >
+      Repository name.
+    required: true
+  workload-identity-provider:
+    description: >
+      Workload Identity Provider.
+    required: true
+  service-account:
+    description: >
+      Service Account email.
+    required: true
+  image-name:
+    description: >
+      Image name.
+      Leave empty to use repository name.
+    required: false
+    default: ''
+
+outputs:
+  registry:
+    description: >
+      Registry URL
+    value: ${{ steps.setup.outputs.registry }}
+  image-name:
+    description: >
+      Image name
+    value: ${{ steps.setup.outputs.image-name }}
+  url:
+    description: >
+      Full URL (registry + image name)
+    value: ${{ steps.setup.outputs.url }}
+runs:
+  using: 'composite'
+  steps:
+    - name: 'Determine registry URL'
+      id: setup
+      shell: bash
+      run: |
+        registry="${{ inputs.registry-location }}-docker.pkg.dev/${{ inputs.project }}/${{ inputs.repository }}"
+        echo "registry=$registry" | tee -a "$GITHUB_OUTPUT"
+
+        image_name="${{ inputs.image-name }}"
+        if [ -z "$image_name" ]
+        then
+          image_name="${{ github.event.repository.name }}"
+        fi
+        echo "image-name=$image_name" | tee -a "$GITHUB_OUTPUT"
+
+        echo "enabled=true" | tee -a "$GITHUB_OUTPUT"
+
+        echo "url=${registry}/$image_name" | tee -a "$GITHUB_OUTPUT"
+
+    - name: 'Authenticate to Google Cloud'
+      id: auth
+      uses: google-github-actions/auth@v1
+      with:
+        token_format: access_token
+        project_id: ${{ inputs.project }}
+        workload_identity_provider: ${{ inputs.workload-identity-provider }}
+        service_account: ${{ inputs.service-account }}
+
+    - name: 'Authenticate to Google Artifact Registry'
+      uses: docker/login-action@v3
+      with:
+        registry: ${{ steps.setup.outputs.registry }}
+        username: oauth2accesstoken
+        password: ${{ steps.auth.outputs.access_token }}

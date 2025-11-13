@@ -1,0 +1,68 @@
+name: 'Setup Amazon Elastic Container Registry'
+description: 'Determine the URL and authenticate'
+
+inputs:
+  aws-account-id:
+    description: >
+      AWS account ID.
+    required: true
+  aws-region:
+    description: >
+      AWS region.
+    required: true
+  role-to-assume:
+    description: >
+      Role to assume.
+    required: true
+  image-name:
+    description: >
+      Image name.
+      Leave empty to use repository name.
+    required: false
+    default: ''
+
+outputs:
+  registry:
+    description: >
+      Registry URL
+    value: ${{ steps.setup.outputs.registry }}
+  image-name:
+    description: >
+      Image name
+    value: ${{ steps.setup.outputs.image-name }}
+  url:
+    description: >
+      Full URL (registry + image name)
+    value: ${{ steps.setup.outputs.url }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: 'Determine registry URL'
+      id: setup
+      shell: bash
+      run: |
+        registry="${{ inputs.aws-account-id }}.dkr.ecr.${{ inputs.aws-region }}.amazonaws.com"
+        echo "registry=$registry" | tee -a "$GITHUB_OUTPUT"
+
+        image_name="${{ inputs.image-name }}"
+        if [ -z "$image_name" ]
+        then
+          image_name="${{ github.event.repository.name }}"
+        fi
+        echo "image-name=$image_name" | tee -a "$GITHUB_OUTPUT"
+
+        echo "enabled=true" | tee -a "$GITHUB_OUTPUT"
+
+        echo "url=${registry}/$image_name" | tee -a "$GITHUB_OUTPUT"
+
+    - name: 'Configure AWS credentials'
+      uses: aws-actions/configure-aws-credentials@v5
+      with:
+        aws-region: ${{ inputs.aws-region }}
+        role-to-assume: ${{ inputs.role-to-assume }}
+
+    - name: 'Authenticate to Amazon Elastic Container Registry'
+      uses: docker/login-action@v3
+      with:
+        registry: ${{ steps.setup.outputs.registry }}
