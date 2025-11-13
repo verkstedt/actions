@@ -15,11 +15,6 @@ name: Create Release
 on:
   workflow_call:
     secrets:
-      ENV_VARS:
-        description: >
-          Environment variables to set
-          (as multiline string, e.g., `VAR1=value1\nVAR2=value2`)
-        required: false
       GITHUB_APP_PRIVATE_KEY:
         description: >
           GitHub App private key.
@@ -92,12 +87,6 @@ jobs:
             echo "::error::Prerelease not supported (yet)."
             exit 64 # EX_USAGE
           fi
-
-      - name: Set environment variables
-        env:
-          ENV_VARS: ${{ secrets.ENV_VARS }}
-        run: |
-          echo "$ENV_VARS" >> "$GITHUB_ENV"
 
       - name: 'GitHub App token: Token'
         id: app-token
