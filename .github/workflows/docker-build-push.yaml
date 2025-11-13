@@ -164,163 +164,47 @@ jobs:
       id-token: write
 
     steps:
+      - name: 'Verify inputs'
+        run: |
+          if [ "${{ inputs.github && 'true' }}" != "true" ] && \
+             [ "${{ inputs.google && 'true' }}" != "true" ] && \
+             [ "${{ inputs.amazon && 'true' }}" != "true" ]
+          then
+            echo "::error::You have to enable at least one registry for pusing (github, google, amazon inputs are all false)" >&2
+            exit 64 # EX_USAGE
+          fi
+
       - name: 'Checkout'
         uses: actions/checkout@v5
 
       - name: 'GitHub Container Registry: Setup'
+        if: ${{ inputs.github == true }}
         id: github
-        run: |
-          if [ "${{ inputs.github && 'true' }}" != "true" ]
-          then
-            echo "enabled=false" | tee -a "$GITHUB_OUTPUT"
-          else
-            missing_inputs=''
-            missing_secrets=''
-
-            [ -n "${{ secrets.GITHUB_TOKEN }}" ] || missing_secrets="$missing_secrets GITHUB_TOKEN"
-
-            if [ -n "$missing_inputs$missing_secrets" ]
-            then
-              echo "::error::Missing required inputs ($missing_inputs) or secrets ($missing_secrets)." >&2
-              exit 64 # EX_USAGE
-            fi
-
-            # ghcr.io/:ORGANISATION/:IMAGE_NAME
-
-            registry="ghcr.io/${{ github.repository_owner }}"
-            echo "registry=$registry" | tee -a "$GITHUB_OUTPUT"
-
-            image_name="${{ inputs.github-image-name }}"
-            if [ -z "$image_name" ]
-            then
-              image_name="${{ github.event.repository.name }}"
-            fi
-            echo "image-name=$image_name" | tee -a "$GITHUB_OUTPUT"
-
-            echo "enabled=true" | tee -a "$GITHUB_OUTPUT"
-          fi
-
-      - name: 'GitHub Container Registry: Authenticate'
-        if: steps.github.outputs.enabled == 'true'
-        uses: docker/login-action@v3
+        uses: verkstedt/actions/.github/workflows/docker-build-push-setup-github.yaml@feat/docker-build-push
         with:
-          registry: ghcr.io
-          username: ${{ github.repository_owner }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          image-name: ${{ inputs.github-image-name }}
 
       - name: 'Google Artifact Registry: Setup'
+        if: ${{ inputs.google == true }}
         id: google
-        run: |
-          if [ "${{ inputs.google && 'true' }}" != "true" ]
-          then
-            echo "enabled=false" | tee -a "$GITHUB_OUTPUT"
-          else
-            missing_inputs=''
-            missing_secrets=''
-
-            [ -n "${{ inputs.google-project }}" ] || missing_inputs="$missing_inputs google-project"
-            [ -n "${{ inputs.google-registry-location }}" ] || missing_inputs="$missing_inputs google-registry-location"
-            [ -n "${{ inputs.google-repository }}" ] || missing_inputs="$missing_inputs google-repository"
-
-            [ -n "${{ inputs.google-workload-identity-provider }}" ] || missing_inputs="$missing_inputs google-workload-identity_provider"
-            [ -n "${{ inputs.google-service-account }}" ] || missing_inputs="$missing_inputs google-service-account"
-
-            if [ -n "$missing_inputs$missing_secrets" ]
-            then
-              echo "::error::Missing required vars ($missing_inputs) or secrets ($missing_secrets)." >&2
-              exit 64 # EX_USAGE
-            fi
-
-            # :LOCATION-docker.pkg.dev/:PROJECT/:REPOSITORY/:IMAGE_NAME
-
-            registry="${{ inputs.google-registry-location }}-docker.pkg.dev/${{ inputs.google-project }}/${{ inputs.google-repository }}"
-            echo "registry=$registry" | tee -a "$GITHUB_OUTPUT"
-
-            image_name="${{ inputs.google-image-name }}"
-            if [ -z "$image_name" ]
-            then
-              image_name="${{ github.event.repository.name }}"
-            fi
-            echo "image-name=$image_name" | tee -a "$GITHUB_OUTPUT"
-
-            echo "enabled=true" | tee -a "$GITHUB_OUTPUT"
-          fi
-
-      - name: 'Google Artifact Registry: Authenticate to Google Cloud'
-        if: steps.google.outputs.enabled == 'true'
-        id: google_auth
-        uses: google-github-actions/auth@v3
+        uses: verkstedt/actions/.github/workflows/docker-build-push-setup-google.yaml@feat/docker-build-push
         with:
-          token_format: access_token
-          project_id: ${{ inputs.google-project }}
-          workload_identity_provider: ${{ inputs.google-workload-identity-provider }}
-          service_account: ${{ inputs.google-service-account }}
-
-      - name: 'Google Artifact Registry: Authenticate to Google Artifact Registry'
-        if: steps.google.outputs.enabled == 'true'
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ steps.google.outputs.registry }}
-          username: oauth2accesstoken
-          password: ${{ steps.google_auth.outputs.access_token }}
+          project: ${{ inputs.google-project }}
+          registry-location: ${{ inputs.google-registry-location }}
+          repository: ${{ inputs.google-repository }}
+          workload-identity-provider: ${{ inputs.google-workload-identity-provider }}
+          service-account: ${{ inputs.google-service-account }}
+          image-name: ${{ inputs.google-image-name }}
 
       - name: 'Amazon Elastic Container Registry: Setup'
+        if: ${{ inputs.amazon == true }}
         id: amazon
-        run: |
-          if [ "${{ inputs.amazon && 'true' }}" != "true" ]
-          then
-            echo "enabled=false" | tee -a "$GITHUB_OUTPUT"
-          else
-            missing_inputs=''
-            missing_secrets=''
-
-            [ -n "${{ inputs.amazon-aws-account-id }}" ] || missing_inputs="$missing_inputs amazon-aws-account-id"
-            [ -n "${{ inputs.amazon-aws-region }}" ] || missing_inputs="$missing_inputs amazon-aws-region"
-            [ -n "${{ inputs.amazon-role-to-assume }}" ] || missing_inputs="$missing_inputs amazon-role-to-assume"
-
-            if [ -n "$missing_inputs$missing_secrets" ]
-            then
-              echo "::error::Missing required vars ($missing_inputs) or secrets ($missing_secrets)." >&2
-              exit 64 # EX_USAGE
-            fi
-
-            # :AWS_ACCOUNT_ID.dkr.ecr.:REGION.amazonaws.com/:IMAGE_NAME
-
-            registry="${{ inputs.amazon-aws-account-id }}.dkr.ecr.${{ inputs.amazon-aws-region }}.amazonaws.com"
-            echo "registry=$registry" | tee -a "$GITHUB_OUTPUT"
-
-            image_name="${{ inputs.amazon-image-name }}"
-            if [ -z "$image_name" ]
-            then
-              image_name="${{ github.event.repository.name }}"
-            fi
-            echo "image-name=$image_name" | tee -a "$GITHUB_OUTPUT"
-
-            echo "enabled=true" | tee -a "$GITHUB_OUTPUT"
-          fi
-
-      - name: 'Amazon Elastic Container Registry: Configure AWS credentials'
-        if: steps.amazon.outputs.enabled == 'true'
-        uses: aws-actions/configure-aws-credentials@v5
+        uses: verkstedt/actions/.github/workflows/docker-build-push-setup-amazon.yaml@feat/docker-build-push
         with:
+          aws-account-id: ${{ inputs.amazon-aws-account-id }}
           aws-region: ${{ inputs.amazon-aws-region }}
           role-to-assume: ${{ inputs.amazon-role-to-assume }}
-
-      - name: 'Amazon Elastic Container Registry: Authenticate to Amazon Elastic Container Registry'
-        if: steps.amazon.outputs.enabled == 'true'
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ steps.amazon.outputs.registry }}
-
-      - name: 'Verify setup'
-        run: |
-          if [ "${{ steps.github.outputs.enabled }}" != "true" ] && \
-             [ "${{ steps.google.outputs.enabled }}" != "true" ] && \
-             [ "${{ steps.amazon.outputs.enabled }}" != "true" ]
-          then
-            echo "::error::No container registry is enabled for pushing." >&2
-            exit 64 # EX_USAGE
-          fi
+          image-name: ${{ inputs.amazon-image-name }}
 
       - name: 'Determine platforms and tags to use'
         id: config
@@ -383,21 +267,21 @@ jobs:
 
           URLS="$(
             # GitHub Container Registry
-            if [ "${{ steps.github.outputs.enabled }}" == "true" ]
+            if [ "${{ inputs.github && 'true' }}" == "true" ]
             then
-              echo "${{ steps.github.outputs.registry }}/${{ steps.github.outputs.image-name }}"
+              echo "${{ steps.github.outputs.url }}"
             fi
 
             # Google Artifact Registry
-            if [ "${{ steps.google.outputs.enabled }}" == "true" ]
+            if [ "${{ inputs.google && 'true' }}" == "true" ]
             then
-              echo "${{ steps.google.outputs.registry }}/${{ steps.google.outputs.image-name }}"
+              echo "${{ steps.google.outputs.url }}"
             fi
 
             # Amazon ECR
-            if [ "${{ steps.amazon.outputs.enabled }}" == "true" ]
+            if [ "${{ inputs.amazon && 'true' }}" == "true" ]
             then
-              echo "${{ steps.amazon.outputs.registry }}/${{ steps.amazon.outputs.image-name }}"
+              echo "${{ steps.amazon.outputs.url }}"
             fi
           )"
 
