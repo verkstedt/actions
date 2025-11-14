@@ -173,6 +173,12 @@ Template:
 
 When a GH commit URL is included in commit message, link the commit from said comment.
 
+### Cloud Function Deployment
+
+Deploy code to Google Cloud Function.
+
+See [deploy-cloudfunction.yaml](./.github/workflows/deploy-cloudfunction.yaml) for details.
+
 ## Deploying new versions of actions and workflows
 
 You might have noticed that main branch in this repository is called

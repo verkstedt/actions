@@ -4,30 +4,39 @@ on:
   workflow_call:
     inputs:
       function-name:
+        description: 'Name of the Cloud Function to deploy'
         required: true
         type: string
       region:
+        description: 'GCP region for Cloud Function deployment (e.g., europe-west3)'
         required: true
         type: string
       source-dir:
+        description: 'Directory containing the function source code'
         type: string
         default: "."
       entry-point:
+        description: 'Name of the function entry point (function name in code)'
         required: true
         type: string
       runtime:
+        description: 'Runtime environment for the function (e.g., python311, nodejs22) see <https://docs.cloud.google.com/run/docs/runtimes/function-runtimes>'
         required: true
         type: string
       memory:
+        description: 'Amount of memory allocated to the function'
         type: string
         default: "256Mi"
       service-timeout:
+        description: 'Maximum execution time for the function in seconds'
         type: number
         default: 60
       workload-identity-provider:
+        description: 'GCP Workload Identity Provider resource name'
         required: true
         type: string
       workload-identity-service-account-mail:
+        description: 'GCP service account email for workload identity OIDC authentication'
         required: true
         type: string
 
@@ -48,8 +57,6 @@ jobs:
           workload_identity_provider: ${{ inputs.workload-identity-provider }}
       - name: Set up gcloud-cli
         uses: 'google-github-actions/setup-gcloud@v3'
-        with:
-          version: '>= 363.0.0'
       - name: Deploy Cloud Function
         uses: google-github-actions/deploy-cloud-functions@v4
         with:
