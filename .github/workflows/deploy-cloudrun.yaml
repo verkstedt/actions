@@ -4,11 +4,11 @@ on:
   workflow_call:
     inputs:
       job-name:
-        description: 'Name of the Cloud Run job to deploy'
+        description: 'Cloud Run Job name (at least one of job-name or service-name required)'
         required: false
         type: string
       service-name:
-        description: 'Name of the Cloud Run service to deploy'
+        description: 'Cloud Run Service name (at least one of job-name or service-name required)'
         required: false
         type: string
       registry:
@@ -16,15 +16,15 @@ on:
         required: true
         type: string
       artifact-repository:
-        description: 'Repository name in the artifact registry'
+        description: 'Image repository name without registry prefix (e.g., my-image)'
         required: true
         type: string
       artifact-tag:
-        description: 'Tag of the container image to deploy'
+        description: 'Image tag of the container image to deploy'
         required: true
         type: string
       region:
-        description: 'GCP region where the Cloud Run resource will be deployed'
+        description: 'GCP region for Cloud Run deployment (e.g., europe-west3)'
         required: true
         type: string
       flags:
@@ -34,11 +34,11 @@ on:
         description: 'Container name for multi-container deployments'
         type: string
       workload-identity-provider:
-        description: 'Workload Identity Provider for authentication'
+        description: 'GCP Workload Identity Provider resource name'
         required: true
         type: string
       workload-identity-service-account-mail:
-        description: 'Service account email for Workload Identity'
+        description: 'GCP service account email for workload identity OIDC authentication'
         required: true
         type: string
 jobs:
@@ -53,7 +53,7 @@ jobs:
       - name: Validate inputs
         run: |
           if [[ -z "${{ inputs.job-name }}" && -z "${{ inputs.service-name }}" ]]; then
-            echo "Error: at least one of 'job-name' or 'service-name' must be provided"
+            echo "::error::At least one of 'job-name' or 'service-name' must be provided"
             exit 1
           fi
       - uses: 'google-github-actions/auth@v3'
@@ -63,22 +63,20 @@ jobs:
       - name: 'Set up gcloud CLI'
         uses: 'google-github-actions/setup-gcloud@v3'
         with:
-          version: '>= 363.0.0'
           install_components: 'beta'
-      - name: 'Prepare deployment flags'
-        id: flags
-        run: |
-          if [ -n "${{ inputs.container }}" ]; then
-            echo "container_flag=--container ${{ inputs.container }}" >> "$GITHUB_OUTPUT"
-          else
-            echo "container_flag=" >> "$GITHUB_OUTPUT"
-          fi
+
       # we cannot use google-github-actions/deploy-cloudrun here due to:
       # https://github.com/google-github-actions/deploy-cloudrun/issues/558
       - name: 'deploy cloudrun'
+        env:
+          CONTAINER: ${{ inputs.container }}
         run: |
+          if [ -n "$CONTAINER" ]; then
+            CONTAINER_FLAG="--container $CONTAINER"
+          else
+            CONTAINER_FLAG=""
+          fi
           IMAGE="${{ inputs.registry }}/${{ inputs.artifact-repository }}:${{ inputs.artifact-tag }}"
-          CONTAINER_FLAG="${{ steps.flags.outputs.container_flag }}"
           EXTRA_FLAGS="${{ inputs.flags }}"
           gcloud config set run/region "${{ inputs.region }}"
           if [ -n "${{ inputs.job-name }}" ]; then

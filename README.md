@@ -175,10 +175,7 @@ When a GH commit URL is included in commit message, link the commit from said co
 
 ### Cloudrun Deployment
 
-Template:
-<https://github.com/verkstedt/.github/tree/main/workflow-templates/deploy-cloudrun.yaml>
-
-Deploy images to google cloudrun services or jobs.
+Deploy images to Google Cloud Run services or jobs.
 
 See [deploy-cloudrun.yaml](./.github/workflows/deploy-cloudrun.yaml) for details.
 
