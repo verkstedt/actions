@@ -173,7 +173,7 @@ Template:
 
 When a GH commit URL is included in commit message, link the commit from said comment.
 
-### Cloudrun Deployment
+### Cloud Run Deployment
 
 Deploy images to Google Cloud Run services or jobs.
 
