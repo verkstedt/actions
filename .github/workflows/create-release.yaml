@@ -199,8 +199,10 @@ jobs:
       - name: Convert release notes to Slack’s markdown–like markup
         id: slack-release-notes
         env:
-          TEXT: ${{ steps.release.outputs.release-notes }}
+          RAW_TEXT: ${{ steps.release.outputs.release-notes }}
         run: |
+          TEXT="$RAW_TEXT"
+
           if [ -n "$TEXT" ]
           then
             mkdir -p "$RUNNER_TEMP/slackify-markdown"
@@ -215,6 +217,12 @@ jobs:
                 ' \
                 "$TEXT"
             )
+            # shellcheck disable=SC2181
+            if [ $? -ne 0 ]
+            then
+              echo "::error::Failed to convert release notes to Slack format, falling back to using original markdown."
+              TEXT="$RAW_TEXT"
+            fi
           fi
 
           {
