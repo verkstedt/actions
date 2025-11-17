@@ -36,11 +36,7 @@ runs:
           }}
       shell: bash
       run: |
-        {
-          echo "value<<EOM"
-          echo "$MESSAGE"
-          echo "EOM"
-        } | tee -a "$GITHUB_OUTPUT"
+        printf "value<<EOM\n%s\nEOM\n" "$MESSAGE" | tee -a "$GITHUB_OUTPUT"
     - name: Send Slack message
       uses: slackapi/slack-github-action@v1
       env:
