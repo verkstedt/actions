@@ -206,8 +206,15 @@ jobs:
             mkdir -p "$RUNNER_TEMP/slackify-markdown"
             cd "$RUNNER_TEMP/slackify-markdown"
             echo '{}' > package.json
-            npm install slackify-markdown
-            TEXT=$( node -e 'process.stdout.write(require("slackify-markdown")(process.argv[1]))' "$TEXT" )
+            npm install slackify-markdown@^5.0.0
+            TEXT=$(
+              node \
+                -e '
+                  import { slackifyMarkdown } from "slackify-markdown";
+                  process.stdout.write(slackifyMarkdown(process.argv[1]));
+                ' \
+                "$TEXT"
+            )
           fi
 
           {
