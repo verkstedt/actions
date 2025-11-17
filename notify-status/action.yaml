@@ -19,6 +19,28 @@ inputs:
 runs:
   using: composite
   steps:
+    - name: Compose message
+      id: message
+      env:
+        MESSAGE: >
+          ${{
+            toJson(format(
+              '*{1}* {2}: {3} @ {4}{0}{0}{5}',
+              fromJson('"\n"'),
+              inputs.status == 'failure' && '🔴 FAILED' || inputs.status == 'success' && '🟢' || '🟡',
+              github.workflow,
+              github.repository,
+              github.head_ref || github.ref_name,
+              inputs.text
+            ))
+          }}
+      shell: bash
+      run: |
+        {
+          echo "value<<EOM"
+          echo "$MESSAGE"
+          echo "EOM"
+        } | tee -a "$GITHUB_OUTPUT"
     - name: Send Slack message
       uses: slackapi/slack-github-action@v1
       env:
@@ -29,22 +51,13 @@ runs:
         # https://app.slack.com/block-kit-builder/ to preview
         payload: |
           {
+            "text": ${{ toJson(steps.message.outputs.value) }},
             "blocks": [
               {
                 "type": "section",
                 "text": {
                   "type": "mrkdwn",
-                  "text": ${{
-                    toJson(format(
-                      '<!here> *{1}* {2}: {3} @ {4}{0}{0}{5}',
-                      fromJson('"\n"'),
-                      inputs.status == 'failure' && '🔴 FAILED' || inputs.status == 'success' && '🟢' || '🟡',
-                      github.workflow,
-                      github.repository,
-                      github.head_ref || github.ref_name,
-                      inputs.text
-                    ))
-                  }}
+                  "text": ${{ toJson(format('<!here> {0}', steps.message.outputs.value)) }}
                 }
               },
               {
