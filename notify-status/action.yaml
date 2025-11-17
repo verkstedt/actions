@@ -24,7 +24,7 @@ runs:
       env:
         MESSAGE: >
           ${{
-            toJson(format(
+            format(
               '*{1}* {2}: {3} @ {4}{0}{0}{5}',
               fromJson('"\n"'),
               inputs.status == 'failure' && '🔴 FAILED' || inputs.status == 'success' && '🟢' || '🟡',
@@ -32,7 +32,7 @@ runs:
               github.repository,
               github.head_ref || github.ref_name,
               inputs.text
-            ))
+            )
           }}
       shell: bash
       run: |
