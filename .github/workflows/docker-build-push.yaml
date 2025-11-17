@@ -35,6 +35,13 @@ on:
         description: >
           Slack bot token.
           Required, when `slack-channel-id` is set.
+      GHCR_GITHUB_TOKEN:
+        description: >
+          GitHub token with `write:packages` scope,
+          to push to GitHub Container Registry.
+          Required, if `github` input is enabled.
+          If you push to the same repository,
+          pass `secrets.GITHUB_TOKEN`.
 
     inputs:
       dry-run:
@@ -183,7 +190,7 @@ jobs:
         uses: verkstedt/actions/docker-setup-registry/github@feat/docker-build-push
         with:
           image-name: ${{ inputs.github-image-name }}
-          github-token: ${{ secrets.GITHUB_TOKEN }}
+          github-token: ${{ secrets.GHCR_GITHUB_TOKEN }}
 
       - name: 'Google Artifact Registry: Setup'
         if: ${{ inputs.google == true }}
