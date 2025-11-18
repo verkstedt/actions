@@ -145,10 +145,12 @@ jobs:
             # shellcheck disable=SC2046
             set -- $(
               node --input-type=module --eval "
-                const { default: config } = await import(process.argv[1], { assert: { type: 'module' } });
+                const { default: config } = await import(process.argv[1]);
                 process.stdout.write(config.plugins.map(p => p[0]).join('\\n'));
               " "$RELEASE_CONFIG_MJS"
             )
+
+            printf "Installing semantic-release plugins:\n%s\n\n" "$*"
 
             if [ -f "yarn.lock" ]
             then
