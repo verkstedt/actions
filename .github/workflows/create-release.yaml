@@ -131,7 +131,7 @@ jobs:
               )"
 
               conclusion="$(
-                gh api "repos/verkstedt/actions--test/actions/workflows/$workflow_id/runs" \
+                gh api "repos/${{ github.repository }}/actions/workflows/$workflow_id/runs" \
                   | jq -r \
                     --arg sha "${{ github.sha }}" \
                     '.workflow_runs[] | select(.head_sha == $sha ) | .conclusion'
