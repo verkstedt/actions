@@ -238,7 +238,7 @@ jobs:
           GIT_TAG="git-$( git rev-parse --short HEAD )"
 
           # `date-<YYYYMMDDHHMMSS>`
-          DATE_TAG="$( git show -s --format=%cd --date=format:%Y%m%d%H%M%S HEAD )"
+          DATE_TAG="date-$( git show -s --format=%cd --date=format:%Y%m%d%H%M%S HEAD )"
 
           TAGS="$GIT_TAG $DATE_TAG"
 
