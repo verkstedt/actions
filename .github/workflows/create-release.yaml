@@ -103,12 +103,12 @@ jobs:
           user_id=$(gh api "/users/${{ steps.app-token.outputs.app-slug }}[bot]" --jq .id)
           echo "user-id=$user_id" >> "$GITHUB_OUTPUT"
 
-      - name: Setup
-        id: setup
-        uses: verkstedt/actions/setup@feat/create-release
+      - name: 'Checkout'
+        uses: actions/checkout@v5
         with:
+          fetch-depth: 1
+          ref: ${{ github.event.pull_request.head.ref || github.ref }}
           token: ${{ steps.app-token.outputs.token }}
-          github-npm-registry-personal-access-token: ${{ secrets.GH_NPM_REGISTRY_PERSONAL_ACCESS_TOKEN }}
 
       - name: Download semantic-release config
         id: release-config
@@ -137,7 +137,6 @@ jobs:
           # inputs.* directly to make it easier to copy it to separate
           # file for testing
           GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
-          PACKAGE_MANAGER: ${{ steps.setup.outputs.package-manager }}
           RELEASE_TYPE: ${{ inputs.release-type }}
           RELEASE_CONFIG_MJS: ${{ steps.release-config.outputs.path }}
         run: |
@@ -151,18 +150,17 @@ jobs:
               " "$RELEASE_CONFIG_MJS"
             )
 
-            case "$PACKAGE_MANAGER" in
-              yarn)
-                yarn add -D "$@"
-                ;;
-              npm)
-                npm install -D "$@"
-                ;;
-              *)
-                echo "::error::Unsupported package manager: $PACKAGE_MANAGER"
-                exit 69 # EX_UNAVAILABLE
-                ;;
-            esac
+            if [ -f "yarn.lock" ]
+            then
+              yarn add -D "$@"
+            else
+              if ! [ -f "package.json" ]
+              then
+                echo '{}' > package.json
+              fi
+
+              npm install -D "$@"
+            fi
 
             git restore package.json || :
             git restore package-lock.json || :

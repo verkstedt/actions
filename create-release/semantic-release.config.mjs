@@ -1,10 +1,14 @@
 import assert from 'node:assert'
+import fs from 'node:fs'
 
 function unindent(text) {
   const textTrimLines = text.replaceAll(/(^\n+|\n+$)/g, '')
   const [indent] = textTrimLines.match(/^\s*/m)
   return textTrimLines.replaceAll(new RegExp(`^${indent}`, 'gm'), '')
 }
+
+const packageJsonExists = fs.existsSync('package.json')
+const versionTxtExists = fs.existsSync('version.txt')
 
 /**
  * @type {import('semantic-release').GlobalConfig}
@@ -67,26 +71,31 @@ const config = {
       },
     ],
 
-    // Update version.txt, if it exists
-    [
-      '@semantic-release/exec',
-      {
-        prepareCmd: unindent(`
-          if [ -f version.txt ]
-          then
-            echo "\${nextRelease.version}" > version.txt
-          fi
+    // Update version.txt
+    ...(!versionTxtExists
+      ? []
+      : [
+          [
+            '@semantic-release/exec',
+            {
+              prepareCmd: unindent(`
+          echo "\${nextRelease.version}" > version.txt
         `),
-      },
-    ],
+            },
+          ],
+        ]),
 
-    // Update version package.json, do not publish to npm registry
-    [
-      '@semantic-release/npm',
-      {
-        npmPublish: false,
-      },
-    ],
+    // Update version package.json (do not publish to npm registry)
+    ...(!packageJsonExists
+      ? []
+      : [
+          [
+            '@semantic-release/npm',
+            {
+              npmPublish: false,
+            },
+          ],
+        ]),
 
     // Write release notes to CHANGELOG.md
     ['@semantic-release/changelog'],
