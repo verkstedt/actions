@@ -158,12 +158,18 @@ jobs:
             else
               if ! [ -f "package.json" ]
               then
-                echo '{}' > package.json
+                npm init --yes
               fi
 
               npm install -D "$@"
             fi
 
+            # Remove untracked files, in case we just created
+            # package.json
+            git clean -f
+
+            # Restore package files contents to avoid committing
+            # semantic-release plugins
             git restore package.json || :
             git restore package-lock.json || :
             git restore yarn.lock || :

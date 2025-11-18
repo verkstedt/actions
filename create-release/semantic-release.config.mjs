@@ -7,8 +7,8 @@ function unindent(text) {
   return textTrimLines.replaceAll(new RegExp(`^${indent}`, 'gm'), '')
 }
 
-const packageJsonExists = fs.existsSync('package.json')
-const versionTxtExists = fs.existsSync('version.txt')
+const packageJsonMissing = !fs.existsSync('package.json')
+const versionTxtMissing = !fs.existsSync('version.txt')
 
 /**
  * @type {import('semantic-release').GlobalConfig}
@@ -72,7 +72,7 @@ const config = {
     ],
 
     // Update version.txt
-    ...(!versionTxtExists
+    ...(versionTxtMissing
       ? []
       : [
           [
@@ -86,7 +86,7 @@ const config = {
         ]),
 
     // Update version package.json (do not publish to npm registry)
-    ...(!packageJsonExists
+    ...(packageJsonMissing
       ? []
       : [
           [
@@ -148,6 +148,7 @@ const config = {
           'CHANGELOG.md',
           'package.json',
           'package-lock.json',
+          'yarn.lock',
           'version.txt',
         ],
         message: unindent(`
