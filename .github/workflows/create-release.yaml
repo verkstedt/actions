@@ -51,6 +51,7 @@ on:
       github-app-id:
         description: >
           GitHub App ID to use for obtaining a git token capable of pushing to the main branch:
+          Actions: Read
           Contents: Read & Write,
           Issues: Read & Write,
           Pull requests: Read & Write.
@@ -109,6 +110,41 @@ jobs:
           fetch-depth: 1
           ref: ${{ github.event.pull_request.head.ref || github.ref }}
           token: ${{ steps.app-token.outputs.token }}
+
+      - name: Check other workflows
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          REQUIRED_WORKFLOWS: |
+            .github/workflows/ci.yaml
+            .github/workflows/docker-build-push.yaml
+        run: |
+          for workflow_path in $REQUIRED_WORKFLOWS
+          do
+            if [ -f "$workflow_path" ]
+            then
+              printf "%s: " "$workflow_path"
+              workflow_id="$(
+                gh api "repos/${{ github.repository }}/actions/workflows" \
+                  | jq -r \
+                    --arg path "$workflow_path" \
+                    '.workflows[] | select(.path == $path) | .id'
+              )"
+
+              conclusion="$(
+                gh api "repos/verkstedt/actions--test/actions/workflows/$workflow_id/runs" \
+                  | jq -r \
+                    --arg sha "${{ github.sha }}" \
+                    '.workflow_runs[] | select(.head_sha == $sha ) | .conclusion'
+              )"
+              printf "%s\n" "$conclusion"
+
+              if [ "$conclusion" != "success" ]
+              then
+                echo "::error::Required workflow '$workflow_path' has not succeeded for commit ${{ github.sha }}: $conclusion"
+                exit 65 # EX_DATAERR
+              fi
+            fi
+          done
 
       - name: Download semantic-release config
         id: release-config
