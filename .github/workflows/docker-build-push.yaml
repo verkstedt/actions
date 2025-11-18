@@ -28,10 +28,11 @@ name: Docker Build and Push
 on:
   workflow_call:
     secrets:
-      BUILD_ARGS:
+      BUILD_SECRETS:
         description: >
-          Build arguments for Docker build
-          (multiline string)
+          Build secrets for Docker build
+          (multiline string with `KEY=VALUE` pairs).
+          See https://docs.docker.com/build/ci/github-actions/secrets/
       SLACK_BOT_TOKEN:
         description: >
           Slack bot token.
@@ -67,6 +68,13 @@ on:
           Path to Dockerfile
         type: string
         default: 'Dockerfile'
+      build-args:
+        description: >
+          Build arguments for Docker build
+          (multiline string with `KEY=VALUE` pairs).
+          See: https://github.com/docker/build-push-action#:~:text=build%2Dargs,-List
+        type: string
+        default: ''
       slack-channel-id:
         description: >
           Slack channel ID, to notify of successful run.
@@ -339,7 +347,8 @@ jobs:
           platforms: ${{ steps.config.outputs.platforms }}
           provenance: true
           tags: ${{ steps.config.outputs.tags }}
-          build-args: ${{ secrets.BUILD_ARGS }}
+          build-args: ${{ inputs.build-args }}
+          secrets: ${{ secrets.BUILD_SECRETS }}
 
       - name: Notify
         if: >
