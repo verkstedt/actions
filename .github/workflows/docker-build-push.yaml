@@ -2,6 +2,7 @@
 #
 # Will tag the image with:
 # - sha of the commit (`git-<short_sha>`)
+# - date of the commit (`date-<YYYYMMDDHHMMSS>`)
 # - if pushed to main branch:
 #   - `edge`
 # - if triggered by version tag push:
@@ -226,7 +227,12 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
           # `git-<SHORT_SHA>`
-          TAGS="git-$( git rev-parse --short HEAD )"
+          GIT_TAG="git-$( git rev-parse --short HEAD )"
+
+          # `date-<YYYYMMDDHHMMSS>`
+          DATE_TAG="$( git show -s --format=%cd --date=format:%Y%m%d%H%M%S HEAD )"
+
+          TAGS="$GIT_TAG $DATE_TAG"
 
           if [ "${{ inputs.mutable-tags }}" != "false" ]
           then
