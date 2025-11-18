@@ -188,27 +188,13 @@ jobs:
 
             printf "Installing semantic-release plugins:\n%s\n\n" "$*"
 
-            if [ -f "yarn.lock" ]
-            then
-              yarn add -D "$@"
-            else
-              if ! [ -f "package.json" ]
-              then
-                npm init --yes
-              fi
+            rm -rf package.json package-lock.json yarn.lock
 
-              npm install -D "$@"
-            fi
+            npm init --yes >/dev/null
+            npm install --save-dev "$@"
 
-            # Remove untracked files, in case we just created
-            # package.json
             git clean -f
-
-            # Restore package files contents to avoid committing
-            # semantic-release plugins
-            git restore package.json || :
-            git restore package-lock.json || :
-            git restore yarn.lock || :
+            git restore .
           }
           install-plugin-pkgs
           echo "::endgroup::"
