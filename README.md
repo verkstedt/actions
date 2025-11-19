@@ -122,6 +122,12 @@ Template:
 
 When a GH commit URL is included in commit message, link the commit from said comment.
 
+### Cloud Run Deployment
+
+Deploy images to Google Cloud Run services or jobs.
+
+See [deploy-cloudrun.yaml](./.github/workflows/deploy-cloudrun.yaml) for details.
+
 ### Cloud Function Deployment
 
 Deploy code to Google Cloud Function.
