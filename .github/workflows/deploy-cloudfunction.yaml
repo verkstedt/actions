@@ -1,0 +1,69 @@
+name: 'Reusable gcp cloud function deploy workflow'
+
+on:
+  workflow_call:
+    inputs:
+      function-name:
+        description: 'Name of the Cloud Function to deploy'
+        required: true
+        type: string
+      region:
+        description: 'GCP region for Cloud Function deployment (e.g., europe-west3)'
+        required: true
+        type: string
+      source-dir:
+        description: 'Directory containing the function source code'
+        type: string
+        default: "."
+      entry-point:
+        description: 'Name of the function entry point (function name in code)'
+        required: true
+        type: string
+      runtime:
+        description: 'Runtime environment for the function (e.g., python311, nodejs22) see <https://docs.cloud.google.com/run/docs/runtimes/function-runtimes>'
+        required: true
+        type: string
+      memory:
+        description: 'Amount of memory allocated to the function'
+        type: string
+        default: "256Mi"
+      service-timeout:
+        description: 'Maximum execution time for the function in seconds'
+        type: number
+        default: 60
+      workload-identity-provider:
+        description: 'GCP Workload Identity Provider resource name'
+        required: true
+        type: string
+      workload-identity-service-account-mail:
+        description: 'GCP service account email for workload identity OIDC authentication'
+        required: true
+        type: string
+
+jobs:
+  deploy:
+    name: Deploy
+    permissions:
+      contents: 'read'
+      id-token: 'write'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+      - name: Google Auth
+        uses: 'google-github-actions/auth@v3'
+        with:
+          service_account: ${{ inputs.workload-identity-service-account-mail }}
+          workload_identity_provider: ${{ inputs.workload-identity-provider }}
+      - name: Set up gcloud-cli
+        uses: 'google-github-actions/setup-gcloud@v3'
+      - name: Deploy Cloud Function
+        uses: google-github-actions/deploy-cloud-functions@v4
+        with:
+          name: ${{ inputs.function-name }}
+          runtime: ${{ inputs.runtime }}
+          region: ${{ inputs.region }}
+          memory: ${{ inputs.memory }}
+          service_timeout: ${{ inputs.service-timeout }}
+          source_dir: ${{ inputs.source-dir }}
+          entry_point: ${{ inputs.entry-point }}

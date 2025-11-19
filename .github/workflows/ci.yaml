@@ -235,7 +235,14 @@ jobs:
               const browsers = new Set(
                 vitestConfig.test?.projects
                   ?.filter(proj => proj.test?.browser?.enabled)
-                  .filter(proj => [undefined, 'playwright'].includes(proj.test?.browser?.provider))
+                  .filter(proj => {
+                    const provider = proj.test?.browser?.provider;
+                    return (
+                      provider == undefined
+                      || provider === 'playwright'
+                      || provider?.name === 'playwright'
+                    )
+                  })
                   .flatMap(proj => proj.test?.browser?.instances ?? [{ browser: 'chromium' }])
                   .filter(Boolean)
                   .map(instance => instance?.browser)

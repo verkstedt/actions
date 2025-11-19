@@ -4,31 +4,10 @@
 
 ![](./screenshots/run.png)
 
-<a id=user-content-goals></a>
+## Technical design
 
-## Goals
-
-- Something that covers 99% needs of 80% of our projects instead of
-  something that covers 80% of 99% of our projects
-
-- Opinionated GH actions setup for our projects that work out of the box
-
-  For most projects it should require only copying template workflows
-  and setting up few secrets and vars. These will be kept to minimum by
-  setting them in the organisation level, where it makes sense.
-
-- Easy to maintain
-
-  Try hard to keep things backwards compatible, so we can keep
-  everything pointed `@v1` forever and only change things in this
-  repository, without having to create 1000s of PRs updating these in
-  other projects. 🧘
-
-## Assumptions
-
-- Only for JavaScript projects.
-- Main branch is called `main`.
-- “CI” workflow template should be enough for _most_ of the projects.
+Read [`DESIGN.md`](./DESIGN.md) for more information about goals of this
+project and how things are organised and why.
 
 ## Quick start
 
@@ -76,37 +55,7 @@
       your test PR required. If you use Chromatic, you’ll also want to
       make “UI Tests” required.
 
-## Parts
-
-- Workflow templates
-  ([docs](https://docs.github.com/en/actions/using-workflows/creating-starter-workflows-for-your-organization))
-
-  _This is probably the thing you are interested in._
-
-  They don’t live in this repository, but in
-  [verkstedt/.github][workflow-templates]. This way if you go in your
-  repository to “Actions” → “New workflow” you will see them under “By
-  verkstedt”.
-
-  If they don’t show up there, copy them to your repository from
-  [verkstedt/.github][workflow-templates].
-
-  ![](./screenshots/workflows-by-verkstedt.png)
-
-- Reusable workflows
-  ([docs](https://docs.github.com/en/actions/using-workflows/reusing-workflows))
-
-  Because we copy templates to repositories, we use “reusable workflows”
-  to centralise things as much as possible, so in most cases we can
-  add/fix things here instead of having to update every single repo.
-
-- Composite actions
-  ([docs](https://docs.github.com/en/actions/creating-actions/creating-a-composite-action))
-
-  Repeating steps extracted from reusable workflows and/or workflow
-  templates.
-
-## Workflow templates
+## Workflows
 
 ### CI
 
@@ -179,6 +128,11 @@ Deploy images to Google Cloud Run services or jobs.
 
 See [deploy-cloudrun.yaml](./.github/workflows/deploy-cloudrun.yaml) for details.
 
+### Cloud Function Deployment
+
+Deploy code to Google Cloud Function.
+
+See [deploy-cloudfunction.yaml](./.github/workflows/deploy-cloudfunction.yaml) for details.
 
 ## Deploying new versions of actions and workflows
 
@@ -230,7 +184,7 @@ You have two options:
 
 2. Don’t use these workflows.
 
-   See [Goals](#user-content-goals) for this project.
+   See [Goals](./DESIGN.md#user-content-goals) for this project.
 
 [storybook]: https://storybook.js.org/docs/get-started/install
 [chromatic]: https://www.chromatic.com/start
