@@ -9,7 +9,6 @@
 #   - `v<new_version>`
 #   - if version is NOT prerelease also with:
 #     - `latest`
-#     - `v<major>` and `v<major>.<minor>`
 #
 #
 # # Google Artifact Registry
@@ -77,7 +76,7 @@ on:
       mutable-tags:
         description: >
           Whether to update mutable tags
-          (`edge`, `latest`, `v<major>`, `v<major>.<minor>`)
+          (`edge`, `latest`)
           on new version releases.
         type: boolean
         default: true
@@ -258,16 +257,11 @@ jobs:
           then
             TAGS="$TAGS ${VERSION_TAG}"
             # not a pre-release
-            if ! echo "$VERSION_TAG" | grep -q '-'
+            if ! echo "$VERSION_TAG" | grep -q '-' && [ "${{ inputs.mutable-tags }}" != "false" ]
             then
-              if [ "${{ inputs.mutable-tags }}" != "false" ]
-              then
-                TAGS="$TAGS $( echo "${VERSION_TAG}" | grep -oE '^v[0-9]+\.[0-9]+' )"
-                TAGS="$TAGS $( echo "${VERSION_TAG}" | grep -oE '^v[0-9]+' )"
-                TAGS="$TAGS latest"
-              fi
-              echo 'new-version=true' | tee -a "$GITHUB_OUTPUT"
+              TAGS="$TAGS latest"
             fi
+            echo 'new-version=true' | tee -a "$GITHUB_OUTPUT"
           fi
 
           TAGS="$( echo "$TAGS" | tr ' ' '\n' )"
