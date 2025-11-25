@@ -155,7 +155,7 @@ jobs:
         # hardcode repo and reference and fetch the file manually 🙄
         run: |
           config_repo="verkstedt/actions"
-          config_ref="feat/create-release" # TODO DEBUG Change to v1 before merging
+          config_ref="v1"
           config_path="create-release/semantic-release.config.mjs"
 
           release_config_mjs="$RUNNER_TEMP/$( basename "$config_path" )"
@@ -255,7 +255,7 @@ jobs:
 
       - name: Notify
         if: inputs.dry-run != true && inputs.slack-channel-id
-        uses: verkstedt/actions/notify-status@feat/create-release
+        uses: verkstedt/actions/notify-status@v1
         with:
           status: success
           slack-bot-token: ${{ secrets.SLACK_BOT_TOKEN }}
