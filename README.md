@@ -74,6 +74,11 @@ scripts as paralel jobs:
 - `test` (if no `test:*` scripts present)
 - `build`
 
+&nbsp;<!-- separate lists -->
+
+- [🔍 Repositories using this template](https://github.com/search?q=-is:archived+path:.github/workflows/ci.yaml+"https://github.com/verkstedt/.github/blob/main/workflow-templates/ci.yaml"&type=code)
+- [🔍 Repositories using this workflow](https://github.com/search?q=-is:archived+path:.github/workflows/+"verkstedt/actions/.github/workflows/ci.yaml"+NOT+"https://github.com/verkstedt/.github/blob/main/workflow-templates/ci.yaml"&type=code)
+
 #### What’s the deal with `:` in script names?
 
 In many projects you might end up having more than one linter or tester
@@ -105,6 +110,9 @@ Runs only on `main` branch and published PRs.
 Requires some vars and/or secrets.
 See [./.github/workflows/chromatic.yaml][workflow-chromatic] for details.
 
+- [🔍 Repositories using this template](https://github.com/search?q=-is:archived+path:.github/workflows/chromatic.yaml+"https://github.com/verkstedt/.github/blob/main/workflow-templates/chromatic.yaml"&type=code)
+- [🔍 Repositories using this workflow](https://github.com/search?q=-is:archived+path:.github/workflows/+"verkstedt/actions/.github/workflows/chromatic.yaml"+NOT+"https://github.com/verkstedt/.github/blob/main/workflow-templates/chromatic.yaml"&type=code)
+
 ### Jira
 
 Template:
@@ -115,6 +123,9 @@ Moves [Jira] issues when PRs are created, published or merged.
 Requires some vars and/or secrets.
 See [./.github/workflows/jira.yaml][workflow-jira] for details.
 
+- [🔍 Repositories using this template](https://github.com/search?q=-is:archived+path:.github/workflows/jira.yaml+"https://github.com/verkstedt/.github/blob/main/workflow-templates/jira.yaml"&type=code)
+- [🔍 Repositories using this workflow](https://github.com/search?q=-is:archived+path:.github/workflows/+"verkstedt/actions/.github/workflows/jira.yaml"+NOT+"https://github.com/verkstedt/.github/blob/main/workflow-templates/jira.yaml"&type=code)
+
 ### Ref Comment in Commit
 
 Template:
@@ -122,12 +133,18 @@ Template:
 
 When a GH commit URL is included in commit message, link the commit from said comment.
 
+- [🔍 Repositories using this template](https://github.com/search?q=-is:archived+path:.github/workflows/ref-comment-in-commit.yaml+"https://github.com/verkstedt/.github/blob/main/workflow-templates/ref-comment-in-commit.yaml"&type=code)
+- [🔍 Repositories using this workflow](https://github.com/search?q=-is:archived+path:.github/workflows/+"verkstedt/actions/.github/workflows/ref-comment-in-commit.yaml"+NOT+"https://github.com/verkstedt/.github/blob/main/workflow-templates/ref-comment-in-commit.yaml"&type=code)
+
 ### Create Release
 
 Template:
 <https://github.com/verkstedt/.github/tree/main/workflow-templates/create-release.yaml>
 
 See [create-release.yaml](./.github/workflows/create-release.yaml) for details.
+
+- [🔍 Repositories using this template](https://github.com/search?q=-is:archived+path:.github/workflows/create-release.yaml+"https://github.com/verkstedt/.github/blob/main/workflow-templates/create-release.yaml"&type=code)
+- [🔍 Repositories using this workflow](https://github.com/search?q=-is:archived+path:.github/workflows/+"verkstedt/actions/.github/workflows/create-release.yaml"+NOT+"https://github.com/verkstedt/.github/blob/main/workflow-templates/create-release.yaml"&type=code)
 
 ### Docker Build and Push
 
@@ -138,17 +155,24 @@ Build Docker image and push it to the registries.
 
 See [docker-build-push.yaml](./.github/workflows/docker-build-push.yaml) for details.
 
+- [🔍 Repositories using this template](https://github.com/search?q=-is:archived+path:.github/workflows/docker-build-push.yaml+"https://github.com/verkstedt/.github/blob/main/workflow-templates/docker-build-push.yaml"&type=code)
+- [🔍 Repositories using this workflow](https://github.com/search?q=-is:archived+path:.github/workflows/+"verkstedt/actions/.github/workflows/docker-build-push.yaml"+NOT+"https://github.com/verkstedt/.github/blob/main/workflow-templates/docker-build-push.yaml"&type=code)
+
 ### Cloud Run Deployment
 
 Deploy images to Google Cloud Run services or jobs.
 
 See [deploy-cloudrun.yaml](./.github/workflows/deploy-cloudrun.yaml) for details.
 
+- [🔍 Repositories using this workflow](https://github.com/search?q=-is:archived+path:.github/workflows/+"verkstedt/actions/.github/workflows/deploy-cloudrun.yaml"+NOT+"https://github.com/verkstedt/.github/blob/main/workflow-templates/deploy-cloudrun.yaml"&type=code)
+
 ### Cloud Function Deployment
 
 Deploy code to Google Cloud Function.
 
 See [deploy-cloudfunction.yaml](./.github/workflows/deploy-cloudfunction.yaml) for details.
+
+- [🔍 Repositories using this workflow](https://github.com/search?q=-is:archived+path:.github/workflows/+"verkstedt/actions/.github/workflows/deploy-cloudfunction.yaml"+NOT+"https://github.com/verkstedt/.github/blob/main/workflow-templates/deploy-cloudfunction.yaml"&type=code)
 
 ## Deploying new versions of actions and workflows
 
