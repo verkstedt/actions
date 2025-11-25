@@ -122,6 +122,13 @@ Template:
 
 When a GH commit URL is included in commit message, link the commit from said comment.
 
+### Create Release
+
+Template:
+<https://github.com/verkstedt/.github/tree/main/workflow-templates/create-release.yaml>
+
+See [create-release.yaml](./.github/workflows/create-release.yaml) for details.
+
 ### Cloud Run Deployment
 
 Deploy images to Google Cloud Run services or jobs.

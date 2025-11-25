@@ -1,0 +1,263 @@
+name: Create Release
+
+# Uses `semantic-release` under the hood, but we did not want to force
+# devs to be pedantic with commit messages, so instead we take GitHub
+# approach and list only merged PRs in the release notes and allow
+# releaser to decide if it’s major, minor or patch release.
+#
+# - Push a commit bumping up a version:
+#   - Version in `package.json` and — if it exists — `version.txt`
+#   - Release notes in `CHANGELOG.md`
+# - Create git version tag
+# - Create GitHub release
+# - Send slack notification
+
+on:
+  workflow_call:
+    secrets:
+      GITHUB_APP_PRIVATE_KEY:
+        description: >
+          GitHub App private key.
+          See `github-app-id` input for more details.
+        required: true
+      GH_NPM_REGISTRY_PERSONAL_ACCESS_TOKEN:
+        description: >
+          Access token with `read:packages` scope to access GitHub npm registry.
+          You probably do not need this. See inputs for `setup` action for more details.
+        required: false
+      SLACK_BOT_TOKEN:
+        description: >
+          Slack bot token.
+          Required if `slack-channel-id` input is set.
+        required: false
+    inputs:
+      release-type:
+        description: >
+          Type of release
+          (major, minor, patch, or prerelease)
+        type: string
+        default: 'patch'
+      dry-run:
+        description: >
+          Dry–run
+        type: boolean
+        default: false
+      env-vars:
+        description: >
+          Environment variables to set
+          (as multiline string, e.g., `VAR1=value1\nVAR2=value2`)
+        type: string
+        default: ''
+      github-app-id:
+        description: >
+          GitHub App ID to use for obtaining a git token capable of pushing to the main branch:
+          Actions: Read
+          Contents: Read & Write,
+          Issues: Read & Write,
+          Pull requests: Read & Write.
+        type: string
+        required: true
+      slack-channel-id:
+        description: >
+          Slack channel ID to send the notification about the release to.
+          Leave empty to disable.
+        type: string
+        required: false
+
+jobs:
+  release:
+    name: 'Create Release'
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+
+    steps:
+      - name: Verify inputs
+        run: |
+          if ! echo "${{ inputs.release-type }}" | grep -qE '^(major|minor|patch|prerelease)$'
+          then
+            echo "::error::Invalid release-type: ${{ inputs.release-type }}. Must be one of: major, minor, patch, prerelease."
+            exit 64 # EX_USAGE
+          fi
+
+          if [ "${{ inputs.release-type }}" = "prerelease" ]
+          then
+            echo "::error::Prerelease not supported (yet)."
+            exit 64 # EX_USAGE
+          fi
+
+      - name: 'GitHub App token: Token'
+        id: app-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ inputs.github-app-id }}
+          private-key: ${{ secrets.GITHUB_APP_PRIVATE_KEY }}
+
+      - name: 'GitHub App token: App Data'
+        id: app-token-data
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          user_id=$(gh api "/users/${{ steps.app-token.outputs.app-slug }}[bot]" --jq .id)
+          echo "user-id=$user_id" >> "$GITHUB_OUTPUT"
+
+      - name: 'Checkout'
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 1
+          ref: ${{ github.event.pull_request.head.ref || github.ref }}
+          token: ${{ steps.app-token.outputs.token }}
+
+      - name: Check other workflows
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          REQUIRED_WORKFLOWS: |
+            .github/workflows/ci.yaml
+            .github/workflows/docker-build-push.yaml
+        run: |
+          for workflow_path in $REQUIRED_WORKFLOWS
+          do
+            if [ -f "$workflow_path" ]
+            then
+              printf "%s: " "$workflow_path"
+              workflow_id="$(
+                gh api "repos/${{ github.repository }}/actions/workflows" \
+                  | jq -r \
+                    --arg path "$workflow_path" \
+                    '.workflows[] | select(.path == $path) | .id'
+              )"
+
+              conclusion="$(
+                gh api "repos/${{ github.repository }}/actions/workflows/$workflow_id/runs" \
+                  | jq -r \
+                    --arg sha "${{ github.sha }}" \
+                    '.workflow_runs[] | select(.head_sha == $sha ) | .conclusion'
+              )"
+              printf "%s\n" "$conclusion"
+
+              if [ "$conclusion" != "success" ]
+              then
+                echo "::error::Required workflow '$workflow_path' has not succeeded for commit ${{ github.sha }}: $conclusion"
+                exit 65 # EX_DATAERR
+              fi
+            fi
+          done
+
+      - name: Download semantic-release config
+        id: release-config
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        # Unfortunatelly when using reusable workflows, GitHub doesn’t
+        # expose paths to these workflows in any way, so we need to
+        # hardcode repo and reference and fetch the file manually 🙄
+        run: |
+          config_repo="verkstedt/actions"
+          config_ref="v1"
+          config_path="create-release/semantic-release.config.mjs"
+
+          release_config_mjs="$RUNNER_TEMP/$( basename "$config_path" )"
+          echo "path=$release_config_mjs" | tee -a "$GITHUB_OUTPUT"
+
+          gh api \
+            -H 'Accept: application/vnd.github.raw' \
+            "/repos/${config_repo}/contents/${config_path}?ref=${config_ref}" \
+            > "$release_config_mjs"
+
+      - name: 'Install semantic-release plugins'
+        env:
+          RELEASE_CONFIG_MJS: '${{ steps.release-config.outputs.path }}'
+        run: |
+          # shellcheck disable=SC2046
+          set -- $(
+            node --input-type=module --eval "
+              const { default: config } = await import(process.argv[1]);
+              process.stdout.write(config.plugins.map(p => p[0]).join('\\n'));
+            " "$RELEASE_CONFIG_MJS"
+          )
+
+          printf "Installing semantic-release plugins:\n%s\n\n" "$*"
+
+          rm -rf package.json package-lock.json yarn.lock
+
+          npm init --yes >/dev/null
+          npm install --save-dev "$@"
+
+          git clean -f
+          git restore .
+
+      - name: 'Setup git to commit as GitHub App bot'
+        run: |
+          {
+            # Use our GitHub app bot as author of the release commit
+            echo GIT_AUTHOR_NAME='${{ steps.app-token.outputs.app-slug }}[bot]'
+            echo GIT_AUTHOR_EMAIL='${{ steps.app-token-data.outputs.user-id }}+${{ steps.app-token.outputs.app-slug }}[bot]@users.noreply.github.com'
+
+            # Not really semantically true, because semantic-release is
+            # both the author and commiter, but with this we’ll have a
+            # nice info in git of who triggered the release
+            echo GIT_COMMITTER_NAME="$GITHUB_ACTOR"
+            echo GIT_COMMITTER_EMAIL="$GITHUB_ACTOR_ID+$GITHUB_ACTOR@users.noreply.github.com"
+          } | tee -a "$GITHUB_ENV"
+
+      - name: Release
+        id: release
+        run: |
+          export GITHUB_TOKEN="${{ steps.app-token.outputs.token }}"
+          export RELEASE_TYPE="${{ inputs.release-type }}"
+          export RELEASE_CONFIG_MJS="${{ steps.release-config.outputs.path }}"
+          export GITHUB_STEP_SUMMARY
+          export GITHUB_OUTPUT # Note: It will add some outputs
+
+          if [ "${{ inputs.dry-run }}" = "true" ]
+          then
+            set -- "$@" --dry-run
+          fi
+
+          npx --yes semantic-release --extends "$RELEASE_CONFIG_MJS" "$@"
+
+      - name: Convert release notes to Slack’s markdown–like markup
+        id: slack-release-notes
+        env:
+          RAW_TEXT: ${{ steps.release.outputs.release-notes }}
+        run: |
+          TEXT="$RAW_TEXT"
+
+          if [ -n "$TEXT" ]
+          then
+            mkdir -p "$RUNNER_TEMP/slackify-markdown"
+            cd "$RUNNER_TEMP/slackify-markdown"
+            echo '{}' > package.json
+            npm install slackify-markdown@^5.0.0
+            TEXT=$(
+              node \
+                -e '
+                  import { slackifyMarkdown } from "slackify-markdown";
+                  process.stdout.write(slackifyMarkdown(process.argv[1]));
+                ' \
+                "$TEXT"
+            )
+            # shellcheck disable=SC2181
+            if [ $? -ne 0 ]
+            then
+              echo "::error::Failed to convert release notes to Slack format, falling back to using original markdown."
+              TEXT="$RAW_TEXT"
+            fi
+          fi
+
+          {
+            echo 'text<<TEXT_EOL'
+            echo "$TEXT"
+            echo 'TEXT_EOL'
+          } | tee -a "$GITHUB_OUTPUT"
+
+      - name: Notify
+        if: inputs.dry-run != true && inputs.slack-channel-id
+        uses: verkstedt/actions/notify-status@v1
+        with:
+          status: success
+          slack-bot-token: ${{ secrets.SLACK_BOT_TOKEN }}
+          slack-channel-id: ${{ inputs.slack-channel-id }}
+          text: ${{ steps.slack-release-notes.outputs.text }}

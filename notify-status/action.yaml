@@ -6,15 +6,37 @@ inputs:
     description: 'Status to show. One of: success, failure, cancelled'
     required: true
   slack-bot-token:
-    description: 'Slack bot token. Go to https://api.slack.com/apps/, create a bot, go to “OAuth & Permissions”. Add chate:write permission and grab a token.'
+    description: 'Slack bot token. Go to https://api.slack.com/apps/, create a bot, go to “OAuth & Permissions”. Add chat:write permission and grab a token.'
     required: true
   slack-channel-id:
     description: 'This is _not_ a channel name. You can grab the ID from page URL.'
     required: true
+  text:
+    description: 'Optional custom text to include in the message.'
+    required: false
+    default: ''
 
 runs:
   using: composite
   steps:
+    - name: Compose message
+      id: message
+      env:
+        MESSAGE: >
+          ${{
+            format(
+              '*{1}* {2}: {3} @ {4}{0}{0}{5}',
+              fromJson('"\n"'),
+              inputs.status == 'failure' && '🔴 FAILED' || inputs.status == 'success' && '🟢' || '🟡',
+              github.workflow,
+              github.repository,
+              github.head_ref || github.ref_name,
+              inputs.text
+            )
+          }}
+      shell: bash
+      run: |
+        printf "value<<EOM\n%s\nEOM\n" "$MESSAGE" | tee -a "$GITHUB_OUTPUT"
     - name: Send Slack message
       uses: slackapi/slack-github-action@v1
       env:
@@ -25,12 +47,13 @@ runs:
         # https://app.slack.com/block-kit-builder/ to preview
         payload: |
           {
+            "text": ${{ toJson(steps.message.outputs.value) }},
             "blocks": [
               {
                 "type": "section",
                 "text": {
                   "type": "mrkdwn",
-                  "text": "<!here> *${{ inputs.status == 'failure' && '🔴 FAILED' || inputs.status == 'success' && '🟢' || '🟡' }}* ${{ github.workflow }}: ${{ github.repository }} @ ${{ github.head_ref || github.ref_name }}"
+                  "text": ${{ toJson(format('<!here> {0}', steps.message.outputs.value)) }}
                 }
               },
               {
@@ -56,7 +79,14 @@ runs:
                 "elements": [
                   {
                     "type": "mrkdwn",
-                    "text": "*Logs:* <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|GH Actions>"
+                    "text": ${{
+                      toJson(format(
+                        '*Logs:* <{0}/{1}/actions/runs/{2}|GH Actions>',
+                        github.server_url,
+                        github.repository,
+                        github.run_id
+                      ))
+                    }}
                   }
                 ]
               }
