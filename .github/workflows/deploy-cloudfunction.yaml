@@ -14,7 +14,7 @@ on:
       source-dir:
         description: 'Directory containing the function source code'
         type: string
-        default: "."
+        default: '.'
       entry-point:
         description: 'Name of the function entry point (function name in code)'
         required: true
@@ -26,7 +26,7 @@ on:
       memory:
         description: 'Amount of memory allocated to the function'
         type: string
-        default: "256Mi"
+        default: '256Mi'
       service-timeout:
         description: 'Maximum execution time for the function in seconds'
         type: number
