@@ -122,6 +122,13 @@ Template:
 
 When a GH commit URL is included in commit message, link the commit from said comment.
 
+### Create Release
+
+Template:
+<https://github.com/verkstedt/.github/tree/main/workflow-templates/create-release.yaml>
+
+See [create-release.yaml](./.github/workflows/create-release.yaml) for details.
+
 ### Docker Build and Push
 
 Template:
@@ -130,6 +137,18 @@ Template:
 Build Docker image and push it to the registries.
 
 See [docker-build-push.yaml](./.github/workflows/docker-build-push.yaml) for details.
+
+### Cloud Run Deployment
+
+Deploy images to Google Cloud Run services or jobs.
+
+See [deploy-cloudrun.yaml](./.github/workflows/deploy-cloudrun.yaml) for details.
+
+### Cloud Function Deployment
+
+Deploy code to Google Cloud Function.
+
+See [deploy-cloudfunction.yaml](./.github/workflows/deploy-cloudfunction.yaml) for details.
 
 ## Deploying new versions of actions and workflows
 

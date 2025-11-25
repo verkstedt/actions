@@ -3,24 +3,52 @@ description: 'Check out the code, setup Node.js, install dependencies, cache nod
 
 inputs:
   fetch-depth:
-    description: 'Git fetch depth passed to actions/checkout. Pass 0 to fetch full history.'
+    description: >
+      Git fetch depth passed to actions/checkout.
+      Pass 0 to fetch full history.
     required: false
     default: '1'
   working-directory:
-    description: 'Directory in which to run things in.'
+    description: >
+      Directory in which to run things in.
     required: false
     default: '.'
+  token:
+    description: >
+      GitHub token.
+      Defaults to `github.token`.
+      In most cases you SHOULD NOT pass this. You might need this if you
+      need to push to a protected branch later and want to git check out
+      with a token that has permissions to do so.
+    required: false
+    default: ${{ github.token }}
   github-npm-registry-personal-access-token:
-    description: 'GitHub personal access token for npm registry authentication. You can create one at https://github.com/settings/tokens/new (scopes: `read:packages`, `repo` and `read:org`). If not set, will use secrets.GITHUB_TOKEN, which is enough for most cases.'
+    description: >
+      GitHub personal access token for npm registry authentication.
+      Defaults to `secrets.GITHUB_TOKEN`.
+
+      In most cases you SHOULD NOT pass this. You might need this if you
+      are using npm dependencies from a private GitHub repository from
+      an organisation that is unwilling to set up access permissions for
+      your packages
+      (https://docs.github.com/en/packages/learn-github-packages/configuring-a-packages-access-control-and-visibility#about-setting-visibility-and-access-permissions-for-packages).
+      If that’s the case, use a token generated for a bot user or
+      GitHub app. DO NOT user personal user tokens here.
+      Needed scopes are `read:packages`, `repo` and `read:org`.'
     required: false
     default: ''
 
 outputs:
   scripts:
-    description: "Comma–separated list of available npm scripts. Includes comma at the beginning and the end, so you can use contains(needs.setup.outputs.scripts, ',script-name,')"
+    description: >
+      Comma–separated list of available npm scripts.
+      Includes comma at the beginning and the end, so you can use
+      `contains(needs.setup.outputs.scripts, ',script-name,')`.
     value: ${{ steps.scripts.outputs.scripts }}
   package-manager:
-    description: 'Detected package manager (npm or yarn)'
+    description: >
+      Detected package manager.
+      (npm or yarn)
     value: ${{ steps.package-manager.outputs.package-manager }}
 
 runs:
@@ -31,6 +59,7 @@ runs:
       with:
         fetch-depth: ${{ inputs.fetch-depth }}
         ref: ${{ github.event.pull_request.head.ref || github.ref }}
+        token: ${{ inputs.token }}
 
     - name: Setup Node.js
       uses: actions/setup-node@v5
