@@ -1,0 +1,349 @@
+# Docker Build and Push to multiple registries
+#
+# Will tag the image with:
+# - sha of the commit (`git-<short_sha>`)
+# - date of the commit (`date-<YYYYMMDDHHMMSS>`)
+# - if pushed to main branch:
+#   - `edge`
+# - if triggered by version tag push:
+#   - `v<new_version>`
+#   - if version is NOT prerelease also with:
+#     - `latest`
+#
+#
+# # Google Artifact Registry
+#
+# Depending on your setup, you might also need to run a command like
+# this (replace `$…` with your values):
+#
+# ```sh
+# gcloud iam service-accounts add-iam-policy-binding \
+#   "$GOOGLE_SERVICE_ACCOUNT" \
+#   --project="$GOOGLE_PROJECT_NAME" \
+#   --role=roles/iam.workloadIdentityUser \
+#   --member="principalSet://iam.googleapis.com/projects/$PROJECT_ID/locations/global/workloadIdentityPools/github/attribute.repository/$REPO_ORG/$REPO_NAME"
+# ```
+name: Docker Build and Push
+on:
+  workflow_call:
+    secrets:
+      BUILD_SECRETS:
+        description: >
+          Build secrets for Docker build
+          (multiline string with `KEY=VALUE` pairs).
+          See https://docs.docker.com/build/ci/github-actions/secrets/
+      SLACK_BOT_TOKEN:
+        description: >
+          Slack bot token.
+          Required, when `slack-channel-id` is set.
+
+    inputs:
+      dry-run:
+        description: >
+          Dry run mode
+          (no pushing to registries)
+        type: boolean
+        default: false
+      platforms:
+        description: >
+          Platforms to build for,
+          e.g. linux/amd64,linux/arm64
+        type: string
+        default: 'linux/amd64'
+      docker-context:
+        description: >
+          Docker build context
+        type: string
+        default: '.'
+      docker-file:
+        description: >
+          Path to Dockerfile
+        type: string
+        default: 'Dockerfile'
+      build-args:
+        description: >
+          Build arguments for Docker build
+          (multiline string with `KEY=VALUE` pairs).
+          See: https://github.com/docker/build-push-action#:~:text=build%2Dargs,-List
+        type: string
+        default: ''
+      slack-channel-id:
+        description: >
+          Slack channel ID, to notify of successful run.
+          Leave empty to disable.
+        type: string
+        default: ''
+      mutable-tags:
+        description: >
+          Whether to update mutable tags
+          (`edge`, `latest`)
+          on new version releases.
+        type: boolean
+        default: true
+      github:
+        description: >
+          Enable pushing to GitHub Container Registry
+        type: boolean
+        default: false
+      github-image-name:
+        description: >
+          GitHub Container Registry image name.
+          Leave empty to use repository name.
+        type: string
+        default: ''
+      google:
+        description: >
+          Enable pushing to Google Artifact Registry
+        type: boolean
+        default: false
+      google-project:
+        description: >
+          Google Artifact Registry Google Cloud project ID.
+          Required, if `google` is enabled.
+        type: string
+        default: ''
+      google-registry-location:
+        description: >
+          Google Artifact Registry location.
+          Required, if `google` is enabled.
+        type: string
+        default: ''
+      google-repository:
+        description: >
+          Google Artifact Registry repository name.
+          Required, if `google` is enabled.
+        type: string
+        default: ''
+      google-workload-identity-provider:
+        description: >
+          Google Artifact Registry Workload Identity Provider.
+          Required, if `google` is enabled.
+        type: string
+        default: ''
+      google-service-account:
+        description: >
+          Google Artifact Registry Service Account email.
+          Required, if `google` is enabled.
+        type: string
+        default: ''
+      google-image-name:
+        description: >
+          Google Artifact Registry image name.
+          Leave empty to use repository name.
+        type: string
+        default: ''
+      amazon:
+        description: >
+          Enable pushing to Amazon Elastic Container Registry
+        type: boolean
+        default: false
+      amazon-aws-account-id:
+        description: >
+          Amazon Elastic Container Registry AWS account ID.
+          Required, if `amazon` is enabled.
+        type: string
+        default: ''
+      amazon-aws-region:
+        description: >
+          Amazon Elastic Container Registry AWS region.
+          Required, if `amazon` is enabled.
+        type: string
+        default: ''
+      amazon-role-to-assume:
+        description: >
+          Amazon Elastic Container Registry role to assume.
+          Required, if `amazon` is enabled.
+        type: string
+        default: ''
+      amazon-image-name:
+        description: >
+          Amazon Elastic Container Registry image name.
+          Leave empty to use repository name.
+        type: string
+        default: ''
+
+jobs:
+  build-push:
+    name: 'Docker Build and Push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+
+    steps:
+      - name: 'Verify inputs'
+        run: |
+          if [ "${{ inputs.github && 'true' }}" != "true" ] && \
+             [ "${{ inputs.google && 'true' }}" != "true" ] && \
+             [ "${{ inputs.amazon && 'true' }}" != "true" ]
+          then
+            echo "::error::You have to enable at least one registry for pusing (github, google, amazon inputs are all false)" >&2
+            exit 64 # EX_USAGE
+          fi
+
+      - name: 'Checkout'
+        uses: actions/checkout@v5
+
+      - name: 'GitHub Container Registry: Setup'
+        if: ${{ inputs.github == true }}
+        id: github
+        uses: verkstedt/actions/docker-setup-registry/github@v1
+        with:
+          image-name: ${{ inputs.github-image-name }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 'Google Artifact Registry: Setup'
+        if: ${{ inputs.google == true }}
+        id: google
+        uses: verkstedt/actions/docker-setup-registry/google@v1
+        with:
+          project: ${{ inputs.google-project }}
+          registry-location: ${{ inputs.google-registry-location }}
+          repository: ${{ inputs.google-repository }}
+          workload-identity-provider: ${{ inputs.google-workload-identity-provider }}
+          service-account: ${{ inputs.google-service-account }}
+          image-name: ${{ inputs.google-image-name }}
+
+      - name: 'Amazon Elastic Container Registry: Setup'
+        if: ${{ inputs.amazon == true }}
+        id: amazon
+        uses: verkstedt/actions/docker-setup-registry/amazon@v1
+        with:
+          aws-account-id: ${{ inputs.amazon-aws-account-id }}
+          aws-region: ${{ inputs.amazon-aws-region }}
+          role-to-assume: ${{ inputs.amazon-role-to-assume }}
+          image-name: ${{ inputs.amazon-image-name }}
+
+      - name: 'Determine platforms and tags to use'
+        id: config
+        run: |
+          platforms="${{ inputs.platforms }}"
+          echo "platforms=$platforms" | tee -a "$GITHUB_OUTPUT"
+          {
+            echo '## Platforms'
+            echo
+            echo "$platforms" | tr ',' '\n' | sed 's/^/- /'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          # `git-<SHORT_SHA>`
+          GIT_TAG="git-$( git rev-parse --short HEAD )"
+
+          # `date-<YYYYMMDDHHMMSS>`
+          DATE_TAG="date-$( git show -s --format=%cd --date=format:%Y%m%d%H%M%S HEAD )"
+
+          TAGS="$GIT_TAG $DATE_TAG"
+
+          if [ "${{ inputs.mutable-tags }}" != "false" ]
+          then
+            # `edge`, if HEAD points at main branch
+            # Note: Even might’ve been triggered by a tag push.
+            git fetch origin main --depth=1
+            if [ "$( git rev-parse HEAD )" = "$( git rev-parse origin/main )" ]
+            then
+              TAGS="$TAGS edge"
+            fi
+          fi
+
+          # `latest` and version tags
+          # Note: This is a glob, not a regular rexpression, so [0-9]*
+          # acts as /[0-9].*/ in regex. This might match more than
+          # intended, but it’s a trade–off not to complicate things.
+          version_glob="v[0-9]*.[0-9]*.[0-9]*"
+          VERSION_TAG="$(
+            git describe --tags --abbrev=0 --exact --match="$version_glob" 2>/dev/null || :
+          )"
+          if [ -n "$VERSION_TAG" ]
+          then
+            TAGS="$TAGS ${VERSION_TAG}"
+            # not a pre-release
+            if ! echo "$VERSION_TAG" | grep -q '-' && [ "${{ inputs.mutable-tags }}" != "false" ]
+            then
+              TAGS="$TAGS latest"
+            fi
+            echo 'new-version=true' | tee -a "$GITHUB_OUTPUT"
+          fi
+
+          TAGS="$( echo "$TAGS" | tr ' ' '\n' )"
+
+          {
+            echo "## Tags"
+            echo
+            # shellcheck disable=SC2001,SC2016
+            echo "$TAGS" | sed 's/.*/- `&`/'
+            echo
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          URLS="$(
+            # GitHub Container Registry
+            if [ "${{ inputs.github && 'true' }}" == "true" ]
+            then
+              echo "${{ steps.github.outputs.url }}"
+            fi
+
+            # Google Artifact Registry
+            if [ "${{ inputs.google && 'true' }}" == "true" ]
+            then
+              echo "${{ steps.google.outputs.url }}"
+            fi
+
+            # Amazon ECR
+            if [ "${{ inputs.amazon && 'true' }}" == "true" ]
+            then
+              echo "${{ steps.amazon.outputs.url }}"
+            fi
+          )"
+
+          {
+            echo "## Registries"
+            echo
+            # shellcheck disable=SC2001
+            echo "$URLS" | sed 's|^|- https://|'
+            echo
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          {
+            echo "tags<<EOF"
+            for tag in $TAGS
+            do
+              for url in $URLS
+              do
+                if [ -n "$url" ]
+                then
+                  echo "${url}:${tag}"
+                fi
+              done
+            done
+            echo "EOF"
+          } | tee -a "$GITHUB_OUTPUT"
+
+      - name: 'Set up QEMU'
+        uses: docker/setup-qemu-action@v3
+
+      - name: 'Set up Docker Buildx'
+        uses: docker/setup-buildx-action@v3
+
+      - name: 'Build and Push'
+        uses: docker/build-push-action@v6
+        with:
+          push: ${{ inputs.dry-run != true }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          context: ${{ inputs.docker-context }}
+          file: ${{ inputs.docker-file }}
+          platforms: ${{ steps.config.outputs.platforms }}
+          provenance: true
+          tags: ${{ steps.config.outputs.tags }}
+          build-args: ${{ inputs.build-args }}
+          secrets: ${{ secrets.BUILD_SECRETS }}
+
+      - name: Notify
+        if: >
+          steps.config.outputs.new-version == 'true'
+          && inputs.dry-run != true
+          && inputs.slack-channel-id
+        uses: verkstedt/actions/notify-status@v1
+        with:
+          status: success
+          slack-bot-token: ${{ secrets.SLACK_BOT_TOKEN }}
+          slack-channel-id: ${{ inputs.slack-channel-id }}

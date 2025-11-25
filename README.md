@@ -129,6 +129,15 @@ Template:
 
 See [create-release.yaml](./.github/workflows/create-release.yaml) for details.
 
+### Docker Build and Push
+
+Template:
+<https://github.com/verkstedt/.github/tree/main/workflow-templates/docker-build-push.yaml>
+
+Build Docker image and push it to the registries.
+
+See [docker-build-push.yaml](./.github/workflows/docker-build-push.yaml) for details.
+
 ### Cloud Run Deployment
 
 Deploy images to Google Cloud Run services or jobs.
