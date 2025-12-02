@@ -223,14 +223,27 @@ jobs:
         uses: actions/github-script@v8
         with:
           script: |
-            const { existsSync } = require('fs');
+            const { resolve } = await import('node:path');
+            const { existsSync } = await import('node:fs');
             const fileName = [
               './vitest.config.ts',
               './vitest.config.js',
-            ].find(f => existsSync(f));
+            ]
+              .map(fileName => resolve(
+                '${{ github.workspace }}',
+                '${{ inputs.working-directory }}',
+                fileName
+              ))
+              .find(filePath => existsSync(filePath));
 
             if (fileName) {
-              let vitestConfig = require(fileName);
+              let vitestConfig;
+              // We don’t know if vitest is CJS or ESM. Try both.
+              try {
+                vitestConfig = await import(fileName);
+              } catch {
+                vitestConfig = require(fileName);
+              }
               vitestConfig = vitestConfig?.default || vitestConfig;
               const browsers = new Set(
                 vitestConfig.test?.projects
