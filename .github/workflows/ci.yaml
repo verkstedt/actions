@@ -224,21 +224,16 @@ jobs:
         with:
           script: |
             const { resolve } = await import('node:path');
-            const { existsSync } = await import('node:fs');
-            const fileName = [
-              './vitest.config.ts',
-              './vitest.config.js',
-            ]
-              .map(fileName => resolve(
-                '${{ github.workspace }}',
-                '${{ inputs.working-directory }}',
-                fileName
-              ))
-              .find(filePath => existsSync(filePath));
+            const { existsSync, globSync } = await import('node:fs');
+            const fileName = globSync(resolve(
+              '${{ github.workspace }}',
+              '${{ inputs.working-directory }}',
+              './vitest.config.*',
+            )).at(0)
 
             if (fileName) {
               let vitestConfig;
-              // We don’t know if vitest is CJS or ESM. Try both.
+              // We don’t know if vitest config is CJS or ESM. Try both.
               try {
                 vitestConfig = await import(fileName);
               } catch {
