@@ -4,10 +4,24 @@ on:
   workflow_call:
     inputs:
       working-directory:
-        description: 'Directory in which to run things in.'
+        description: >
+          Directory in which to run things in.
         type: string
         required: false
         default: '.'
+    secrets:
+      CHROMATIC_PROJECT_TOKEN:
+        description: >
+          Chromatic project token. You can get it from
+          https://www.chromatic.com/start, then open your project and go
+          to “Manage” → “Configure”.'
+        required: true
+      GH_NPM_REGISTRY_PERSONAL_ACCESS_TOKEN:
+        description: >
+          GitHub personal access token for npm registry authentication.
+          See `github-npm-registry-personal-access-token` input for
+          `verkstedt/actions/setup` action for more info.
+        required: false
 
 jobs:
   chromatic:
