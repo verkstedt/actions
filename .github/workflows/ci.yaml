@@ -376,6 +376,7 @@ jobs:
       - name: Setup
         uses: verkstedt/actions/setup@v1
         with:
+          lfs: true
           working-directory: ${{ inputs.working-directory }}
           github-npm-registry-personal-access-token: ${{ secrets.GH_NPM_REGISTRY_PERSONAL_ACCESS_TOKEN }}
 
