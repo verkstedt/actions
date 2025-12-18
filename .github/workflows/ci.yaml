@@ -4,19 +4,27 @@ on:
   workflow_call:
     inputs:
       working-directory:
-        description: 'Directory in which to run things in.'
+        description: >
+          Directory in which to run things in.
         type: string
         required: false
         default: '.'
     secrets:
       env_vars:
-        description: 'Environment variables to set when running npm scripts.'
+        description: >
+          Environment variables to set when running npm scripts.
         required: false
       build_env:
-        description: '(DEPRECATED! Use env_vars instead) Environment variables to set when running build script.'
+        description: >
+          (DEPRECATED! Use env_vars instead)
+          Environment variables to set when running build script.
         required: false
       GH_NPM_REGISTRY_PERSONAL_ACCESS_TOKEN:
-        description: 'GitHub personal access token for npm registry authentication. You can create one at https://github.com/settings/tokens/new (scopes: `read:packages`, `repo` and `read:org`). If not set, will use secrets.GITHUB_TOKEN, which is enough for most cases.'
+        description: >
+          GitHub personal access token for npm registry authentication.
+          You can create one at https://github.com/settings/tokens/new
+          (scopes: `read:packages`, `repo` and `read:org`). If not set,
+          will use secrets.GITHUB_TOKEN, which is enough for most cases.
         required: false
 
 env:
