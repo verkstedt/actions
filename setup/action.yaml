@@ -8,6 +8,11 @@ inputs:
       Pass 0 to fetch full history.
     required: false
     default: '1'
+  lfs:
+    description: >
+      Whether to fetch Git LFS files.
+    required: false
+    default: 'false'
   working-directory:
     description: >
       Directory in which to run things in.
@@ -58,6 +63,7 @@ runs:
       uses: actions/checkout@v5
       with:
         fetch-depth: ${{ inputs.fetch-depth }}
+        lfs: ${{ inputs.lfs }}
         ref: ${{ github.event.pull_request.head.ref || github.ref }}
         token: ${{ inputs.token }}
 
