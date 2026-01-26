@@ -39,6 +39,14 @@ on:
         description: 'GCP service account email for workload identity OIDC authentication'
         required: true
         type: string
+      build-service-account:
+        description: 'GCP service account email used for the build process'
+        required: true
+        type: string
+      service-account:
+        description: 'GCP service account email used for the function runtime'
+        required: true
+        type: string
 
 jobs:
   deploy:
@@ -67,3 +75,5 @@ jobs:
           service_timeout: ${{ inputs.service-timeout }}
           source_dir: ${{ inputs.source-dir }}
           entry_point: ${{ inputs.entry-point }}
+          build_service_account: ${{ inputs.build-service-account }}
+          service_account: ${{ inputs.service-account }}
