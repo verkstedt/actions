@@ -72,21 +72,21 @@ jobs:
           CONTAINER: ${{ inputs.container }}
         run: |
           if [ -n "$CONTAINER" ]; then
-            CONTAINER_FLAG="--container $CONTAINER"
+            set -- --container "$CONTAINER"
           else
-            CONTAINER_FLAG=""
+            set --
           fi
           IMAGE="${{ inputs.registry }}/${{ inputs.artifact-repository }}:${{ inputs.artifact-tag }}"
           EXTRA_FLAGS="${{ inputs.flags }}"
           gcloud config set run/region "${{ inputs.region }}"
           if [ -n "${{ inputs.job-name }}" ]; then
             gcloud beta run jobs deploy "${{ inputs.job-name }}" \
-              ${CONTAINER_FLAG} \
+              "$@" \
               --image "$IMAGE" \
               ${EXTRA_FLAGS}
           else
             gcloud run deploy "${{ inputs.service-name }}" \
-              ${CONTAINER_FLAG} \
+              "$@" \
               --image "$IMAGE" \
               ${EXTRA_FLAGS}
           fi
