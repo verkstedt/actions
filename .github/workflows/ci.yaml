@@ -149,6 +149,30 @@ jobs:
         run: |
           npm run lint:css
 
+  lint-sh:
+    name: 'Lint shell scripts'
+    runs-on: ubuntu-latest
+    if: contains(needs.initial-setup.outputs.scripts, ',lint:sh,')
+    needs:
+      - initial-setup
+    steps:
+      - name: Set environment variables
+        env:
+          ENV_VARS: ${{ secrets.env_vars }}
+        run: |
+          echo "$ENV_VARS" >> "$GITHUB_ENV"
+
+      - name: Setup
+        uses: verkstedt/actions/setup@v1
+        with:
+          working-directory: ${{ inputs.working-directory }}
+          github-npm-registry-personal-access-token: ${{ secrets.GH_NPM_REGISTRY_PERSONAL_ACCESS_TOKEN }}
+
+      - name: Lint shell scripts
+        working-directory: ${{ inputs.working-directory }}
+        run: |
+          npm run lint:sh
+
   lint-missing-translations:
     name: 'Lint missing translations'
     runs-on: ubuntu-latest
@@ -354,6 +378,7 @@ jobs:
       - lint-js
       - lint-ts
       - lint-css
+      - lint-sh
       - lint-missing-translations
       - lint-fallback
       # all testers:
