@@ -53,7 +53,7 @@ They live in
 (Note: _not_ this repository). This way if you go in your repository to
 “Actions” → “New workflow” you will see them under “By verkstedt”.
 
-![](./screenshots/workflows-by-verkstedt.png)
+<img alt="" src="./screenshots/workflows-by-verkstedt.png" />
 
 You can also just copy these template files directly to your repository.
 

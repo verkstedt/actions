@@ -1,3 +1,5 @@
+/* eslint import/no-unresolved: [2, { ignore: ['@actions/'] }] -- This script run in GitHub CI */
+
 import * as core from '@actions/core'
 import * as github from '@actions/github'
 

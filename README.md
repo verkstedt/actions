@@ -2,7 +2,7 @@
 
 - [projects using this](https://github.com/search?type=code&q=-repo:verkstedt/actions+path:.github/workflows/+uses:+verkstedt/actions)
 
-![](./screenshots/run.png)
+<img alt="" src="./screenshots/run.png" />
 
 ## Technical design
 
