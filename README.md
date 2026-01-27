@@ -232,3 +232,7 @@ You have two options:
 [workflow-chromatic]: ./.github/workflows/chromatic.yaml
 [workflow-jira]: ./.github/workflows/jira.yaml
 [workflow-templates]: https://github.com/verkstedt/.github/tree/main/workflow-templates
+
+## License
+
+[ISC](./LICENSE)
