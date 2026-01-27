@@ -183,7 +183,7 @@ jobs:
           fi
 
       - name: 'Checkout'
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
 
       - name: 'GitHub Container Registry: Setup'
         if: ${{ inputs.github == true }}
