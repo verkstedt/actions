@@ -105,7 +105,7 @@ jobs:
           echo "user-id=$user_id" >> "$GITHUB_OUTPUT"
 
       - name: 'Checkout'
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
         with:
           fetch-depth: 1
           ref: ${{ github.event.pull_request.head.ref || github.ref }}
