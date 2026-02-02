@@ -59,7 +59,7 @@ jobs:
 
       - name: Publish to Chromatic
         id: publish
-        uses: chromaui/action@latest
+        uses: chromaui/action@v13.3.5
         with:
           workingDir: ${{ inputs.working-directory }}
           projectToken: ${{ secrets.CHROMATIC_PROJECT_TOKEN }}
