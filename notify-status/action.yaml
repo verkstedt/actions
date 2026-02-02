@@ -39,14 +39,14 @@ runs:
         printf "value<<EOM\n%s\nEOM\n" "$MESSAGE" | tee -a "$GITHUB_OUTPUT"
     - name: Send Slack message
       uses: slackapi/slack-github-action@v2.1.1
-      env:
-        SLACK_BOT_TOKEN: ${{ inputs.slack-bot-token }}
       with:
-        channel-id: ${{ inputs.slack-channel-id }}
+        method: chat.postMessage
+        token: ${{ inputs.slack-bot-token }}
         # TIP: Use
         # https://app.slack.com/block-kit-builder/ to preview
         payload: |
           {
+            "channel": "${{ inputs.slack-channel-id }}",
             "text": ${{ toJson(steps.message.outputs.value) }},
             "blocks": [
               {
