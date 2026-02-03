@@ -60,7 +60,7 @@ runs:
   using: composite
   steps:
     - name: Checkout
-      uses: actions/checkout@v5
+      uses: actions/checkout@v6.0.2
       with:
         fetch-depth: ${{ inputs.fetch-depth }}
         lfs: ${{ inputs.lfs }}
@@ -68,7 +68,7 @@ runs:
         token: ${{ inputs.token }}
 
     - name: Setup Node.js
-      uses: actions/setup-node@v5
+      uses: actions/setup-node@v6.2.0
       with:
         node-version-file: '${{ inputs.working-directory }}/.nvmrc'
 
@@ -105,7 +105,7 @@ runs:
 
     - name: Restore cache
       id: cache
-      uses: actions/cache/restore@v4
+      uses: actions/cache/restore@v5.0.3
       # ⚠ Keep in sync with cache/save below
       with:
         path: ${{ steps.cache-paths.outputs.paths }}
@@ -192,7 +192,7 @@ runs:
 
     - name: Save cache
       if: steps.cache.outputs.cache-hit != 'true'
-      uses: actions/cache/save@v4
+      uses: actions/cache/save@v5.0.3
       # ⚠ Keep in sync with cache/restore above
       with:
         path: ${{ steps.cache-paths.outputs.paths }}
