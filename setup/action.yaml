@@ -66,6 +66,7 @@ runs:
         lfs: ${{ inputs.lfs }}
         ref: ${{ github.event.pull_request.head.ref || github.ref }}
         token: ${{ inputs.token }}
+        submodules: recursive
 
     - name: Setup Node.js
       uses: actions/setup-node@v6.2.0
@@ -110,7 +111,7 @@ runs:
       with:
         path: ${{ steps.cache-paths.outputs.paths }}
         key: |
-          npm--${{ steps.cache-keys.outputs.os }}--${{ steps.cache-keys.outputs.node }}--${{ steps.cache-keys.outputs.packageJson }}--${{ steps.cache-keys.outputs.packageJsonLock }}
+          npm--${{ steps.cache-keys.outputs.os }}--${{ steps.cache-keys.outputs.node }}--${{ steps.cache-keys.outputs.packageJson }}--${{ steps.cache-keys.outputs.packageJsonLock }}--v2
         restore-keys: |
           npm--${{ steps.cache-keys.outputs.os }}--${{ steps.cache-keys.outputs.node }}--${{ steps.cache-keys.outputs.packageJson }}--
           npm--${{ steps.cache-keys.outputs.os }}--${{ steps.cache-keys.outputs.node }}--
@@ -197,4 +198,4 @@ runs:
       with:
         path: ${{ steps.cache-paths.outputs.paths }}
         key: |
-          npm--${{ steps.cache-keys.outputs.os }}--${{ steps.cache-keys.outputs.node }}--${{ steps.cache-keys.outputs.packageJson }}--${{ steps.cache-keys.outputs.packageJsonLock }}
+          npm--${{ steps.cache-keys.outputs.os }}--${{ steps.cache-keys.outputs.node }}--${{ steps.cache-keys.outputs.packageJson }}--${{ steps.cache-keys.outputs.packageJsonLock }}--v2

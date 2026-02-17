@@ -14,7 +14,6 @@ project and how things are organised and why.
 1. Copy `workflow-templates/*.yaml` files from
    [verkstedt/.github][workflow-templates] (_not_ this repository) to
    `.github/workflows/` in your repository.
-
    - skip `chromatic`, if your project doesn’t use it
    - skip `jira`, if your project doesn’t use it
 
@@ -27,9 +26,7 @@ project and how things are organised and why.
 
 3. You might have these defined on the GitHub organisation level, but
    want to overwrite them with project–specific values:
-
    - `SLACK_CHANNEL_ID` var, if you have a project–specific channel
-
      - In Slack, open the channel.
      - Open the channel details (the channel name on the top of the screen)
      - The channel ID is at the bottom
@@ -41,7 +38,6 @@ project and how things are organised and why.
 
    Some of the checks are skipped for draft PRs, so make sure to
    publish.
-
    1. When workflows run, they will most probably fail, because some
       secrets and/or vars are missing, but error messages should guide
       you where to take them from.
@@ -74,7 +70,8 @@ scripts as paralel jobs:
 - `test` (if no `test:*` scripts present)
 - `build`
 
-&nbsp;<!-- separate lists -->
+> [!TIP]
+> If your repo has git submodules with private repos, you will need some [additional setup](#user-content-submodules).
 
 - [🔍 Repositories using this template](https://github.com/search?q=-is:archived+path:.github/workflows/ci.yaml+"https://github.com/verkstedt/.github/blob/main/workflow-templates/ci.yaml"&type=code)
 - [🔍 Repositories using this workflow](https://github.com/search?q=-is:archived+path:.github/workflows/+"verkstedt/actions/.github/workflows/ci.yaml"+NOT+"https://github.com/verkstedt/.github/blob/main/workflow-templates/ci.yaml"&type=code)
@@ -109,6 +106,9 @@ Runs only on `main` branch and published PRs.
 
 Requires some vars and/or secrets.
 See [./.github/workflows/chromatic.yaml][workflow-chromatic] for details.
+
+> [!TIP]
+> If your repo has git submodules with private repos, you will need some [additional setup](#user-content-submodules).
 
 - [🔍 Repositories using this template](https://github.com/search?q=-is:archived+path:.github/workflows/chromatic.yaml+"https://github.com/verkstedt/.github/blob/main/workflow-templates/chromatic.yaml"&type=code)
 - [🔍 Repositories using this workflow](https://github.com/search?q=-is:archived+path:.github/workflows/+"verkstedt/actions/.github/workflows/chromatic.yaml"+NOT+"https://github.com/verkstedt/.github/blob/main/workflow-templates/chromatic.yaml"&type=code)
@@ -193,6 +193,17 @@ If any of your npm scripts requires any env vars, set `env_vars` secret
 in the repository. Make sure there’s `secrets: inherit` in your
 `ci.yaml`.
 
+<a id="user-content-submodules"></a>
+
+### How to use repositories with private git submodules?
+
+GitHub creates `github.token` that is used for checking out the code, but it has
+access to only the repo it works on. If your repository has git submodules
+pointing to private repositories, you will have to pass a token with access to
+those repositories.
+
+See [`create-github-app-token`](./create-github-app-token).
+
 ### How do I start something that’s required for running tests?
 
 You have two options:
@@ -203,7 +214,6 @@ You have two options:
 
    Let’s assume that your `test` script runs `jest` and you need to run
    `npx mock-server` before.
-
    - Create separate script file, e.g. `./scripts/test.sh`:
 
      ```sh
