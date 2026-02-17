@@ -1,0 +1,61 @@
+name: GitHub App Token
+description: >
+  Generate a GitHub App token if app-id and private-key inputs are both
+  provided. Falls back to github.token.
+
+inputs:
+  app-id:
+    description: >
+      GitHub App ID (typically passed from vars.GH_AUTH_APP_ID).
+    required: false
+    default: ''
+  private-key:
+    description: >
+      GitHub App private key (typically passed from secrets.GH_AUTH_APP_SECRET).
+    required: false
+    default: ''
+  owner:
+    description: >
+      Owner for the generated token.
+    required: false
+    default: ${{ github.repository_owner }}
+
+outputs:
+  token:
+    description: >
+      The generated GitHub App token, or github.token if the app is not
+      configured.
+    value: ${{ steps.token.outputs.token }}
+
+runs:
+  using: composite
+  steps:
+    - name: Check GitHub App configuration
+      id: github-app
+      shell: sh
+      env:
+        HAS_APP_ID: ${{ inputs.app-id && 'true' || 'false' }}
+        HAS_SECRET: ${{ inputs.private-key && 'true' || 'false' }}
+      run: |
+        case "$HAS_APP_ID:$HAS_SECRET" in
+          true:true)  echo "configured=true" >> "$GITHUB_OUTPUT" ;;
+          true:false) echo "::warning::vars.GH_AUTH_APP_ID is set but secrets.GH_AUTH_APP_SECRET is missing. Both are required to generate a GitHub App token. Falling back to github.token." ;;
+          false:true) echo "::warning::secrets.GH_AUTH_APP_SECRET is set but vars.GH_AUTH_APP_ID is missing. Both are required to generate a GitHub App token. Falling back to github.token." ;;
+        esac
+
+    - name: Generate GitHub App token
+      if: steps.github-app.outputs.configured == 'true'
+      id: app-token
+      uses: actions/create-github-app-token@v2.2.1
+      with:
+        app-id: ${{ inputs.app-id }}
+        private-key: ${{ inputs.private-key }}
+        owner: ${{ inputs.owner }}
+
+    - name: Set token output
+      id: token
+      env:
+        TOKEN: ${{ steps.app-token.outputs.token || github.token }}
+      shell: sh
+      run: |
+        echo "token=$TOKEN" >> "$GITHUB_OUTPUT"

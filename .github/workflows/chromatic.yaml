@@ -16,6 +16,11 @@ on:
           https://www.chromatic.com/start, then open your project and go
           to “Manage” → “Configure”.'
         required: true
+      GH_AUTH_APP_SECRET:
+        description: >
+          GitHub App private key for generating tokens.
+          Used in pair with vars.GH_AUTH_APP_ID — set both or neither.
+        required: false
       GH_NPM_REGISTRY_PERSONAL_ACCESS_TOKEN:
         description: >
           GitHub personal access token for npm registry authentication.
@@ -45,10 +50,18 @@ jobs:
 
           exit $exit_code
 
+      - name: GitHub App token
+        id: app-token
+        uses: verkstedt/actions/create-github-app-token@v1
+        with:
+          app-id: ${{ vars.GH_AUTH_APP_ID }}
+          private-key: ${{ secrets.GH_AUTH_APP_SECRET }}
+
       - name: Setup
         uses: verkstedt/actions/setup@v1
         with:
           working-directory: ${{ inputs.working-directory }}
+          token: ${{ steps.app-token.outputs.token }}
           github-npm-registry-personal-access-token: ${{ secrets.GH_NPM_REGISTRY_PERSONAL_ACCESS_TOKEN }}
           fetch-depth: 0
 
