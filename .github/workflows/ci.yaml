@@ -55,14 +55,14 @@ jobs:
 
       - name: GitHub App token
         id: app-token
-        uses: verkstedt/actions/create-github-app-token@feat/git-submodules
+        uses: verkstedt/actions/create-github-app-token@v1
         with:
           app-id: ${{ vars.GH_AUTH_APP_ID }}
           private-key: ${{ secrets.GH_AUTH_APP_SECRET }}
 
       - name: Setup
         id: setup
-        uses: verkstedt/actions/setup@feat/git-submodules
+        uses: verkstedt/actions/setup@v1
         with:
           working-directory: ${{ inputs.working-directory }}
           token: ${{ steps.app-token.outputs.token }}
@@ -85,13 +85,13 @@ jobs:
 
       - name: GitHub App token
         id: app-token
-        uses: verkstedt/actions/create-github-app-token@feat/git-submodules
+        uses: verkstedt/actions/create-github-app-token@v1
         with:
           app-id: ${{ vars.GH_AUTH_APP_ID }}
           private-key: ${{ secrets.GH_AUTH_APP_SECRET }}
 
       - name: Setup
-        uses: verkstedt/actions/setup@feat/git-submodules
+        uses: verkstedt/actions/setup@v1
         with:
           working-directory: ${{ inputs.working-directory }}
           token: ${{ steps.app-token.outputs.token }}
@@ -161,13 +161,13 @@ jobs:
 
       - name: GitHub App token
         id: app-token
-        uses: verkstedt/actions/create-github-app-token@feat/git-submodules
+        uses: verkstedt/actions/create-github-app-token@v1
         with:
           app-id: ${{ vars.GH_AUTH_APP_ID }}
           private-key: ${{ secrets.GH_AUTH_APP_SECRET }}
 
       - name: Setup
-        uses: verkstedt/actions/setup@feat/git-submodules
+        uses: verkstedt/actions/setup@v1
         with:
           working-directory: ${{ inputs.working-directory }}
           token: ${{ steps.app-token.outputs.token }}
@@ -192,13 +192,13 @@ jobs:
 
       - name: GitHub App token
         id: app-token
-        uses: verkstedt/actions/create-github-app-token@feat/git-submodules
+        uses: verkstedt/actions/create-github-app-token@v1
         with:
           app-id: ${{ vars.GH_AUTH_APP_ID }}
           private-key: ${{ secrets.GH_AUTH_APP_SECRET }}
 
       - name: Setup
-        uses: verkstedt/actions/setup@feat/git-submodules
+        uses: verkstedt/actions/setup@v1
         with:
           working-directory: ${{ inputs.working-directory }}
           token: ${{ steps.app-token.outputs.token }}
@@ -224,13 +224,13 @@ jobs:
 
       - name: GitHub App token
         id: app-token
-        uses: verkstedt/actions/create-github-app-token@feat/git-submodules
+        uses: verkstedt/actions/create-github-app-token@v1
         with:
           app-id: ${{ vars.GH_AUTH_APP_ID }}
           private-key: ${{ secrets.GH_AUTH_APP_SECRET }}
 
       - name: Setup
-        uses: verkstedt/actions/setup@feat/git-submodules
+        uses: verkstedt/actions/setup@v1
         with:
           working-directory: ${{ inputs.working-directory }}
           token: ${{ steps.app-token.outputs.token }}
@@ -256,13 +256,13 @@ jobs:
 
       - name: GitHub App token
         id: app-token
-        uses: verkstedt/actions/create-github-app-token@feat/git-submodules
+        uses: verkstedt/actions/create-github-app-token@v1
         with:
           app-id: ${{ vars.GH_AUTH_APP_ID }}
           private-key: ${{ secrets.GH_AUTH_APP_SECRET }}
 
       - name: Setup
-        uses: verkstedt/actions/setup@feat/git-submodules
+        uses: verkstedt/actions/setup@v1
         with:
           working-directory: ${{ inputs.working-directory }}
           token: ${{ steps.app-token.outputs.token }}
@@ -291,13 +291,13 @@ jobs:
 
       - name: GitHub App token
         id: app-token
-        uses: verkstedt/actions/create-github-app-token@feat/git-submodules
+        uses: verkstedt/actions/create-github-app-token@v1
         with:
           app-id: ${{ vars.GH_AUTH_APP_ID }}
           private-key: ${{ secrets.GH_AUTH_APP_SECRET }}
 
       - name: Setup
-        uses: verkstedt/actions/setup@feat/git-submodules
+        uses: verkstedt/actions/setup@v1
         with:
           working-directory: ${{ inputs.working-directory }}
           token: ${{ steps.app-token.outputs.token }}
@@ -330,13 +330,13 @@ jobs:
 
       - name: GitHub App token
         id: app-token
-        uses: verkstedt/actions/create-github-app-token@feat/git-submodules
+        uses: verkstedt/actions/create-github-app-token@v1
         with:
           app-id: ${{ vars.GH_AUTH_APP_ID }}
           private-key: ${{ secrets.GH_AUTH_APP_SECRET }}
 
       - name: Setup
-        uses: verkstedt/actions/setup@feat/git-submodules
+        uses: verkstedt/actions/setup@v1
         with:
           working-directory: ${{ inputs.working-directory }}
           token: ${{ steps.app-token.outputs.token }}
@@ -413,13 +413,13 @@ jobs:
 
       - name: GitHub App token
         id: app-token
-        uses: verkstedt/actions/create-github-app-token@feat/git-submodules
+        uses: verkstedt/actions/create-github-app-token@v1
         with:
           app-id: ${{ vars.GH_AUTH_APP_ID }}
           private-key: ${{ secrets.GH_AUTH_APP_SECRET }}
 
       - name: Setup
-        uses: verkstedt/actions/setup@feat/git-submodules
+        uses: verkstedt/actions/setup@v1
         with:
           working-directory: ${{ inputs.working-directory }}
           token: ${{ steps.app-token.outputs.token }}
@@ -455,13 +455,13 @@ jobs:
 
       - name: GitHub App token
         id: app-token
-        uses: verkstedt/actions/create-github-app-token@feat/git-submodules
+        uses: verkstedt/actions/create-github-app-token@v1
         with:
           app-id: ${{ vars.GH_AUTH_APP_ID }}
           private-key: ${{ secrets.GH_AUTH_APP_SECRET }}
 
       - name: Setup
-        uses: verkstedt/actions/setup@feat/git-submodules
+        uses: verkstedt/actions/setup@v1
         with:
           working-directory: ${{ inputs.working-directory }}
           token: ${{ steps.app-token.outputs.token }}
@@ -509,13 +509,13 @@ jobs:
 
       - name: GitHub App token
         id: app-token
-        uses: verkstedt/actions/create-github-app-token@feat/git-submodules
+        uses: verkstedt/actions/create-github-app-token@v1
         with:
           app-id: ${{ vars.GH_AUTH_APP_ID }}
           private-key: ${{ secrets.GH_AUTH_APP_SECRET }}
 
       - name: Setup
-        uses: verkstedt/actions/setup@feat/git-submodules
+        uses: verkstedt/actions/setup@v1
         with:
           lfs: true
           working-directory: ${{ inputs.working-directory }}

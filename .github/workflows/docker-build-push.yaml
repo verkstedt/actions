@@ -189,7 +189,7 @@ jobs:
 
       - name: GitHub App token
         id: app-token
-        uses: verkstedt/actions/create-github-app-token@feat/git-submodules
+        uses: verkstedt/actions/create-github-app-token@v1
         with:
           app-id: ${{ vars.GH_AUTH_APP_ID }}
           private-key: ${{ secrets.GH_AUTH_APP_SECRET }}
