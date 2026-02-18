@@ -2,6 +2,12 @@ name: 'Reusable gcp cloudrun deploy workflow'
 
 on:
   workflow_call:
+    secrets:
+      GH_AUTH_APP_SECRET:
+        description: >
+          GitHub App private key for generating tokens.
+          Used in pair with vars.GH_AUTH_APP_ID — set both or neither.
+        required: false
     inputs:
       job-name:
         description: 'Cloud Run Job name (at least one of job-name or service-name required)'

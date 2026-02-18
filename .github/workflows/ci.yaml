@@ -19,6 +19,11 @@ on:
           (DEPRECATED! Use env_vars instead)
           Environment variables to set when running build script.
         required: false
+      GH_AUTH_APP_SECRET:
+        description: >
+          GitHub App private key for generating tokens.
+          Used in pair with vars.GH_AUTH_APP_ID — set both or neither.
+        required: false
       GH_NPM_REGISTRY_PERSONAL_ACCESS_TOKEN:
         description: >
           GitHub personal access token for npm registry authentication.
@@ -48,11 +53,19 @@ jobs:
         run: |
           echo "$ENV_VARS" >> "$GITHUB_ENV"
 
+      - name: GitHub App token
+        id: app-token
+        uses: verkstedt/actions/create-github-app-token@feat/git-submodules
+        with:
+          app-id: ${{ vars.GH_AUTH_APP_ID }}
+          private-key: ${{ secrets.GH_AUTH_APP_SECRET }}
+
       - name: Setup
         id: setup
-        uses: verkstedt/actions/setup@v1
+        uses: verkstedt/actions/setup@feat/git-submodules
         with:
           working-directory: ${{ inputs.working-directory }}
+          token: ${{ steps.app-token.outputs.token }}
           github-npm-registry-personal-access-token: ${{ secrets.GH_NPM_REGISTRY_PERSONAL_ACCESS_TOKEN }}
 
   lint-js:
@@ -68,10 +81,18 @@ jobs:
         run: |
           echo "$ENV_VARS" >> "$GITHUB_ENV"
 
+      - name: GitHub App token
+        id: app-token
+        uses: verkstedt/actions/create-github-app-token@feat/git-submodules
+        with:
+          app-id: ${{ vars.GH_AUTH_APP_ID }}
+          private-key: ${{ secrets.GH_AUTH_APP_SECRET }}
+
       - name: Setup
-        uses: verkstedt/actions/setup@v1
+        uses: verkstedt/actions/setup@feat/git-submodules
         with:
           working-directory: ${{ inputs.working-directory }}
+          token: ${{ steps.app-token.outputs.token }}
           github-npm-registry-personal-access-token: ${{ secrets.GH_NPM_REGISTRY_PERSONAL_ACCESS_TOKEN }}
 
       # Once https://github.com/actions/setup-node/issues/96 is
@@ -115,10 +136,18 @@ jobs:
         run: |
           echo "$ENV_VARS" >> "$GITHUB_ENV"
 
+      - name: GitHub App token
+        id: app-token
+        uses: verkstedt/actions/create-github-app-token@feat/git-submodules
+        with:
+          app-id: ${{ vars.GH_AUTH_APP_ID }}
+          private-key: ${{ secrets.GH_AUTH_APP_SECRET }}
+
       - name: Setup
-        uses: verkstedt/actions/setup@v1
+        uses: verkstedt/actions/setup@feat/git-submodules
         with:
           working-directory: ${{ inputs.working-directory }}
+          token: ${{ steps.app-token.outputs.token }}
           github-npm-registry-personal-access-token: ${{ secrets.GH_NPM_REGISTRY_PERSONAL_ACCESS_TOKEN }}
 
       - name: Lint TS
@@ -138,10 +167,18 @@ jobs:
         run: |
           echo "$ENV_VARS" >> "$GITHUB_ENV"
 
+      - name: GitHub App token
+        id: app-token
+        uses: verkstedt/actions/create-github-app-token@feat/git-submodules
+        with:
+          app-id: ${{ vars.GH_AUTH_APP_ID }}
+          private-key: ${{ secrets.GH_AUTH_APP_SECRET }}
+
       - name: Setup
-        uses: verkstedt/actions/setup@v1
+        uses: verkstedt/actions/setup@feat/git-submodules
         with:
           working-directory: ${{ inputs.working-directory }}
+          token: ${{ steps.app-token.outputs.token }}
           github-npm-registry-personal-access-token: ${{ secrets.GH_NPM_REGISTRY_PERSONAL_ACCESS_TOKEN }}
 
       - name: Lint CSS
@@ -162,10 +199,18 @@ jobs:
         run: |
           echo "$ENV_VARS" >> "$GITHUB_ENV"
 
+      - name: GitHub App token
+        id: app-token
+        uses: verkstedt/actions/create-github-app-token@feat/git-submodules
+        with:
+          app-id: ${{ vars.GH_AUTH_APP_ID }}
+          private-key: ${{ secrets.GH_AUTH_APP_SECRET }}
+
       - name: Setup
-        uses: verkstedt/actions/setup@v1
+        uses: verkstedt/actions/setup@feat/git-submodules
         with:
           working-directory: ${{ inputs.working-directory }}
+          token: ${{ steps.app-token.outputs.token }}
           github-npm-registry-personal-access-token: ${{ secrets.GH_NPM_REGISTRY_PERSONAL_ACCESS_TOKEN }}
 
       - name: Lint shell scripts
@@ -186,10 +231,18 @@ jobs:
         run: |
           echo "$ENV_VARS" >> "$GITHUB_ENV"
 
+      - name: GitHub App token
+        id: app-token
+        uses: verkstedt/actions/create-github-app-token@feat/git-submodules
+        with:
+          app-id: ${{ vars.GH_AUTH_APP_ID }}
+          private-key: ${{ secrets.GH_AUTH_APP_SECRET }}
+
       - name: Setup
-        uses: verkstedt/actions/setup@v1
+        uses: verkstedt/actions/setup@feat/git-submodules
         with:
           working-directory: ${{ inputs.working-directory }}
+          token: ${{ steps.app-token.outputs.token }}
           github-npm-registry-personal-access-token: ${{ secrets.GH_NPM_REGISTRY_PERSONAL_ACCESS_TOKEN }}
 
       - name: Lint Translations
@@ -213,10 +266,18 @@ jobs:
         run: |
           echo "$ENV_VARS" >> "$GITHUB_ENV"
 
+      - name: GitHub App token
+        id: app-token
+        uses: verkstedt/actions/create-github-app-token@feat/git-submodules
+        with:
+          app-id: ${{ vars.GH_AUTH_APP_ID }}
+          private-key: ${{ secrets.GH_AUTH_APP_SECRET }}
+
       - name: Setup
-        uses: verkstedt/actions/setup@v1
+        uses: verkstedt/actions/setup@feat/git-submodules
         with:
           working-directory: ${{ inputs.working-directory }}
+          token: ${{ steps.app-token.outputs.token }}
           github-npm-registry-personal-access-token: ${{ secrets.GH_NPM_REGISTRY_PERSONAL_ACCESS_TOKEN }}
 
       - name: Lint fallback
@@ -244,10 +305,18 @@ jobs:
         run: |
           echo "$ENV_VARS" >> "$GITHUB_ENV"
 
+      - name: GitHub App token
+        id: app-token
+        uses: verkstedt/actions/create-github-app-token@feat/git-submodules
+        with:
+          app-id: ${{ vars.GH_AUTH_APP_ID }}
+          private-key: ${{ secrets.GH_AUTH_APP_SECRET }}
+
       - name: Setup
-        uses: verkstedt/actions/setup@v1
+        uses: verkstedt/actions/setup@feat/git-submodules
         with:
           working-directory: ${{ inputs.working-directory }}
+          token: ${{ steps.app-token.outputs.token }}
           github-npm-registry-personal-access-token: ${{ secrets.GH_NPM_REGISTRY_PERSONAL_ACCESS_TOKEN }}
 
       - name: Check if we need to install browsers
@@ -319,10 +388,18 @@ jobs:
         run: |
           echo "$ENV_VARS" >> "$GITHUB_ENV"
 
+      - name: GitHub App token
+        id: app-token
+        uses: verkstedt/actions/create-github-app-token@feat/git-submodules
+        with:
+          app-id: ${{ vars.GH_AUTH_APP_ID }}
+          private-key: ${{ secrets.GH_AUTH_APP_SECRET }}
+
       - name: Setup
-        uses: verkstedt/actions/setup@v1
+        uses: verkstedt/actions/setup@feat/git-submodules
         with:
           working-directory: ${{ inputs.working-directory }}
+          token: ${{ steps.app-token.outputs.token }}
           github-npm-registry-personal-access-token: ${{ secrets.GH_NPM_REGISTRY_PERSONAL_ACCESS_TOKEN }}
 
       - name: Test end to end
@@ -353,10 +430,18 @@ jobs:
         run: |
           echo "$ENV_VARS" >> "$GITHUB_ENV"
 
+      - name: GitHub App token
+        id: app-token
+        uses: verkstedt/actions/create-github-app-token@feat/git-submodules
+        with:
+          app-id: ${{ vars.GH_AUTH_APP_ID }}
+          private-key: ${{ secrets.GH_AUTH_APP_SECRET }}
+
       - name: Setup
-        uses: verkstedt/actions/setup@v1
+        uses: verkstedt/actions/setup@feat/git-submodules
         with:
           working-directory: ${{ inputs.working-directory }}
+          token: ${{ steps.app-token.outputs.token }}
           github-npm-registry-personal-access-token: ${{ secrets.GH_NPM_REGISTRY_PERSONAL_ACCESS_TOKEN }}
 
       - name: Test fallback
@@ -398,11 +483,20 @@ jobs:
           ENV_VARS: ${{ secrets.env_vars }}
         run: |
           echo "$ENV_VARS" >> "$GITHUB_ENV"
+
+      - name: GitHub App token
+        id: app-token
+        uses: verkstedt/actions/create-github-app-token@feat/git-submodules
+        with:
+          app-id: ${{ vars.GH_AUTH_APP_ID }}
+          private-key: ${{ secrets.GH_AUTH_APP_SECRET }}
+
       - name: Setup
-        uses: verkstedt/actions/setup@v1
+        uses: verkstedt/actions/setup@feat/git-submodules
         with:
           lfs: true
           working-directory: ${{ inputs.working-directory }}
+          token: ${{ steps.app-token.outputs.token }}
           github-npm-registry-personal-access-token: ${{ secrets.GH_NPM_REGISTRY_PERSONAL_ACCESS_TOKEN }}
 
       - name: Calculate cache key parts
