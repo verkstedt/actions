@@ -114,6 +114,9 @@ jobs:
           exit "$exit_code"
 
       - name: Annotate
+        # Using always(), because we want this step to run even if (or
+        # rather: especially if) linting fails, so that lint errors are
+        # visible in the PR.
         if: always() && steps.lint.outputs.generated-eslint-report == 'true'
         uses: ataylorme/eslint-annotate-action@3.0.0
         with:
