@@ -74,6 +74,8 @@ jobs:
     if: contains(needs.initial-setup.outputs.scripts, ',lint:js,')
     needs:
       - initial-setup
+    env:
+      ESLINT_REPORT_JSON: '${{ inputs.working-directory }}/eslint_report.json'
     steps:
       - name: Set environment variables
         env:
@@ -105,20 +107,41 @@ jobs:
         id: lint
         working-directory: ${{ inputs.working-directory }}
         run: |
-          if jq -r '.scripts["lint:js"]' package.json | grep -qE '^(eslint|next lint) '
+          set -- npm run lint:js
+
+          npm_script=$( jq -r '.scripts["lint:js"]' package.json )
+          if echo "$npm_script" | grep -qE '(eslint|next lint)'
           then
-            npm run lint:js -- --format=json --output-file=eslint_report.json || :
-            echo 'generated-eslint-report=true' >> "$GITHUB_OUTPUT"
-          else
-            npm run lint:js
-            echo 'generated-eslint-report=false' >> "$GITHUB_OUTPUT"
+            if echo "$npm_script" | grep -qE '\<(eslint|next lint)\>([^;&|]*)($|"\$@")'
+            then
+              set -- "$@" -- --format=json --output-file=${{ env.ESLINT_REPORT_JSON }}
+            else
+              echo "::warning::lint:js script seems to be using eslint in a way that doesn’t pass arguments to it. Please fix that. e.g. \`eslint .\` or \`sh -c 'eslint . \"\$@\" && echo OK' _\`"
+            fi
           fi
 
+          set +e
+          "$@"
+          exit_code=$?
+          set -e
+
+          if [ -s "${ESLINT_REPORT_JSON}" ]
+          then
+            echo "generated-eslint-report=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "generated-eslint-report=false" >> "$GITHUB_OUTPUT"
+          fi
+
+          exit "$exit_code"
+
       - name: Annotate
-        if: steps.lint.outputs.generated-eslint-report == 'true'
+        # Using always(), because we want this step to run even if (or
+        # rather: especially if) linting fails, so that lint errors are
+        # visible in the PR.
+        if: always() && steps.lint.outputs.generated-eslint-report == 'true'
         uses: ataylorme/eslint-annotate-action@3.0.0
         with:
-          report-json: eslint_report.json
+          report-json: ${{ env.ESLINT_REPORT_JSON }}
           # Also report errors in files not changed in the PR,
           # assuring there are no errors in the whole codebase
           only-pr-files: false
