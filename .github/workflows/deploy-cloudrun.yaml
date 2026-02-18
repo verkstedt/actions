@@ -55,7 +55,6 @@ jobs:
       id-token: 'write'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6.0.2
       - name: Validate inputs
         run: |
           if [[ -z "${{ inputs.job-name }}" && -z "${{ inputs.service-name }}" ]]; then
