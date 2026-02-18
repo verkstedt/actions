@@ -62,7 +62,7 @@ jobs:
     needs:
       - initial-setup
     env:
-      ESLINT_REPORT_JSON: 'eslint_report.json'
+      ESLINT_REPORT_JSON: '${{ inputs.working-directory }}/eslint_report.json'
     steps:
       - name: Set environment variables
         env:
