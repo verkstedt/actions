@@ -95,7 +95,7 @@ jobs:
             then
               set -- "$@" -- --format=json --output-file=${{ env.ESLINT_REPORT_JSON }}
             else
-              echo "::warning::lint:js script seems to be using eslint in a way that doesn’t pass arguments to it. Please fix that. e.g. `eslint .` or `sh -c 'eslint . \"$@\" && echo OK' _`"
+              echo "::warning::lint:js script seems to be using eslint in a way that doesn’t pass arguments to it. Please fix that. e.g. \`eslint .\` or \`sh -c 'eslint . \"\$@\" && echo OK' _\`"
             fi
           fi
 
