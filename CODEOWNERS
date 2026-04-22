@@ -1,2 +1,3 @@
 # Make sure dependabot PRs get reviewers assigned
 package-lock.json @marek-saji
+/.github/workflows/ @marek-saji
