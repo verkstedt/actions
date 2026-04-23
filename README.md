@@ -174,6 +174,36 @@ See [deploy-cloudfunction.yaml](./.github/workflows/deploy-cloudfunction.yaml) f
 
 - [🔍 Repositories using this workflow](https://github.com/search?q=-is:archived+path:.github/workflows/+"verkstedt/actions/.github/workflows/deploy-cloudfunction.yaml"+NOT+"https://github.com/verkstedt/.github/blob/main/workflow-templates/deploy-cloudfunction.yaml"&type=code)
 
+### Repo hygiene
+
+Scheduled audit that loops through all repos in an organisation and
+opens PRs fixing missing `.github/dependabot.yaml` sections and
+missing `CODEOWNERS` entries.
+
+For each repo, detects which package ecosystems are present (npm,
+docker, docker-compose, devcontainers, github-actions) based on files
+that actually exist, then ensures:
+
+- `.github/dependabot.yaml` has sections for all detected ecosystems,
+  using the template from
+  [`verkstedt/.github`](https://github.com/verkstedt/.github/blob/main/templates/dependabot.yaml).
+- `CODEOWNERS` has entries for the files dependabot touches
+  (`package.json`, `Dockerfile`, `/.github/workflows/`, …).
+
+This workflow adds new sections and corrects `directory` and
+`cooldown.default-days` on existing dependabot sections, but never
+deletes entries. Reviewers are picked from matching CODEOWNERS
+entries, then any CODEOWNERS entries, then repo contributors.
+
+**Not callable from a public repo.** Set up a dedicated private
+runner repo per organisation that calls this workflow on a cron
+schedule. See
+[`repo-hygiene.yaml`](./.github/workflows/repo-hygiene.yaml) for
+required secrets (`GH_AUTH_APP_SECRET`, `SLACK_BOT_TOKEN`) and vars
+(`GH_AUTH_APP_ID`, `SLACK_CHANNEL_ID`).
+
+- [🔍 Repositories using this workflow](https://github.com/search?q=-is:archived+path:.github/workflows/+"verkstedt/actions/.github/workflows/repo-hygiene.yaml"&type=code)
+
 ## Deploying new versions of actions and workflows
 
 You might have noticed that main branch in this repository is called

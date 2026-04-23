@@ -1,0 +1,671 @@
+name: Repo hygiene
+
+# This workflow audits repos in an organisation and opens PRs fixing
+# missing `.github/dependabot.yaml` and missing `CODEOWNERS` entries.
+#
+# Call from a dedicated runner repo with its own `on: schedule:` trigger.
+# The calling repo must have:
+# - secret `GH_AUTH_APP_SECRET` and var `GH_AUTH_APP_ID` pointing at a
+#   dedicated GitHub App installed on ALL org repos with read/write
+#   access to Contents, Pull requests, and Members
+# - secret `SLACK_BOT_TOKEN` and var `SLACK_CHANNEL_ID` for summary
+#   notifications
+
+on:
+  workflow_call:
+    inputs:
+      org:
+        description: 'Organisation to audit. Defaults to the repo’s own owner.'
+        required: false
+        type: string
+        default: ''
+      repos:
+        description: 'Comma- or newline-separated list of repo names (without org prefix) to process. Leave empty to process all repos in the org.'
+        required: false
+        type: string
+        default: ''
+      dry-run:
+        description: 'Dry–run: Don’t actually create PRs'
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  repo-hygiene:
+    name: Repo hygiene
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify workflow setup
+        shell: sh
+        run: |
+          exit_code=0
+
+          if [ -z "${{ vars.GH_AUTH_APP_ID }}" ]
+          then
+            echo "::error::Missing var GH_AUTH_APP_ID."
+            exit_code=78
+          fi
+
+          if [ -z "${{ secrets.GH_AUTH_APP_SECRET }}" ]
+          then
+            echo "::error::Missing secret GH_AUTH_APP_SECRET."
+            exit_code=78
+          fi
+
+          if [ "${{ inputs.dry-run }}" = "false" ]
+          then
+            if [ -z "${{ secrets.SLACK_BOT_TOKEN }}" ]
+            then
+              # shellcheck disable=SC1111
+              echo "::error::Missing secret SLACK_BOT_TOKEN. Go to https://api.slack.com/apps/, create a bot, go to “OAuth & Permissions”. Add chat:write permission and grab a token."
+              exit_code=78
+            fi
+
+            if [ -z "${{ vars.SLACK_CHANNEL_ID }}" ]
+            then
+              echo "::error::Missing var SLACK_CHANNEL_ID. This is _not_ a channel name. You can grab the ID from page URL."
+              exit_code=78
+            fi
+          fi
+
+          exit $exit_code
+
+      - name: GitHub App token
+        id: app-token
+        uses: verkstedt/actions/create-github-app-token@v1
+        with:
+          app-id: ${{ vars.GH_AUTH_APP_ID }}
+          private-key: ${{ secrets.GH_AUTH_APP_SECRET }}
+
+      - name: Install deps (js-yaml)
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/deps"
+          cd "$RUNNER_TEMP/deps"
+          npm init -y >/dev/null
+          npm install --no-save js-yaml >/dev/null
+
+      - name: Audit repos
+        id: audit
+        uses: actions/github-script@v8.0.0
+        env:
+          INPUT_ORG: ${{ inputs.org }}
+          INPUT_REPOS: ${{ inputs.repos }}
+          INPUT_DRY_RUN: ${{ inputs.dry-run }}
+        with:
+          github-token: ${{ steps.app-token.outputs.token }}
+          script: |
+            const yaml = require(`${process.env.RUNNER_TEMP}/deps/node_modules/js-yaml`);
+
+            const org = process.env.INPUT_ORG || context.repo.owner;
+            const dryRun = process.env.INPUT_DRY_RUN === 'true';
+            const reposFilter = (process.env.INPUT_REPOS || '')
+              .split(/[,\n]/).map(s => s.trim()).filter(Boolean);
+
+            const WORKFLOW_LINK = 'https://github.com/verkstedt/actions/blob/HEAD/.github/workflows/repo-hygiene.yaml';
+            const BRANCH_PREFIX = 'chore/repo-hygiene/';
+            const OWNER_PLACEHOLDER = '@OWNER';
+            const BOT_ALLOWLIST = new Set(['dependabot', 'github-actions', 'renovate']);
+
+            // --- Helpers ---
+
+            function normalisePattern(p) {
+              let s = String(p || '');
+              if (s.startsWith('**/')) s = s.slice(3);
+              if (s.startsWith('/')) s = s.slice(1);
+              if (s.endsWith('/')) s = s.slice(0, -1);
+              return s;
+            }
+
+            function parseCodeowners(text) {
+              return String(text || '').split('\n')
+                .map(l => l.replace(/#.*$/, '').trim())
+                .filter(Boolean)
+                .map(l => {
+                  const [pattern, ...owners] = l.split(/\s+/);
+                  return { pattern, owners };
+                });
+            }
+
+            function findCoveringLine(required, existingLines) {
+              const reqNorm = normalisePattern(required);
+              for (const line of existingLines) {
+                const pat = normalisePattern(line.pattern);
+                if (pat === reqNorm) return line;
+                if (pat === '*' || pat === '.' || pat === '') return line;
+                if (reqNorm.startsWith(pat + '/')) return line;
+              }
+              return null;
+            }
+
+            function splitReviewers(ownerTokens) {
+              const users = new Set();
+              const teams = new Set();
+              for (const tok of ownerTokens) {
+                const login = String(tok).replace(/^@/, '');
+                if (!login) continue;
+                if (login.includes('/')) {
+                  const [, team] = login.split('/');
+                  if (team) teams.add(team);
+                } else {
+                  users.add(login);
+                }
+              }
+              return { users: [...users].slice(0, 15), teams: [...teams].slice(0, 15) };
+            }
+
+            async function tryGetContent(params) {
+              try {
+                const res = await github.rest.repos.getContent(params);
+                if (Array.isArray(res.data)) return null;
+                return {
+                  sha: res.data.sha,
+                  path: res.data.path,
+                  content: Buffer.from(res.data.content, 'base64').toString('utf8'),
+                };
+              } catch (e) {
+                if (e.status === 404) return null;
+                throw e;
+              }
+            }
+
+            // --- Fetch dependabot template once ---
+
+            const templateRes = await github.rest.repos.getContent({
+              owner: 'verkstedt',
+              repo: '.github',
+              path: 'templates/dependabot.yaml',
+            });
+            const templateText = Buffer.from(templateRes.data.content, 'base64').toString('utf8');
+            const templateDoc = yaml.load(templateText);
+            const templateByEcosystem = Object.fromEntries(
+              (templateDoc.updates || []).map(u => [u['package-ecosystem'], u])
+            );
+
+            // --- List target repos ---
+
+            const allRepos = await github.paginate(github.rest.repos.listForOrg, {
+              org, type: 'all', per_page: 100,
+            });
+
+            let targets = allRepos.filter(r =>
+              !r.archived && !r.disabled && !r.fork && (r.size || 0) > 0
+            );
+
+            if (reposFilter.length > 0) {
+              const requested = new Set(reposFilter);
+              const found = new Set(targets.map(r => r.name));
+              for (const name of reposFilter) {
+                if (!found.has(name)) {
+                  core.warning(`Requested repo "${name}" not found in ${org} (or was filtered out)`);
+                }
+              }
+              targets = targets.filter(r => requested.has(r.name));
+            }
+
+            core.info(`Auditing ${targets.length} repo(s) in ${org}${dryRun ? ' (dry run)' : ''}`);
+
+            // --- Per repo ---
+
+            const results = [];
+
+            for (const repoMeta of targets) {
+              const repo = repoMeta.name;
+              const repoSlug = `${org}/${repo}`;
+              try {
+                // 1. Short-circuit if hygiene PR already open
+                const openPrs = await github.rest.pulls.list({
+                  owner: org, repo, state: 'open', per_page: 100,
+                });
+                if (openPrs.data.some(pr => pr.head.ref.startsWith(BRANCH_PREFIX))) {
+                  core.info(`${repoSlug}: existing hygiene PR open, skipping`);
+                  results.push({ repo: repoSlug, action: 'skipped-existing-pr' });
+                  continue;
+                }
+
+                // 2. Detect ecosystems & required CODEOWNERS patterns
+                const defaultBranch = repoMeta.default_branch;
+                const refData = await github.rest.git.getRef({
+                  owner: org, repo, ref: `heads/${defaultBranch}`,
+                });
+                const headSha = refData.data.object.sha;
+                const commitData = await github.rest.git.getCommit({
+                  owner: org, repo, commit_sha: headSha,
+                });
+                const treeSha = commitData.data.tree.sha;
+                const treeData = await github.rest.git.getTree({
+                  owner: org, repo, tree_sha: treeSha, recursive: '1',
+                });
+                if (treeData.data.truncated) {
+                  core.warning(`${repoSlug}: tree response truncated; detection may be incomplete`);
+                }
+                const paths = (treeData.data.tree || []).map(e => e.path);
+
+                const hasFile = (predicate) => paths.some(predicate);
+
+                const detected = new Set();
+                const requiredCodeowners = [];
+
+                if (hasFile(p => p === 'package.json' || p.endsWith('/package.json'))) {
+                  detected.add('npm');
+                  requiredCodeowners.push('package.json');
+                  if (hasFile(p => p === 'package-lock.json' || p.endsWith('/package-lock.json'))) {
+                    requiredCodeowners.push('package-lock.json');
+                  }
+                  if (hasFile(p => p === 'yarn.lock' || p.endsWith('/yarn.lock'))) {
+                    requiredCodeowners.push('yarn.lock');
+                  }
+                  if (hasFile(p => p === 'pnpm-lock.yaml' || p.endsWith('/pnpm-lock.yaml'))) {
+                    requiredCodeowners.push('pnpm-lock.yaml');
+                  }
+                }
+                if (hasFile(p => /(^|\/)Dockerfile$/.test(p) || /\.Dockerfile$/.test(p))) {
+                  detected.add('docker');
+                  requiredCodeowners.push('Dockerfile');
+                }
+                const composePaths = paths.filter(p => /(^|\/)docker-compose[^/]*\.ya?ml$/.test(p));
+                if (composePaths.length > 0) {
+                  detected.add('docker-compose');
+                  const names = new Set(composePaths.map(p => p.split('/').pop()));
+                  for (const n of [...names].sort()) requiredCodeowners.push(n);
+                }
+                if (paths.includes('.devcontainer/devcontainer.json')) {
+                  detected.add('devcontainers');
+                  requiredCodeowners.push('/.devcontainer/devcontainer.json');
+                }
+                if (hasFile(p => p.startsWith('.github/workflows/'))) {
+                  detected.add('github-actions');
+                  requiredCodeowners.push('/.github/workflows/');
+                }
+
+                // 3. Check existing dependabot config
+                let existingDependabot = await tryGetContent({
+                  owner: org, repo, path: '.github/dependabot.yaml', ref: defaultBranch,
+                });
+                if (!existingDependabot) {
+                  existingDependabot = await tryGetContent({
+                    owner: org, repo, path: '.github/dependabot.yml', ref: defaultBranch,
+                  });
+                }
+
+                let dependabotChange = null; // null | { path, newContent, sha?, summary }
+
+                if (detected.size === 0) {
+                  // No detected ecosystems — nothing to add.
+                } else if (!existingDependabot) {
+                  const entries = [...detected]
+                    .map(eco => templateByEcosystem[eco])
+                    .filter(Boolean);
+                  if (entries.length > 0) {
+                    const newDoc = { version: 2, updates: entries };
+                    const body = yaml.dump(newDoc, { lineWidth: 120, noRefs: true });
+                    dependabotChange = {
+                      path: '.github/dependabot.yaml',
+                      newContent: body,
+                      summary: `created \`.github/dependabot.yaml\` with sections: ${entries.map(e => `\`${e['package-ecosystem']}\``).join(', ')}`,
+                    };
+                  }
+                } else {
+                  let parsed;
+                  try {
+                    parsed = yaml.load(existingDependabot.content) || {};
+                  } catch (e) {
+                    core.warning(`${repoSlug}: could not parse existing dependabot file: ${e.message}`);
+                    parsed = null;
+                  }
+                  if (parsed) {
+                    parsed.version = parsed.version || 2;
+                    parsed.updates = Array.isArray(parsed.updates) ? parsed.updates : [];
+                    let changed = false;
+                    const fixes = [];
+
+                    for (const u of parsed.updates) {
+                      if (u.directory !== '/') {
+                        u.directory = '/';
+                        changed = true;
+                        fixes.push(`set \`directory: "/"\` on \`${u['package-ecosystem']}\``);
+                      }
+                      const days = u.cooldown && u.cooldown['default-days'];
+                      if (typeof days !== 'number' || days < 7) {
+                        u.cooldown = u.cooldown || {};
+                        u.cooldown['default-days'] = 7;
+                        changed = true;
+                        fixes.push(`set \`cooldown.default-days: 7\` on \`${u['package-ecosystem']}\``);
+                      }
+                    }
+
+                    const existingEcos = new Set(parsed.updates.map(u => u['package-ecosystem']));
+                    const added = [];
+                    for (const eco of detected) {
+                      if (!existingEcos.has(eco) && templateByEcosystem[eco]) {
+                        parsed.updates.push(templateByEcosystem[eco]);
+                        added.push(eco);
+                        changed = true;
+                      }
+                    }
+
+                    if (changed) {
+                      const body = yaml.dump(parsed, { lineWidth: 120, noRefs: true });
+                      const parts = [];
+                      if (added.length > 0) parts.push(`added sections: ${added.map(e => `\`${e}\``).join(', ')}`);
+                      if (fixes.length > 0) parts.push(...fixes);
+                      dependabotChange = {
+                        path: existingDependabot.path,
+                        sha: existingDependabot.sha,
+                        newContent: body,
+                        summary: `updated \`${existingDependabot.path}\`: ${parts.join('; ')}`,
+                      };
+                    }
+                  }
+                }
+
+                // 4. Check CODEOWNERS
+                let existingCodeowners = null;
+                for (const candidate of ['CODEOWNERS', '.github/CODEOWNERS', 'docs/CODEOWNERS']) {
+                  existingCodeowners = await tryGetContent({
+                    owner: org, repo, path: candidate, ref: defaultBranch,
+                  });
+                  if (existingCodeowners) break;
+                }
+                const parsedLines = parseCodeowners(existingCodeowners ? existingCodeowners.content : '');
+
+                const missingCodeowners = requiredCodeowners.filter(r => !findCoveringLine(r, parsedLines));
+
+                // Early exit if nothing to do
+                if (!dependabotChange && missingCodeowners.length === 0) {
+                  core.info(`${repoSlug}: nothing to do`);
+                  results.push({ repo: repoSlug, action: 'ok' });
+                  continue;
+                }
+
+                // 7. Decide reviewer / OWNER substitution
+                let ownerSubstitute = null;
+                let reviewerSource = 'none';
+                const reviewerTokens = new Set();
+
+                // 7.1 owners matched from required paths
+                const matchedOwners = new Set();
+                for (const req of requiredCodeowners) {
+                  const match = findCoveringLine(req, parsedLines);
+                  if (match) match.owners.forEach(o => matchedOwners.add(o));
+                }
+                if (matchedOwners.size > 0) {
+                  reviewerSource = 'codeowners-match';
+                  matchedOwners.forEach(o => reviewerTokens.add(o));
+                  if (matchedOwners.size === 1) ownerSubstitute = [...matchedOwners][0];
+                } else {
+                  // 7.2 any existing CODEOWNERS entries
+                  const allOwners = new Set();
+                  for (const line of parsedLines) line.owners.forEach(o => allOwners.add(o));
+                  if (allOwners.size > 0) {
+                    reviewerSource = 'codeowners-fallback';
+                    allOwners.forEach(o => reviewerTokens.add(o));
+                  } else {
+                    // 7.3 contributors
+                    let contribs = [];
+                    try {
+                      const { data } = await github.rest.repos.listContributors({
+                        owner: org, repo, per_page: 100,
+                      });
+                      contribs = Array.isArray(data) ? data : [];
+                    } catch (e) {
+                      if (e.status !== 404 && e.status !== 204) throw e;
+                    }
+                    const humans = contribs.filter(c =>
+                      c.type === 'User'
+                      && !/\[bot\]$/.test(c.login)
+                      && !BOT_ALLOWLIST.has(c.login)
+                    );
+                    if (humans.length === 1) {
+                      reviewerSource = 'contributors';
+                      ownerSubstitute = '@' + humans[0].login;
+                      reviewerTokens.add(ownerSubstitute);
+                    } else if (humans.length > 1) {
+                      reviewerSource = 'contributors';
+                      humans.forEach(h => reviewerTokens.add('@' + h.login));
+                    }
+                  }
+                }
+
+                // 6. Build CODEOWNERS addition
+                let codeownersChange = null;
+                if (missingCodeowners.length > 0) {
+                  const ownerToken = ownerSubstitute || OWNER_PLACEHOLDER;
+                  const includeHeader = missingCodeowners.length === requiredCodeowners.length;
+                  const addedLines = [];
+                  if (includeHeader) {
+                    addedLines.push('# Make sure dependabot PRs get reviewers assigned');
+                  }
+                  for (const pat of missingCodeowners) {
+                    addedLines.push(`${pat}  ${ownerToken}`);
+                  }
+
+                  let base = existingCodeowners ? existingCodeowners.content : '';
+                  if (base && !base.endsWith('\n')) base += '\n';
+                  const separator = base ? '\n' : '';
+                  const newContent = base + separator + addedLines.join('\n') + '\n';
+
+                  // Compute 1-indexed line numbers of the added pattern lines
+                  // in the new file (needed for inline review comments).
+                  let nextLine = (base ? base.split('\n').length - 1 : 0) + 1;
+                  if (base) nextLine += 1; // separator blank line
+                  if (includeHeader) nextLine += 1; // header comment line
+                  const patternStartLine = nextLine;
+
+                  codeownersChange = {
+                    path: existingCodeowners ? existingCodeowners.path : 'CODEOWNERS',
+                    sha: existingCodeowners ? existingCodeowners.sha : undefined,
+                    newContent,
+                    missingLines: missingCodeowners.map((pat, i) => ({
+                      pattern: pat,
+                      lineNumber: patternStartLine + i,
+                      ownerToken,
+                    })),
+                    addedLines,
+                    summary: existingCodeowners
+                      ? `added ${missingCodeowners.length} line(s) to \`${existingCodeowners.path}\`: ${missingCodeowners.map(p => `\`${p}\``).join(', ')}`
+                      : `created \`CODEOWNERS\` with ${missingCodeowners.length} line(s): ${missingCodeowners.map(p => `\`${p}\``).join(', ')}`,
+                  };
+                }
+
+                // 8. Compose PR body
+                const bodyParts = [
+                  `Opened automatically by [repo-hygiene workflow from verkstedt/actions](${WORKFLOW_LINK}).`,
+                ];
+                const reviewerParagraph = {
+                  'codeowners-fallback': 'Reviewers taken from existing CODEOWNERS entries.',
+                  'contributors': 'Reviewers taken from repo contributors.',
+                  'none': 'Could not determine a reviewer automatically.',
+                }[reviewerSource];
+                if (reviewerParagraph) bodyParts.push(reviewerParagraph);
+                const whatBullets = [];
+                if (dependabotChange) whatBullets.push(`- ${dependabotChange.summary}`);
+                if (codeownersChange) whatBullets.push(`- ${codeownersChange.summary}`);
+                bodyParts.push('## What?\n\n' + whatBullets.join('\n'));
+                const prBody = bodyParts.join('\n\n');
+
+                // 9 / 10. Dry run → log; otherwise create branch + commits + PR
+                const { users: reviewerUsers, teams: reviewerTeams } = splitReviewers(reviewerTokens);
+                const hasUnresolvedOwner = codeownersChange && !ownerSubstitute && missingCodeowners.length > 0;
+
+                if (dryRun) {
+                  const lines = [
+                    `### ${repoSlug}`,
+                    '',
+                    `**Title:** \`chore: Repo hygiene\``,
+                    '',
+                    `**Reviewers:** ${[...reviewerUsers.map(u => '@' + u), ...reviewerTeams.map(t => `@${org}/${t}`)].join(', ') || '(none)'}`,
+                    '',
+                    '**Body:**',
+                    '',
+                    '```',
+                    prBody,
+                    '```',
+                  ];
+                  if (dependabotChange) {
+                    lines.push('', `**${dependabotChange.path}** (${existingDependabot ? 'update' : 'create'}):`, '', '```yaml', dependabotChange.newContent, '```');
+                  }
+                  if (codeownersChange) {
+                    lines.push('', `**${codeownersChange.path}** (${existingCodeowners ? 'update' : 'create'}):`, '', '```', codeownersChange.newContent, '```');
+                  }
+                  await core.summary.addRaw(lines.join('\n') + '\n').write();
+                  results.push({
+                    repo: repoSlug, action: 'dry-run',
+                    reviewers: [...reviewerUsers, ...reviewerTeams.map(t => `${org}/${t}`)],
+                    unresolvedOwner: hasUnresolvedOwner,
+                  });
+                  continue;
+                }
+
+                // Create branch
+                const shortSha = headSha.slice(0, 7);
+                const branchName = `${BRANCH_PREFIX}${shortSha}`;
+                try {
+                  await github.rest.git.createRef({
+                    owner: org, repo, ref: `refs/heads/${branchName}`, sha: headSha,
+                  });
+                } catch (e) {
+                  if (e.status === 422) {
+                    core.info(`${repoSlug}: branch ${branchName} already exists, re-using`);
+                  } else {
+                    throw e;
+                  }
+                }
+
+                // Commit files
+                if (dependabotChange) {
+                  await github.rest.repos.createOrUpdateFileContents({
+                    owner: org, repo, branch: branchName,
+                    path: dependabotChange.path,
+                    message: dependabotChange.sha
+                      ? `chore: Update ${dependabotChange.path}`
+                      : `chore: Add ${dependabotChange.path}`,
+                    content: Buffer.from(dependabotChange.newContent, 'utf8').toString('base64'),
+                    sha: dependabotChange.sha,
+                  });
+                }
+                if (codeownersChange) {
+                  await github.rest.repos.createOrUpdateFileContents({
+                    owner: org, repo, branch: branchName,
+                    path: codeownersChange.path,
+                    message: codeownersChange.sha
+                      ? `chore: Update ${codeownersChange.path}`
+                      : `chore: Add ${codeownersChange.path}`,
+                    content: Buffer.from(codeownersChange.newContent, 'utf8').toString('base64'),
+                    sha: codeownersChange.sha,
+                  });
+                }
+
+                // Open PR
+                const pr = await github.rest.pulls.create({
+                  owner: org, repo,
+                  title: 'chore: Repo hygiene',
+                  head: branchName,
+                  base: defaultBranch,
+                  body: prBody,
+                });
+
+                // Request reviewers
+                const reviewerList = [];
+                if (reviewerUsers.length > 0 || reviewerTeams.length > 0) {
+                  try {
+                    await github.rest.pulls.requestReviewers({
+                      owner: org, repo, pull_number: pr.data.number,
+                      reviewers: reviewerUsers,
+                      team_reviewers: reviewerTeams,
+                    });
+                    reviewerList.push(...reviewerUsers.map(u => '@' + u));
+                    reviewerList.push(...reviewerTeams.map(t => `@${org}/${t}`));
+                  } catch (e) {
+                    core.warning(`${repoSlug}: could not request reviewers: ${e.message}`);
+                  }
+                }
+
+                // Inline review comments on @OWNER lines
+                if (hasUnresolvedOwner) {
+                  const commitId = pr.data.head.sha;
+                  const comments = codeownersChange.missingLines.map(ml => ({
+                    path: codeownersChange.path,
+                    line: ml.lineNumber,
+                    side: 'RIGHT',
+                    body: 'Failed to guess who the owner should be — please replace.',
+                  }));
+                  try {
+                    await github.rest.pulls.createReview({
+                      owner: org, repo, pull_number: pr.data.number,
+                      commit_id: commitId,
+                      event: 'COMMENT',
+                      comments,
+                    });
+                  } catch (e) {
+                    core.warning(`${repoSlug}: could not create review comments: ${e.message}`);
+                  }
+                }
+
+                core.info(`${repoSlug}: opened ${pr.data.html_url}`);
+                results.push({
+                  repo: repoSlug, action: 'opened-pr',
+                  prUrl: pr.data.html_url,
+                  reviewers: reviewerList,
+                });
+              } catch (e) {
+                core.warning(`${repoSlug}: ${e.message}`);
+                results.push({ repo: repoSlug, action: 'failed', error: e.message });
+              }
+            }
+
+            // --- Summarise ---
+
+            core.setOutput('results_json', JSON.stringify(results));
+
+            const opened = results.filter(r => r.action === 'opened-pr');
+            const failed = results.filter(r => r.action === 'failed');
+            const dryRuns = results.filter(r => r.action === 'dry-run');
+
+            const lines = [];
+            lines.push(`\`repo-hygiene\` run complete (${results.length} repo(s) checked)`);
+            if (opened.length > 0) {
+              lines.push('', 'Opened PRs:');
+              for (const r of opened) {
+                const rv = (r.reviewers && r.reviewers.length > 0) ? `reviewer(s): ${r.reviewers.join(', ')}` : 'no reviewer assigned';
+                lines.push(`• <${r.prUrl}> — ${rv}`);
+              }
+            }
+            if (dryRuns.length > 0) {
+              lines.push('', 'Would open PRs (dry run):');
+              for (const r of dryRuns) {
+                const rv = (r.reviewers && r.reviewers.length > 0) ? `reviewer(s): ${r.reviewers.join(', ')}` : 'no reviewer assigned';
+                lines.push(`• ${r.repo} — ${rv}`);
+              }
+            }
+            if (failed.length > 0) {
+              lines.push('', 'Failed repos:');
+              for (const r of failed) {
+                lines.push(`• ${r.repo} — ${r.error}`);
+              }
+            }
+            const summary = lines.join('\n');
+
+            core.setOutput('slack_text', summary);
+            core.setOutput('should_notify', (opened.length + failed.length > 0) ? 'true' : 'false');
+            core.setOutput('slack_status', failed.length > 0 ? 'failure' : 'warning');
+
+            await core.summary.addRaw('\n\n## Summary\n\n' + summary + '\n').write();
+
+      - name: Notify Slack
+        if: always() && !inputs.dry-run && steps.audit.outputs.should_notify == 'true'
+        uses: verkstedt/actions/notify-status@v1
+        with:
+          status: ${{ steps.audit.outputs.slack_status || 'failure' }}
+          slack-bot-token: ${{ secrets.SLACK_BOT_TOKEN }}
+          slack-channel-id: ${{ vars.SLACK_CHANNEL_ID }}
+          text: ${{ steps.audit.outputs.slack_text }}
+
+      - name: Notify Slack (audit step errored)
+        if: always() && !inputs.dry-run && steps.audit.conclusion == 'failure' && steps.audit.outputs.should_notify != 'true'
+        uses: verkstedt/actions/notify-status@v1
+        with:
+          status: failure
+          slack-bot-token: ${{ secrets.SLACK_BOT_TOKEN }}
+          slack-channel-id: ${{ vars.SLACK_CHANNEL_ID }}
+          text: '`repo-hygiene` run failed before summary — see workflow logs'
