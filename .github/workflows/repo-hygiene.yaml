@@ -1,93 +1,97 @@
 name: Repo hygiene
 
-# This workflow audits repos in an organisation and opens PRs fixing
-# missing `.github/dependabot.yaml` and missing `CODEOWNERS` entries.
+# Check the hygiene of repos in an organisation and open PR fixing the
+# issues.
 #
-# Call from a dedicated runner repo with its own `on: schedule:` trigger.
-# The calling repo must have:
-# - secret `GH_AUTH_APP_SECRET` and var `GH_AUTH_APP_ID` pointing at a
-#   dedicated GitHub App installed on ALL org repos with read/write
-#   access to Contents, Pull requests, and Members
-# - secret `SLACK_BOT_TOKEN` and var `SLACK_CHANNEL_ID` for summary
-#   notifications
+# Current checks:
+# - Make sure there’s `.github/dependaboy.yaml` with entries for things
+#   that are used in the repo and `CODEOWNERS` set up in a way that will
+#   make dependabot PRs get reviewers
+#
+# Usual approach is to create a dedicated repository in your
+# organisation (e.g. `repo-hygiene-runner`) with `on: schedule:`
+# trigger that calls this workflow.
 
 on:
   workflow_call:
     inputs:
       org:
-        description: 'Organisation to audit. Defaults to the repo’s own owner.'
+        description: >
+          Organisation to audit. Defaults to the repo’s own owner.
         required: false
         type: string
         default: ''
       repos:
-        description: 'Comma- or newline-separated list of repo names (without org prefix) to process. Leave empty to process all repos in the org.'
+        description: >
+          List of repo names to process, without org prefix
+          (comma-, semicolon- or whitespace-separated).
+          Wildcards (`*`) are allowed.
+          Leave empty to process all repos in the org.
         required: false
         type: string
         default: ''
       dry-run:
-        description: 'Dry–run: Don’t actually create PRs'
+        description: >
+          Dry–run. Don’t actually create PRs
         required: false
         type: boolean
         default: false
+      gh-auth-app-id:
+        description: >
+          ID of a dedicated GitHub App installed on ALL org repos with
+          read/write access to Contents, Pull requests, and Members.
+          Typically passed from `vars.GH_AUTH_APP_ID`.
+        required: true
+        type: string
+      slack-channel-id:
+        description: >
+          Slack channel ID to post the run summary into. Not a channel
+          name. Typically passed from `vars.SLACK_CHANNEL_ID`.
+        required: true
+        type: string
+    secrets:
+      gh-auth-app-secret:
+        description: >
+          Private key for the GitHub App identified by `gh-auth-app-id`.
+          Typically passed from `secrets.GH_AUTH_APP_SECRET`.
+        required: true
+      slack-bot-token:
+        description: >
+          Slack bot token with `chat:write` permission, used to post
+          the run summary. Typically passed from
+          `secrets.SLACK_BOT_TOKEN`.
+        required: true
+
+concurrency:
+  # Never run in parallel for the same org — back-to-back runs would
+  # race when probing for existing hygiene PRs and could open
+  # duplicates.
+  group: repo-hygiene-${{ inputs.org || github.repository_owner }}
+  cancel-in-progress: false
 
 jobs:
   repo-hygiene:
     name: Repo hygiene
     runs-on: ubuntu-latest
     steps:
-      - name: Verify workflow setup
-        shell: sh
-        run: |
-          exit_code=0
-
-          if [ -z "${{ vars.GH_AUTH_APP_ID }}" ]
-          then
-            echo "::error::Missing var GH_AUTH_APP_ID."
-            exit_code=78
-          fi
-
-          if [ -z "${{ secrets.GH_AUTH_APP_SECRET }}" ]
-          then
-            echo "::error::Missing secret GH_AUTH_APP_SECRET."
-            exit_code=78
-          fi
-
-          if [ "${{ inputs.dry-run }}" = "false" ]
-          then
-            if [ -z "${{ secrets.SLACK_BOT_TOKEN }}" ]
-            then
-              # shellcheck disable=SC1111
-              echo "::error::Missing secret SLACK_BOT_TOKEN. Go to https://api.slack.com/apps/, create a bot, go to “OAuth & Permissions”. Add chat:write permission and grab a token."
-              exit_code=78
-            fi
-
-            if [ -z "${{ vars.SLACK_CHANNEL_ID }}" ]
-            then
-              echo "::error::Missing var SLACK_CHANNEL_ID. This is _not_ a channel name. You can grab the ID from page URL."
-              exit_code=78
-            fi
-          fi
-
-          exit $exit_code
-
       - name: GitHub App token
         id: app-token
         uses: verkstedt/actions/create-github-app-token@v1
         with:
-          app-id: ${{ vars.GH_AUTH_APP_ID }}
-          private-key: ${{ secrets.GH_AUTH_APP_SECRET }}
+          app-id: ${{ inputs.gh-auth-app-id }}
+          private-key: ${{ secrets.gh-auth-app-secret }}
 
-      - name: Install deps (js-yaml)
+      - name: Install deps (yaml, picomatch)
         shell: bash
         run: |
           mkdir -p "$RUNNER_TEMP/deps"
           cd "$RUNNER_TEMP/deps"
           npm init -y >/dev/null
-          npm install --no-save js-yaml >/dev/null
+          npm install --no-save yaml picomatch >/dev/null
 
       - name: Audit repos
         id: audit
-        uses: actions/github-script@v8.0.0
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         env:
           INPUT_ORG: ${{ inputs.org }}
           INPUT_REPOS: ${{ inputs.repos }}
@@ -95,17 +99,18 @@ jobs:
         with:
           github-token: ${{ steps.app-token.outputs.token }}
           script: |
-            const yaml = require(`${process.env.RUNNER_TEMP}/deps/node_modules/js-yaml`);
+            const yaml = require(`${process.env.RUNNER_TEMP}/deps/node_modules/yaml`);
+            const picomatch = require(`${process.env.RUNNER_TEMP}/deps/node_modules/picomatch`);
 
             const org = process.env.INPUT_ORG || context.repo.owner;
             const dryRun = process.env.INPUT_DRY_RUN === 'true';
             const reposFilter = (process.env.INPUT_REPOS || '')
-              .split(/[,\n]/).map(s => s.trim()).filter(Boolean);
+              .split(/[,;\s]/).map(s => s.trim()).filter(Boolean);
 
             const WORKFLOW_LINK = 'https://github.com/verkstedt/actions/blob/HEAD/.github/workflows/repo-hygiene.yaml';
             const BRANCH_PREFIX = 'chore/repo-hygiene/';
             const OWNER_PLACEHOLDER = '@OWNER';
-            const BOT_ALLOWLIST = new Set(['dependabot', 'github-actions', 'renovate']);
+            const KNOWN_BOTS = new Set(['dependabot', 'github-actions', 'renovate']);
 
             // --- Helpers ---
 
@@ -118,13 +123,15 @@ jobs:
             }
 
             function parseCodeowners(text) {
-              return String(text || '').split('\n')
-                .map(l => l.replace(/#.*$/, '').trim())
-                .filter(Boolean)
-                .map(l => {
-                  const [pattern, ...owners] = l.split(/\s+/);
-                  return { pattern, owners };
-                });
+              const out = [];
+              const lines = String(text || '').split('\n');
+              for (let i = 0; i < lines.length; i++) {
+                const stripped = lines[i].replace(/#.*$/, '').trim();
+                if (!stripped) continue;
+                const [pattern, ...owners] = stripped.split(/\s+/);
+                out.push({ pattern, owners, rawIndex: i });
+              }
+              return out;
             }
 
             function findCoveringLine(required, existingLines) {
@@ -134,6 +141,14 @@ jobs:
                 if (pat === reqNorm) return line;
                 if (pat === '*' || pat === '.' || pat === '') return line;
                 if (reqNorm.startsWith(pat + '/')) return line;
+                // Glob support via picomatch — lets entries like
+                // `docker-compose.*` cover `docker-compose.yml` /
+                // `docker-compose.yaml`. `dot: true` so `*` matches
+                // dot-prefixed names (CODEOWNERS doesn't treat them
+                // specially).
+                if (pat.includes('*') && picomatch.isMatch(reqNorm, pat, { dot: true })) {
+                  return line;
+                }
               }
               return null;
             }
@@ -151,22 +166,37 @@ jobs:
                   users.add(login);
                 }
               }
-              return { users: [...users].slice(0, 15), teams: [...teams].slice(0, 15) };
+              return {
+                users: [...users].slice(0, 15),
+                teams: [...teams].slice(0, 15)
+              };
             }
 
-            async function tryGetContent(params) {
-              try {
-                const res = await github.rest.repos.getContent(params);
-                if (Array.isArray(res.data)) return null;
-                return {
-                  sha: res.data.sha,
-                  path: res.data.path,
-                  content: Buffer.from(res.data.content, 'base64').toString('utf8'),
-                };
-              } catch (e) {
-                if (e.status === 404) return null;
-                throw e;
+            async function tryGetContent({ paths, ...params }) {
+              for (const path of paths) {
+                try {
+                  const res = await github.rest.repos.getContent({ ...params, path });
+                  if (Array.isArray(res.data)) return null;
+                  return {
+                    sha: res.data.sha,
+                    path: res.data.path,
+                    content: Buffer.from(res.data.content, 'base64').toString('utf8'),
+                  };
+                } catch (e) {
+                  if (e.status === 404) return null;
+                  throw e;
+                }
               }
+
+              return null
+            }
+
+            // --- Verify App has access to all org repos ---
+
+            const inst = await github.request('GET /installation/repositories', { per_page: 1 });
+            if (inst.data.repository_selection !== 'all') {
+              core.setFailed(`App has repository_selection='${inst.data.repository_selection}'; expected 'all'. Reconfigure the App's repository access to "All repositories".`);
+              return;
             }
 
             // --- Fetch dependabot template once ---
@@ -177,7 +207,7 @@ jobs:
               path: 'templates/dependabot.yaml',
             });
             const templateText = Buffer.from(templateRes.data.content, 'base64').toString('utf8');
-            const templateDoc = yaml.load(templateText);
+            const templateDoc = yaml.parse(templateText);
             const templateByEcosystem = Object.fromEntries(
               (templateDoc.updates || []).map(u => [u['package-ecosystem'], u])
             );
@@ -185,22 +215,45 @@ jobs:
             // --- List target repos ---
 
             const allRepos = await github.paginate(github.rest.repos.listForOrg, {
-              org, type: 'all', per_page: 100,
+              org,
+              type: 'sources',
+              per_page: 100,
             });
 
             let targets = allRepos.filter(r =>
-              !r.archived && !r.disabled && !r.fork && (r.size || 0) > 0
+              !r.archived && !r.disabled && (r.size || 0) > 0
             );
 
             if (reposFilter.length > 0) {
-              const requested = new Set(reposFilter);
-              const found = new Set(targets.map(r => r.name));
-              for (const name of reposFilter) {
-                if (!found.has(name)) {
-                  core.warning(`Requested repo "${name}" not found in ${org} (or was filtered out)`);
-                }
+              await core.summary.addRaw([
+                `Running only for:`,
+                '',
+                ...reposFilter.map(f => `- \`${f}\``),
+                '',
+              ].join('\n'));
+
+              // Each entry is a picomatch glob; literal names match
+              // exactly (no wildcards). Lets you pass e.g. `demo-*`.
+              // Walk every target once so we discover all unmatched
+              // patterns before failing — surface them all at once.
+              const matchers = reposFilter.map(pat => ({
+                pattern: pat,
+                isMatch: picomatch(pat, { dot: true }),
+              }));
+              const hitPatterns = new Set();
+              targets = targets.filter(r => {
+                const matched = matchers.filter(m => m.isMatch(r.name));
+                matched.forEach(m => hitPatterns.add(m.pattern));
+                return matched.length > 0;
+              });
+              const missing = reposFilter.filter(p => !hitPatterns.has(p));
+              for (const pat of missing) {
+                core.error(`Requested repo pattern "${pat}" matched no repos in ${org} (after filtering archived/disabled/fork/empty).`);
               }
-              targets = targets.filter(r => requested.has(r.name));
+              if (missing.length > 0) {
+                core.setFailed(`Aborting: ${missing.length} requested repo pattern(s) matched nothing.`);
+                return;
+              }
             }
 
             core.info(`Auditing ${targets.length} repo(s) in ${org}${dryRun ? ' (dry run)' : ''}`);
@@ -209,84 +262,111 @@ jobs:
 
             const results = [];
 
+            const totalCount = targets.length;
+            let number = 0;
             for (const repoMeta of targets) {
+              number += 1;
               const repo = repoMeta.name;
               const repoSlug = `${org}/${repo}`;
               try {
                 // 1. Short-circuit if hygiene PR already open
                 const openPrs = await github.rest.pulls.list({
-                  owner: org, repo, state: 'open', per_page: 100,
+                  owner: org,
+                  repo,
+                  state: 'open',
+                  per_page: 100,
                 });
-                if (openPrs.data.some(pr => pr.head.ref.startsWith(BRANCH_PREFIX))) {
-                  core.info(`${repoSlug}: existing hygiene PR open, skipping`);
-                  results.push({ repo: repoSlug, action: 'skipped-existing-pr' });
+                const existingHygienePrs = openPrs.data.filter(pr => pr.head.ref.startsWith(BRANCH_PREFIX));
+                if (existingHygienePrs.length > 0) {
+                  for (const pr of existingHygienePrs) {
+                    const reviewers = [
+                      ...(pr.requested_reviewers || []).map(u => '@' + u.login),
+                      ...(pr.requested_teams || []).map(t => `@${org}/${t.slug}`),
+                    ];
+                    core.info(`${number}/${totalCount}. ${repoSlug}: existing hygiene PR open (${pr.html_url}), skipping`);
+                    results.push({
+                      repo: repoSlug,
+                      action: 'skipped-existing-pr',
+                      prUrl: pr.html_url,
+                      reviewers,
+                    });
+                  }
                   continue;
                 }
 
                 // 2. Detect ecosystems & required CODEOWNERS patterns
                 const defaultBranch = repoMeta.default_branch;
                 const refData = await github.rest.git.getRef({
-                  owner: org, repo, ref: `heads/${defaultBranch}`,
+                  owner: org,
+                  repo,
+                  ref: `heads/${defaultBranch}`,
                 });
                 const headSha = refData.data.object.sha;
                 const commitData = await github.rest.git.getCommit({
-                  owner: org, repo, commit_sha: headSha,
+                  owner: org,
+                  repo,
+                  commit_sha: headSha,
                 });
                 const treeSha = commitData.data.tree.sha;
                 const treeData = await github.rest.git.getTree({
-                  owner: org, repo, tree_sha: treeSha, recursive: '1',
+                  owner: org,
+                  repo,
+                  tree_sha: treeSha,
+                  recursive: '1',
                 });
                 if (treeData.data.truncated) {
-                  core.warning(`${repoSlug}: tree response truncated; detection may be incomplete`);
+                  core.warning(`${number}/${totalCount}. ${repoSlug}: tree response truncated; detection may be incomplete`);
                 }
-                const paths = (treeData.data.tree || []).map(e => e.path);
+                const paths = (treeData.data.tree || []).map(e => `/${e.path}`);
 
                 const hasFile = (predicate) => paths.some(predicate);
 
                 const detected = new Set();
                 const requiredCodeowners = [];
 
-                if (hasFile(p => p === 'package.json' || p.endsWith('/package.json'))) {
+                if (hasFile(p => p.endsWith('/package.json'))) {
                   detected.add('npm');
-                  requiredCodeowners.push('package.json');
-                  if (hasFile(p => p === 'package-lock.json' || p.endsWith('/package-lock.json'))) {
+                  if (hasFile(p => p.endsWith('/package-lock.json'))) {
                     requiredCodeowners.push('package-lock.json');
                   }
-                  if (hasFile(p => p === 'yarn.lock' || p.endsWith('/yarn.lock'))) {
+                  if (hasFile(p => p.endsWith('/yarn.lock'))) {
                     requiredCodeowners.push('yarn.lock');
                   }
-                  if (hasFile(p => p === 'pnpm-lock.yaml' || p.endsWith('/pnpm-lock.yaml'))) {
+                  if (hasFile(p => p.endsWith('/pnpm-lock.yaml'))) {
                     requiredCodeowners.push('pnpm-lock.yaml');
                   }
                 }
-                if (hasFile(p => /(^|\/)Dockerfile$/.test(p) || /\.Dockerfile$/.test(p))) {
+                if (hasFile(p => /\/Dockerfile$/.test(p) || /\.Dockerfile$/.test(p))) {
                   detected.add('docker');
                   requiredCodeowners.push('Dockerfile');
                 }
-                const composePaths = paths.filter(p => /(^|\/)docker-compose[^/]*\.ya?ml$/.test(p));
+                const composePaths = paths.filter(p => /\/docker-compose[^/]*\.ya?ml$/.test(p));
                 if (composePaths.length > 0) {
                   detected.add('docker-compose');
                   const names = new Set(composePaths.map(p => p.split('/').pop()));
-                  for (const n of [...names].sort()) requiredCodeowners.push(n);
+                  for (const n of [...names].sort()) {
+                    requiredCodeowners.push(n);
+                  }
                 }
-                if (paths.includes('.devcontainer/devcontainer.json')) {
+                if (paths.includes('/.devcontainer/devcontainer.json')) {
                   detected.add('devcontainers');
                   requiredCodeowners.push('/.devcontainer/devcontainer.json');
                 }
-                if (hasFile(p => p.startsWith('.github/workflows/'))) {
+                if (hasFile(p => p.startsWith('/.github/workflows/'))) {
                   detected.add('github-actions');
                   requiredCodeowners.push('/.github/workflows/');
                 }
 
                 // 3. Check existing dependabot config
                 let existingDependabot = await tryGetContent({
-                  owner: org, repo, path: '.github/dependabot.yaml', ref: defaultBranch,
+                  owner: org,
+                  repo,
+                  paths: [
+                    '.github/dependabot.yaml',
+                    '.github/dependabot.yml'
+                  ],
+                  ref: defaultBranch,
                 });
-                if (!existingDependabot) {
-                  existingDependabot = await tryGetContent({
-                    owner: org, repo, path: '.github/dependabot.yml', ref: defaultBranch,
-                  });
-                }
 
                 let dependabotChange = null; // null | { path, newContent, sha?, summary }
 
@@ -297,8 +377,14 @@ jobs:
                     .map(eco => templateByEcosystem[eco])
                     .filter(Boolean);
                   if (entries.length > 0) {
-                    const newDoc = { version: 2, updates: entries };
-                    const body = yaml.dump(newDoc, { lineWidth: 120, noRefs: true });
+                    const newDoc = {
+                      version: 2,
+                      updates: entries
+                    };
+                    const body = yaml.stringify(newDoc, {
+                      lineWidth: 120,
+                      aliasDuplicateObjects: false
+                    });
                     dependabotChange = {
                       path: '.github/dependabot.yaml',
                       newContent: body,
@@ -308,9 +394,9 @@ jobs:
                 } else {
                   let parsed;
                   try {
-                    parsed = yaml.load(existingDependabot.content) || {};
+                    parsed = yaml.parse(existingDependabot.content) || {};
                   } catch (e) {
-                    core.warning(`${repoSlug}: could not parse existing dependabot file: ${e.message}`);
+                    core.warning(`${number}/${totalCount}. ${repoSlug}: could not parse existing dependabot file: ${e.message}`);
                     parsed = null;
                   }
                   if (parsed) {
@@ -345,10 +431,17 @@ jobs:
                     }
 
                     if (changed) {
-                      const body = yaml.dump(parsed, { lineWidth: 120, noRefs: true });
+                      const body = yaml.stringify(parsed, {
+                        lineWidth: 120,
+                        aliasDuplicateObjects: false
+                      });
                       const parts = [];
-                      if (added.length > 0) parts.push(`added sections: ${added.map(e => `\`${e}\``).join(', ')}`);
-                      if (fixes.length > 0) parts.push(...fixes);
+                      if (added.length > 0) {
+                        parts.push(`added sections: ${added.map(e => `\`${e}\``).join(', ')}`);
+                      }
+                      if (fixes.length > 0) {
+                        parts.push(...fixes);
+                      }
                       dependabotChange = {
                         path: existingDependabot.path,
                         sha: existingDependabot.sha,
@@ -360,21 +453,23 @@ jobs:
                 }
 
                 // 4. Check CODEOWNERS
-                let existingCodeowners = null;
-                for (const candidate of ['CODEOWNERS', '.github/CODEOWNERS', 'docs/CODEOWNERS']) {
-                  existingCodeowners = await tryGetContent({
-                    owner: org, repo, path: candidate, ref: defaultBranch,
-                  });
-                  if (existingCodeowners) break;
-                }
+                const existingCodeowners = await tryGetContent({
+                  owner: org,
+                  repo,
+                  paths: ['CODEOWNERS', '.github/CODEOWNERS', 'docs/CODEOWNERS'],
+                  ref: defaultBranch,
+                });
                 const parsedLines = parseCodeowners(existingCodeowners ? existingCodeowners.content : '');
 
                 const missingCodeowners = requiredCodeowners.filter(r => !findCoveringLine(r, parsedLines));
 
                 // Early exit if nothing to do
                 if (!dependabotChange && missingCodeowners.length === 0) {
-                  core.info(`${repoSlug}: nothing to do`);
-                  results.push({ repo: repoSlug, action: 'ok' });
+                  core.info(`${number}/${totalCount}. ${repoSlug}: nothing to do`);
+                  results.push({
+                    repo: repoSlug,
+                    action: 'ok'
+                  });
                   continue;
                 }
 
@@ -387,16 +482,24 @@ jobs:
                 const matchedOwners = new Set();
                 for (const req of requiredCodeowners) {
                   const match = findCoveringLine(req, parsedLines);
-                  if (match) match.owners.forEach(o => matchedOwners.add(o));
+                  if (match) {
+                    match.owners.forEach(o => matchedOwners.add(o));
+                  }
                 }
                 if (matchedOwners.size > 0) {
                   reviewerSource = 'codeowners-match';
                   matchedOwners.forEach(o => reviewerTokens.add(o));
-                  if (matchedOwners.size === 1) ownerSubstitute = [...matchedOwners][0];
+                  // Reuse the owners from existing CODEOWNERS lines that
+                  // already cover required paths — they're the right
+                  // owners for the new lines too. Space-join when there
+                  // are several, matching CODEOWNERS multi-owner syntax.
+                  ownerSubstitute = [...matchedOwners].join(' ');
                 } else {
                   // 7.2 any existing CODEOWNERS entries
                   const allOwners = new Set();
-                  for (const line of parsedLines) line.owners.forEach(o => allOwners.add(o));
+                  for (const line of parsedLines) {
+                    line.owners.forEach(o => allOwners.add(o));
+                  }
                   if (allOwners.size > 0) {
                     reviewerSource = 'codeowners-fallback';
                     allOwners.forEach(o => reviewerTokens.add(o));
@@ -405,22 +508,22 @@ jobs:
                     let contribs = [];
                     try {
                       const { data } = await github.rest.repos.listContributors({
-                        owner: org, repo, per_page: 100,
+                        owner: org,
+                        repo,
+                        per_page: 100,
                       });
                       contribs = Array.isArray(data) ? data : [];
                     } catch (e) {
-                      if (e.status !== 404 && e.status !== 204) throw e;
+                      if (e.status !== 404 && e.status !== 204) {
+                        throw e;
+                      }
                     }
                     const humans = contribs.filter(c =>
                       c.type === 'User'
                       && !/\[bot\]$/.test(c.login)
-                      && !BOT_ALLOWLIST.has(c.login)
+                      && !KNOWN_BOTS.has(c.login)
                     );
-                    if (humans.length === 1) {
-                      reviewerSource = 'contributors';
-                      ownerSubstitute = '@' + humans[0].login;
-                      reviewerTokens.add(ownerSubstitute);
-                    } else if (humans.length > 1) {
+                    if (humans.length > 0) {
                       reviewerSource = 'contributors';
                       humans.forEach(h => reviewerTokens.add('@' + h.login));
                     }
@@ -431,7 +534,21 @@ jobs:
                 let codeownersChange = null;
                 if (missingCodeowners.length > 0) {
                   const ownerToken = ownerSubstitute || OWNER_PLACEHOLDER;
-                  const includeHeader = missingCodeowners.length === requiredCodeowners.length;
+
+                  // Find the last existing line that already covers any
+                  // required pattern. New lines get inserted right after
+                  // it (no blank-line separator, no header comment) so
+                  // they sit next to their relatives. If no such line
+                  // exists, append at the end with a blank line + header.
+                  let insertAfterIdx = -1;
+                  for (const req of requiredCodeowners) {
+                    const match = findCoveringLine(req, parsedLines);
+                    if (match && match.rawIndex > insertAfterIdx) {
+                      insertAfterIdx = match.rawIndex;
+                    }
+                  }
+                  const includeHeader = insertAfterIdx === -1;
+
                   const addedLines = [];
                   if (includeHeader) {
                     addedLines.push('# Make sure dependabot PRs get reviewers assigned');
@@ -440,17 +557,35 @@ jobs:
                     addedLines.push(`${pat}  ${ownerToken}`);
                   }
 
-                  let base = existingCodeowners ? existingCodeowners.content : '';
-                  if (base && !base.endsWith('\n')) base += '\n';
-                  const separator = base ? '\n' : '';
-                  const newContent = base + separator + addedLines.join('\n') + '\n';
+                  const baseText = existingCodeowners ? existingCodeowners.content : '';
+                  const baseLines = baseText.split('\n');
+                  // split on a string ending with \n leaves a trailing
+                  // empty element; drop it for clean splicing.
+                  if (baseLines.length > 0 && baseLines[baseLines.length - 1] === '') {
+                    baseLines.pop();
+                  }
 
-                  // Compute 1-indexed line numbers of the added pattern lines
-                  // in the new file (needed for inline review comments).
-                  let nextLine = (base ? base.split('\n').length - 1 : 0) + 1;
-                  if (base) nextLine += 1; // separator blank line
-                  if (includeHeader) nextLine += 1; // header comment line
-                  const patternStartLine = nextLine;
+                  let combinedLines;
+                  let patternStartLine; // 1-indexed line of first added pattern
+                  if (insertAfterIdx >= 0) {
+                    combinedLines = [
+                      ...baseLines.slice(0, insertAfterIdx + 1),
+                      ...addedLines,
+                      ...baseLines.slice(insertAfterIdx + 1),
+                    ];
+                    // No header in this branch; first added line is the
+                    // first pattern.
+                    patternStartLine = insertAfterIdx + 2;
+                  } else if (baseLines.length > 0) {
+                    combinedLines = [...baseLines, '', ...addedLines];
+                    patternStartLine =
+                      baseLines.length + 1 /* blank */ + (includeHeader ? 1 : 0) + 1;
+                  } else {
+                    combinedLines = [...addedLines];
+                    patternStartLine = (includeHeader ? 1 : 0) + 1;
+                  }
+
+                  const newContent = combinedLines.join('\n') + '\n';
 
                   codeownersChange = {
                     path: existingCodeowners ? existingCodeowners.path : 'CODEOWNERS',
@@ -477,30 +612,47 @@ jobs:
                   'contributors': 'Reviewers taken from repo contributors.',
                   'none': 'Could not determine a reviewer automatically.',
                 }[reviewerSource];
-                if (reviewerParagraph) bodyParts.push(reviewerParagraph);
-                const whatBullets = [];
-                if (dependabotChange) whatBullets.push(`- ${dependabotChange.summary}`);
-                if (codeownersChange) whatBullets.push(`- ${codeownersChange.summary}`);
+                if (reviewerParagraph) {
+                  bodyParts.push(reviewerParagraph)
+                };
+                const whatBullets =
+                  [dependabotChange, codeownersChange]
+                    .filter(Boolean)
+                    .map(change => `- ${change.summary}`);
                 bodyParts.push('## What?\n\n' + whatBullets.join('\n'));
                 const prBody = bodyParts.join('\n\n');
 
                 // 9 / 10. Dry run → log; otherwise create branch + commits + PR
-                const { users: reviewerUsers, teams: reviewerTeams } = splitReviewers(reviewerTokens);
+                const {
+                  users: reviewerUsers,
+                  teams: reviewerTeams
+                } = splitReviewers(reviewerTokens);
                 const hasUnresolvedOwner = codeownersChange && !ownerSubstitute && missingCodeowners.length > 0;
 
                 if (dryRun) {
+                  core.info(`${number}/${totalCount}. ${repoSlug}: Dry run, skipping PR creation`);
+
                   const lines = [
                     `### ${repoSlug}`,
                     '',
-                    `**Title:** \`chore: Repo hygiene\``,
+                    '#### Title',
                     '',
-                    `**Reviewers:** ${[...reviewerUsers.map(u => '@' + u), ...reviewerTeams.map(t => `@${org}/${t}`)].join(', ') || '(none)'}`,
+                    'chore: Repo hygiene',
                     '',
-                    '**Body:**',
+                    '#### Reviewers',
                     '',
-                    '```',
+                    [
+                      ...reviewerUsers.map(u => '- @' + u),
+                      ...reviewerTeams.map(t => `- @${org}/${t}`)
+                    ].join('\n') || '(none)',
+                    '',
+                    '#### Body',
+                    '',
+                    '<blockquote>',
+                    '',
                     prBody,
-                    '```',
+                    '',
+                    '</blockquote>',
                   ];
                   if (dependabotChange) {
                     lines.push('', `**${dependabotChange.path}** (${existingDependabot ? 'update' : 'create'}):`, '', '```yaml', dependabotChange.newContent, '```');
@@ -510,7 +662,8 @@ jobs:
                   }
                   await core.summary.addRaw(lines.join('\n') + '\n').write();
                   results.push({
-                    repo: repoSlug, action: 'dry-run',
+                    repo: repoSlug,
+                    action: 'dry-run',
                     reviewers: [...reviewerUsers, ...reviewerTeams.map(t => `${org}/${t}`)],
                     unresolvedOwner: hasUnresolvedOwner,
                   });
@@ -522,11 +675,14 @@ jobs:
                 const branchName = `${BRANCH_PREFIX}${shortSha}`;
                 try {
                   await github.rest.git.createRef({
-                    owner: org, repo, ref: `refs/heads/${branchName}`, sha: headSha,
+                    owner: org,
+                    repo,
+                    ref: `refs/heads/${branchName}`,
+                    sha: headSha,
                   });
                 } catch (e) {
                   if (e.status === 422) {
-                    core.info(`${repoSlug}: branch ${branchName} already exists, re-using`);
+                    core.info(`${number}/${totalCount}. ${repoSlug}: branch ${branchName} already exists, re-using`);
                   } else {
                     throw e;
                   }
@@ -535,7 +691,9 @@ jobs:
                 // Commit files
                 if (dependabotChange) {
                   await github.rest.repos.createOrUpdateFileContents({
-                    owner: org, repo, branch: branchName,
+                    owner: org,
+                    repo,
+                    branch: branchName,
                     path: dependabotChange.path,
                     message: dependabotChange.sha
                       ? `chore: Update ${dependabotChange.path}`
@@ -546,7 +704,9 @@ jobs:
                 }
                 if (codeownersChange) {
                   await github.rest.repos.createOrUpdateFileContents({
-                    owner: org, repo, branch: branchName,
+                    owner: org,
+                    repo,
+                    branch: branchName,
                     path: codeownersChange.path,
                     message: codeownersChange.sha
                       ? `chore: Update ${codeownersChange.path}`
@@ -570,14 +730,16 @@ jobs:
                 if (reviewerUsers.length > 0 || reviewerTeams.length > 0) {
                   try {
                     await github.rest.pulls.requestReviewers({
-                      owner: org, repo, pull_number: pr.data.number,
+                      owner: org,
+                      repo,
+                      pull_number: pr.data.number,
                       reviewers: reviewerUsers,
                       team_reviewers: reviewerTeams,
                     });
                     reviewerList.push(...reviewerUsers.map(u => '@' + u));
                     reviewerList.push(...reviewerTeams.map(t => `@${org}/${t}`));
                   } catch (e) {
-                    core.warning(`${repoSlug}: could not request reviewers: ${e.message}`);
+                    core.warning(`${number}/${totalCount}. ${repoSlug}: could not request reviewers: ${e.message}`);
                   }
                 }
 
@@ -592,25 +754,32 @@ jobs:
                   }));
                   try {
                     await github.rest.pulls.createReview({
-                      owner: org, repo, pull_number: pr.data.number,
+                      owner: org,
+                      repo,
+                      pull_number: pr.data.number,
                       commit_id: commitId,
                       event: 'COMMENT',
                       comments,
                     });
                   } catch (e) {
-                    core.warning(`${repoSlug}: could not create review comments: ${e.message}`);
+                    core.warning(`${number}/${totalCount}. ${repoSlug}: could not create review comments: ${e.message}`);
                   }
                 }
 
-                core.info(`${repoSlug}: opened ${pr.data.html_url}`);
+                core.info(`${number}/${totalCount}. ${repoSlug}: opened ${pr.data.html_url}`);
                 results.push({
-                  repo: repoSlug, action: 'opened-pr',
+                  repo: repoSlug,
+                  action: 'opened-pr',
                   prUrl: pr.data.html_url,
                   reviewers: reviewerList,
                 });
               } catch (e) {
-                core.warning(`${repoSlug}: ${e.message}`);
-                results.push({ repo: repoSlug, action: 'failed', error: e.message });
+                core.warning(`${number}/${totalCount}. ${repoSlug}: ${e.message}`);
+                results.push({
+                  repo: repoSlug,
+                  action: 'failed',
+                  error: e.message
+                });
               }
             }
 
@@ -621,44 +790,65 @@ jobs:
             const opened = results.filter(r => r.action === 'opened-pr');
             const failed = results.filter(r => r.action === 'failed');
             const dryRuns = results.filter(r => r.action === 'dry-run');
+            const preexisting = results.filter(r => r.action === 'skipped-existing-pr');
+
+            const reviewerSummary = (r) =>
+              (r.reviewers && r.reviewers.length > 0)
+                ? `reviewer(s): ${r.reviewers.join(', ')}`
+                : 'no reviewer assigned';
 
             const lines = [];
-            lines.push(`\`repo-hygiene\` run complete (${results.length} repo(s) checked)`);
             if (opened.length > 0) {
-              lines.push('', 'Opened PRs:');
-              for (const r of opened) {
-                const rv = (r.reviewers && r.reviewers.length > 0) ? `reviewer(s): ${r.reviewers.join(', ')}` : 'no reviewer assigned';
-                lines.push(`• <${r.prUrl}> — ${rv}`);
-              }
+              lines.push(
+                '',
+                'Opened PRs:',
+                ...opened.map((r, idx) => `${idx+1}. <${r.prUrl}> — ${reviewerSummary(r)}`)
+              );
+            }
+            if (preexisting.length > 0) {
+              lines.push(
+                '',
+                'Pre-existing PRs:',
+                ...preexisting.map((r, idx) => `${idx+1}. <${r.prUrl}> — ${reviewerSummary(r)}`)
+              );
             }
             if (dryRuns.length > 0) {
-              lines.push('', 'Would open PRs (dry run):');
-              for (const r of dryRuns) {
-                const rv = (r.reviewers && r.reviewers.length > 0) ? `reviewer(s): ${r.reviewers.join(', ')}` : 'no reviewer assigned';
-                lines.push(`• ${r.repo} — ${rv}`);
-              }
+              lines.push(
+                '',
+                'Would open PRs (dry run):',
+                ...dryRuns.map((r, idx) => `${idx+1}. ${r.repo} — ${reviewerSummary(r)}`)
+              );
             }
             if (failed.length > 0) {
-              lines.push('', 'Failed repos:');
-              for (const r of failed) {
-                lines.push(`• ${r.repo} — ${r.error}`);
-              }
+              lines.push(
+                '',
+                'Failed repos:',
+                ...failed.map((r, idx) => `${idx+1}. ${r.repo} — ${r.error}`)
+              );
             }
-            const summary = lines.join('\n');
 
-            core.setOutput('slack_text', summary);
+            core.setOutput('slack_text', lines.join('\n'));
             core.setOutput('should_notify', (opened.length + failed.length > 0) ? 'true' : 'false');
             core.setOutput('slack_status', failed.length > 0 ? 'failure' : 'warning');
 
-            await core.summary.addRaw('\n\n## Summary\n\n' + summary + '\n').write();
+            await core.summary.addRaw(
+            [
+              '',
+              '## Summary',
+              '',
+              `\`repo-hygiene\` run complete (${results.length} repo(s) checked)`,
+              '',
+              ...lines,
+              '',
+            ].join('\n')).write();
 
       - name: Notify Slack
         if: always() && !inputs.dry-run && steps.audit.outputs.should_notify == 'true'
         uses: verkstedt/actions/notify-status@v1
         with:
           status: ${{ steps.audit.outputs.slack_status || 'failure' }}
-          slack-bot-token: ${{ secrets.SLACK_BOT_TOKEN }}
-          slack-channel-id: ${{ vars.SLACK_CHANNEL_ID }}
+          slack-bot-token: ${{ secrets.slack-bot-token }}
+          slack-channel-id: ${{ inputs.slack-channel-id }}
           text: ${{ steps.audit.outputs.slack_text }}
 
       - name: Notify Slack (audit step errored)
@@ -666,6 +856,6 @@ jobs:
         uses: verkstedt/actions/notify-status@v1
         with:
           status: failure
-          slack-bot-token: ${{ secrets.SLACK_BOT_TOKEN }}
-          slack-channel-id: ${{ vars.SLACK_CHANNEL_ID }}
+          slack-bot-token: ${{ secrets.slack-bot-token }}
+          slack-channel-id: ${{ inputs.slack-channel-id }}
           text: '`repo-hygiene` run failed before summary — see workflow logs'
