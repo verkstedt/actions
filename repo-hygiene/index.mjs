@@ -201,7 +201,7 @@ async function main() {
     number += 1
     const repo = repoMeta.name
     const repoSlug = `${org}/${repo}`
-    const logPrefix = `${number}/${totalCount}. ${repoSlug}`
+    const logPrefix = `${number}/${totalCount}. ${repoSlug}:`
     try {
       // 1. Short-circuit if hygiene PR already open
       const openPrs = await octokit.rest.pulls.list({
@@ -758,7 +758,7 @@ async function main() {
         reviewers: reviewerList,
       })
     } catch (e) {
-      core.warning(`${logPrefix} ${e.message}`)
+      core.error(`${logPrefix} ${e.message}`)
       results.push({
         repo: repoSlug,
         action: 'failed',
