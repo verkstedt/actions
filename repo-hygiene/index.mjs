@@ -653,8 +653,7 @@ async function main() {
       // Create branch. Always include run ID so each run gets a fresh
       // branch — never reuse a stale one from an earlier run whose PR
       // was closed without merging.
-      const shortSha = headSha.slice(0, 7)
-      const branchName = `${BRANCH_PREFIX}${shortSha}/${context.runId}`
+      const branchName = `${BRANCH_PREFIX}${context.runId}`
       await octokit.rest.git.createRef({
         owner: org,
         repo,
