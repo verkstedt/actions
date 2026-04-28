@@ -1,0 +1,19 @@
+{
+  "name": "@verkstedt/actions-repo-hygiene",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "index.mjs",
+  "scripts": {
+    "build": "ncc build index.mjs -o dist"
+  },
+  "dependencies": {
+    "@actions/core": "^1.11.1",
+    "@actions/github": "^7.0.0",
+    "picomatch": "^4.0.0",
+    "yaml": "^2.8.0"
+  },
+  "devDependencies": {
+    "@vercel/ncc": "^0.38.4"
+  }
+}

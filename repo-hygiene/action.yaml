@@ -1,0 +1,45 @@
+name: Repo hygiene
+description: >
+  Check the hygiene of repos in an organisation and open PR fixing the
+  issues.
+
+inputs:
+  github-token:
+    description: >
+      Must belong to a GitHub App installed on ALL
+      org repos with READ AND WRITE access to Contents and
+      Pull requests, and READ access to Members.
+      Typically minted by `verkstedt/actions/create-github-app-token@v1`.
+    required: true
+  org:
+    description: >
+      Organisation to audit. Defaults to the calling repo's owner.
+    required: false
+    default: ''
+  repos:
+    description: >
+      List of repo names to process, without org prefix
+      (comma-, semicolon- or whitespace-separated).
+      Wildcards (`*`) are allowed.
+      Leave empty to process all repos in the org.
+    required: false
+    default: ''
+  dry-run:
+    description: >
+      Dry–run. Don’t actually create PRs.
+    required: false
+    default: 'false'
+
+outputs:
+  results_json:
+    description: JSON-encoded list of per-repo result objects.
+  slack_text:
+    description: Pre-formatted run summary suitable for Slack `text:`.
+  should_notify:
+    description: '`true` when there are opened or failed repos worth posting.'
+  slack_status:
+    description: One of `success` / `warning` / `failure`.
+
+runs:
+  using: node24
+  main: dist/index.mjs

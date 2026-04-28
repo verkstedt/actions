@@ -179,6 +179,8 @@ See [deploy-cloudfunction.yaml](./.github/workflows/deploy-cloudfunction.yaml) f
 Loop over repos in an org and check checking if they are set up
 correctly. Open PRs fixing issues.
 
+See [repo-hygiene.yaml](./.github/workflows/repo-hygiene.yaml) for details.
+
 - [🔍 Repositories using this workflow](https://github.com/search?q=-is:archived+path:.github/workflows/+%22verkstedt/actions/.github/workflows/repo-hygiene.yaml%22&type=code)
 
 ## Deploying new versions of actions and workflows
