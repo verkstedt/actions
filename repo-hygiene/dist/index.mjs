@@ -47401,6 +47401,14 @@ async function main() {
     .map((s) => s.trim())
     .filter(Boolean)
 
+  if (dryRun) {
+    await summary
+      .addRaw(
+        '> [!NOTE]\n> This is a **dry run**. No pull requests will be created. Will show info about ones that would, here in the summary.\n\n'
+      )
+      .write()
+  }
+
   // --- Verify App has access to all org repos ---
 
   const inst = await octokit.request('GET /installation/repositories', {
