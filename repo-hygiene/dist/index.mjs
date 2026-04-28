@@ -48017,27 +48017,37 @@ async function main() {
         }
       }
 
-      // Inline review comments on @OWNER lines
+      // Inline review comment on the @OWNER lines. The added lines are
+      // always a contiguous block, so post a single comment spanning
+      // them rather than one per line.
       if (hasUnresolvedOwner) {
-        const commitId = pr.data.head.sha
-        const comments = codeownersChange.missingLines.map((ml) => ({
+        const lineNumbers = codeownersChange.missingLines.map(
+          (ml) => ml.lineNumber
+        )
+        const startLine = Math.min(...lineNumbers)
+        const endLine = Math.max(...lineNumbers)
+        const comment = {
           path: codeownersChange.path,
-          line: ml.lineNumber,
+          body: 'Failed to guess who the owner should be — please replace the `@OWNER` placeholder.',
           side: 'RIGHT',
-          body: 'Failed to guess who the owner should be — please replace.',
-        }))
+          line: endLine,
+        }
+        if (startLine !== endLine) {
+          comment.start_line = startLine
+          comment.start_side = 'RIGHT'
+        }
         try {
           await octokit.rest.pulls.createReview({
             owner: org,
             repo,
             pull_number: pr.data.number,
-            commit_id: commitId,
+            commit_id: pr.data.head.sha,
             event: 'COMMENT',
-            comments,
+            comments: [comment],
           })
         } catch (e) {
           warning(
-            `${logPrefix} could not create review comments: ${e.message}`
+            `${logPrefix} could not create review comment: ${e.message}`
           )
         }
       }
