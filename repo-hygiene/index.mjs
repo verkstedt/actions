@@ -561,13 +561,13 @@ async function main() {
 
       // 8. Compose PR body
       const bodyParts = [
-        `Opened automatically by [repo-hygiene action from verkstedt/actions](${WORKFLOW_LINK}).`,
+        `🤖 Opened automatically by [repo-hygiene action from verkstedt/actions](${WORKFLOW_LINK}).`,
       ]
       const reviewerParagraph = {
         'codeowners-fallback':
-          'Reviewers taken from existing CODEOWNERS entries.',
-        'contributors': 'Reviewers taken from repo contributors.',
-        'none': 'Could not determine a reviewer automatically.',
+          'Assigned people from CODEOWNERS as reviewers of this PR.',
+        'contributors': 'Assigned repo contributors as reviewers of this PR.',
+        'none': 'Could not determine who to assign as reviewers of this PR.',
       }[reviewerSource]
       if (reviewerParagraph) {
         bodyParts.push(reviewerParagraph)
@@ -726,7 +726,7 @@ async function main() {
         const endLine = Math.max(...lineNumbers)
         const comment = {
           path: codeownersChange.path,
-          body: 'Failed to guess who the owner should be — please replace the `@OWNER` placeholder.',
+          body: 'Failed to guess who the owner should be — please replace the `@OWNER` placeholder with one or more people.',
           side: 'RIGHT',
           line: endLine,
         }
