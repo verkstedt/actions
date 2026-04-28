@@ -21,6 +21,7 @@
   ],
   "scripts": {
     "lint": "npm-run-all --print-label 'lint:*'",
+    "lint:js": "eslint .",
     "lint:actions": "docker run --rm -v .:/repo --workdir /repo rhysd/actionlint:latest -color",
     "build": "npm run build --workspaces --if-present"
   },

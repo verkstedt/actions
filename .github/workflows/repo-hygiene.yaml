@@ -29,7 +29,7 @@ on:
       gh-auth-app-id:
         description: >
           ID of a dedicated GitHub App installed on ALL org repos with
-          read/write access to Contents, Pull requests, andi read access
+          read/write access to Contents, Pull requests, and read access
           to Members.
           Typically passed from `vars.GH_AUTH_APP_ID`.
         required: true

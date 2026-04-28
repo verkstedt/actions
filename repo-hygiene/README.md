@@ -5,7 +5,7 @@ issues.
 
 Current checks:
 
-- Make sure there’s `.github/dependaboy.yaml` with entries for things
+- Make sure there’s `.github/dependabot.yaml` with entries for things
   that are used in the repo and `CODEOWNERS` set up in a way that will
   make dependabot PRs get reviewers
 
