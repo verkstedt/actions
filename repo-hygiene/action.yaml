@@ -38,7 +38,7 @@ outputs:
   should_notify:
     description: '`true` when there are opened or failed repos worth posting.'
   slack_status:
-    description: One of `success` / `warning` / `failure`.
+    description: One of `warning` / `failure`.
 
 runs:
   using: node24

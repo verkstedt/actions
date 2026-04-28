@@ -263,8 +263,10 @@ async function main() {
         state: 'open',
         per_page: 100,
       })
-      const existingHygienePrs = openPrs.filter((pr) =>
-        pr.head.ref.startsWith(BRANCH_PREFIX)
+      const existingHygienePrs = openPrs.filter(
+        (pr) =>
+          pr.head.ref.startsWith(BRANCH_PREFIX) &&
+          pr.head.repo?.full_name?.toLowerCase() === repoSlug.toLowerCase()
       )
       if (existingHygienePrs.length > 0) {
         for (const pr of existingHygienePrs) {
