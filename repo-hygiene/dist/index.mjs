@@ -47292,8 +47292,6 @@ var dist = __nccwpck_require__(6637);
 // EXTERNAL MODULE: ./node_modules/picomatch/index.js
 var picomatch = __nccwpck_require__(9138);
 ;// CONCATENATED MODULE: ./index.mjs
-/* eslint import/no-unresolved: [2, { ignore: ['@actions/'] }] -- This script run in GitHub CI */
-
 
 
 
@@ -47379,8 +47377,9 @@ async function tryGetContent(octokit, { paths, ...params }) {
         }
       }
     } catch (e) {
-      if (e.status === 404) return null
-      throw e
+      if (e.status !== 404) {
+        throw e
+      }
     }
   }
 
@@ -47498,13 +47497,13 @@ async function main() {
     const logPrefix = `${number}/${totalCount}. ${repoSlug}:`
     try {
       // 1. Short-circuit if hygiene PR already open
-      const openPrs = await octokit.rest.pulls.list({
+      const openPrs = await octokit.paginate(octokit.rest.pulls.list, {
         owner: org,
         repo,
         state: 'open',
         per_page: 100,
       })
-      const existingHygienePrs = openPrs.data.filter((pr) =>
+      const existingHygienePrs = openPrs.filter((pr) =>
         pr.head.ref.startsWith(BRANCH_PREFIX)
       )
       if (existingHygienePrs.length > 0) {

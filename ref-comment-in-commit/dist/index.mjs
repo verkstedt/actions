@@ -36270,8 +36270,6 @@ function getOctokit(token, options, ...additionalPlugins) {
 __nccwpck_require__.a(__webpack_module__, async (__webpack_handle_async_dependencies__, __webpack_async_result__) => { try {
 /* harmony import */ var _actions_core__WEBPACK_IMPORTED_MODULE_0__ = __nccwpck_require__(7867);
 /* harmony import */ var _actions_github__WEBPACK_IMPORTED_MODULE_1__ = __nccwpck_require__(2767);
-/* eslint import/no-unresolved: [2, { ignore: ['@actions/'] }] -- This script run in GitHub CI */
-
 
 
 
