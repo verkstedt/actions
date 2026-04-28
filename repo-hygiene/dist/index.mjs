@@ -47937,25 +47937,17 @@ async function main() {
         continue
       }
 
-      // Create branch
+      // Create branch. Always include run ID so each run gets a fresh
+      // branch — never reuse a stale one from an earlier run whose PR
+      // was closed without merging.
       const shortSha = headSha.slice(0, 7)
-      const branchName = `${BRANCH_PREFIX}${shortSha}`
-      try {
-        await octokit.rest.git.createRef({
-          owner: org,
-          repo,
-          ref: `refs/heads/${branchName}`,
-          sha: headSha,
-        })
-      } catch (e) {
-        if (e.status === 422) {
-          info(
-            `${logPrefix} branch ${branchName} already exists, re-using`
-          )
-        } else {
-          throw e
-        }
-      }
+      const branchName = `${BRANCH_PREFIX}${shortSha}/${context.runId}`
+      await octokit.rest.git.createRef({
+        owner: org,
+        repo,
+        ref: `refs/heads/${branchName}`,
+        sha: headSha,
+      })
 
       // Commit files
       if (dependabotChange) {
