@@ -47386,6 +47386,48 @@ async function tryGetContent(octokit, { paths, ...params }) {
   return null
 }
 
+// Pick up the first quoted string scalar's style so new scalars we
+// add match what's already there. Plain/block scalars are ignored —
+// they don't tell us a quoting preference.
+const QUOTED_TYPES = ['QUOTE_SINGLE', 'QUOTE_DOUBLE']
+function inferStringType(doc) {
+  let found = 'QUOTE_SINGLE'
+  dist.visit(doc, {
+    Scalar(_, node) {
+      if (QUOTED_TYPES.includes(node.type)) {
+        found = node.type
+        return dist.visit.BREAK
+      }
+      return undefined
+    },
+  })
+  return found
+}
+
+function stringifyDependabotDoc(doc) {
+  return doc.toString({
+    defaultKeyType: 'PLAIN',
+    defaultStringType: inferStringType(doc),
+    lineWidth: 120,
+    aliasDuplicateObjects: false,
+  })
+}
+
+// Drop `.type` from every string scalar in a node (or document) so
+// `defaultStringType` decides their quoting on serialise. Use this on
+// cloned template entries before splicing them into a host doc that
+// uses a different quote style.
+function clearScalarQuoting(node) {
+  dist.visit(node, {
+    Scalar(_, scalar) {
+      if (typeof scalar.value === 'string') {
+        // eslint-disable-next-line no-param-reassign -- mutating the visited node is the point
+        scalar.type = undefined
+      }
+    },
+  })
+}
+
 // --- Main ---
 
 // eslint-disable-next-line complexity -- TODO Refactor
@@ -47431,10 +47473,14 @@ async function main() {
   const templateText = Buffer.from(templateRes.data.content, 'base64').toString(
     'utf8'
   )
-  const templateDoc = dist.parse(templateText)
-  const templateByEcosystem = Object.fromEntries(
-    (templateDoc.updates || []).map((u) => [u['package-ecosystem'], u])
-  )
+  const templateDoc = dist.parseDocument(templateText)
+  const templateUpdates = templateDoc.get('updates')
+  const templateEntryByEcosystem = new Map()
+  if (dist.isSeq(templateUpdates)) {
+    for (const item of templateUpdates.items) {
+      templateEntryByEcosystem.set(item.get('package-ecosystem'), item)
+    }
+  }
 
   // --- List target repos ---
 
@@ -47614,28 +47660,40 @@ async function main() {
       if (detected.size === 0) {
         // No detected ecosystems — nothing to add.
       } else if (!existingDependabot) {
-        const entries = [...detected]
-          .map((eco) => templateByEcosystem[eco])
-          .filter(Boolean)
-        if (entries.length > 0) {
-          const newDoc = {
-            version: 2,
-            updates: entries,
+        // Start from a clone of the template Document so we keep its
+        // header / per-entry comments. Prune entries for ecosystems
+        // we didn't detect.
+        const newDoc = templateDoc.clone()
+        const updates = newDoc.get('updates')
+        const kept = []
+        if (dist.isSeq(updates)) {
+          for (let i = updates.items.length - 1; i >= 0; i -= 1) {
+            const eco = updates.items[i].get('package-ecosystem')
+            if (detected.has(eco)) {
+              kept.unshift(eco)
+            } else {
+              updates.delete(i)
+            }
           }
-          const body = dist.stringify(newDoc, {
-            lineWidth: 120,
-            aliasDuplicateObjects: false,
-          })
+        }
+        if (kept.length > 0) {
+          const body = stringifyDependabotDoc(newDoc)
           dependabotChange = {
             path: '.github/dependabot.yaml',
             newContent: body,
-            summary: `created \`.github/dependabot.yaml\` with sections: ${entries.map((e) => `\`${e['package-ecosystem']}\``).join(', ')}`,
+            summary: `created \`.github/dependabot.yaml\` with sections: ${kept.map((e) => `\`${e}\``).join(', ')}`,
           }
         }
       } else {
         let parsed
         try {
-          parsed = dist.parse(existingDependabot.content) || {}
+          parsed = dist.parseDocument(existingDependabot.content)
+          if (parsed.errors.length > 0) {
+            warning(
+              `${logPrefix} could not parse existing dependabot file: ${parsed.errors[0].message}`
+            )
+            parsed = null
+          }
         } catch (e) {
           warning(
             `${logPrefix} could not parse existing dependabot file: ${e.message}`
@@ -47643,47 +47701,60 @@ async function main() {
           parsed = null
         }
         if (parsed) {
-          parsed.version = parsed.version || 2
-          parsed.updates = Array.isArray(parsed.updates) ? parsed.updates : []
+          if (parsed.get('version') == null) {
+            parsed.set('version', 2)
+          }
+          let updates = parsed.get('updates')
+          if (!dist.isSeq(updates)) {
+            updates = parsed.createNode([])
+            parsed.set('updates', updates)
+          }
           let changed = false
           const fixes = []
 
-          for (const u of parsed.updates) {
-            if (u.directory !== '/') {
-              u.directory = '/'
+          for (const u of updates.items) {
+            const eco = u.get('package-ecosystem')
+            if (u.get('directory') !== '/') {
+              u.set('directory', '/')
               changed = true
-              fixes.push(
-                `set \`directory: "/"\` on \`${u['package-ecosystem']}\``
-              )
+              fixes.push(`set \`directory: "/"\` on \`${eco}\``)
             }
-            const days = u.cooldown?.['default-days']
+            const cooldown = u.get('cooldown')
+            const days = dist.isMap(cooldown)
+              ? cooldown.get('default-days')
+              : undefined
             if (typeof days !== 'number' || days < 7) {
-              u.cooldown = u.cooldown || {}
-              u.cooldown['default-days'] = 7
+              if (dist.isMap(cooldown)) {
+                cooldown.set('default-days', 7)
+              } else {
+                u.set('cooldown', parsed.createNode({ 'default-days': 7 }))
+              }
               changed = true
-              fixes.push(
-                `set \`cooldown.default-days: 7\` on \`${u['package-ecosystem']}\``
-              )
+              fixes.push(`set \`cooldown.default-days: 7\` on \`${eco}\``)
             }
           }
 
           const existingEcos = new Set(
-            parsed.updates.map((u) => u['package-ecosystem'])
+            updates.items.map((u) => u.get('package-ecosystem'))
           )
           const added = []
           for (const eco of detected) {
-            if (!existingEcos.has(eco) && templateByEcosystem[eco]) {
-              parsed.updates.push(templateByEcosystem[eco])
+            if (!existingEcos.has(eco) && templateEntryByEcosystem.has(eco)) {
+              // Clone so we don't share nodes with templateDoc; the
+              // clone keeps the comments attached to the template
+              // entry. Strip its scalar quoting so the spliced block
+              // matches the host doc's style instead of the
+              // template's.
+              const cloned = templateEntryByEcosystem.get(eco).clone()
+              clearScalarQuoting(cloned)
+              updates.add(cloned)
               added.push(eco)
               changed = true
             }
           }
 
           if (changed) {
-            const body = dist.stringify(parsed, {
-              lineWidth: 120,
-              aliasDuplicateObjects: false,
-            })
+            const body = stringifyDependabotDoc(parsed)
             const parts = []
             if (added.length > 0) {
               parts.push(
