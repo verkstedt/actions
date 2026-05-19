@@ -309,6 +309,7 @@ jobs:
       - name: Check licenses
         id: check
         working-directory: ${{ inputs.working-directory }}
+        shell: bash
         env:
           LICENSE_CHECK_ALLOW_LICENSES_GLOBAL: ${{ vars.LICENSE_CHECK_ALLOW_LICENSES_GLOBAL }}
           LICENSE_CHECK_ALLOW_LICENSES: ${{ vars.LICENSE_CHECK_ALLOW_LICENSES }}
@@ -320,11 +321,10 @@ jobs:
           LICENSE_CHECK_EXCLUDE_PACKAGES_DEV: ${{ vars.LICENSE_CHECK_EXCLUDE_PACKAGES_DEV }}
           LICENSE_CHECK_CLARIFICATIONS: ${{ vars.LICENSE_CHECK_CLARIFICATIONS }}
         run: |
-          exec > >(tee -a "$GITHUB_OUTPUT") 2>&1
+          output_file=$(mktemp)
+          trap 'rm -f "$output_file"' EXIT
 
-          echo "output<<CHECK_LICENSES_EOF"
-          trap 'echo CHECK_LICENSES_EOF' EXIT
-
+          set +e
           npx --yes @verkstedt/check-licenses \
             --allow-licenses="$LICENSE_CHECK_ALLOW_LICENSES_GLOBAL" \
             --allow-licenses="$LICENSE_CHECK_ALLOW_LICENSES" \
@@ -335,7 +335,17 @@ jobs:
             --exclude-packages-dev="$LICENSE_CHECK_EXCLUDE_PACKAGES_DEV_GLOBAL" \
             --exclude-packages-dev="$LICENSE_CHECK_EXCLUDE_PACKAGES_DEV" \
             --clarifications="$LICENSE_CHECK_CLARIFICATIONS" \
-            .
+            . 2>&1 | tee "$output_file"
+          exit_code=${PIPESTATUS[0]}
+          set -e
+
+          {
+            echo "output<<CHECK_LICENSES_EOF"
+            cat "$output_file"
+            echo "CHECK_LICENSES_EOF"
+          } >> "$GITHUB_OUTPUT"
+
+          exit "$exit_code"
 
       - name: Notify about violations
         if: >
