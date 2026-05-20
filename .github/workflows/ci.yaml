@@ -31,6 +31,13 @@ on:
           (scopes: `read:packages`, `repo` and `read:org`). If not set,
           will use secrets.GITHUB_TOKEN, which is enough for most cases.
         required: false
+      SLACK_BOT_TOKEN:
+        description: >
+          Slack bot token, used by check-licenses to notify about
+          failures on main branch. Go to https://api.slack.com/apps/,
+          create a bot, go to “OAuth & Permissions”. Add chat:write
+          permission and grab a token.
+        required: false
 
 env:
   NEXT_TELEMETRY_DISABLED: 1
@@ -271,6 +278,90 @@ jobs:
       - name: Lint Translations
         working-directory: ${{ inputs.working-directory }}
         run: npm run lint:missing-translations
+
+  check-licenses:
+    name: 'Check licenses'
+    runs-on: ubuntu-latest
+    if: vars.CHECK_LICENSES == 'true'
+    needs:
+      - initial-setup
+    steps:
+      - name: Set environment variables
+        env:
+          ENV_VARS: ${{ secrets.env_vars }}
+        run: |
+          echo "$ENV_VARS" >> "$GITHUB_ENV"
+
+      - name: GitHub App token
+        id: app-token
+        uses: verkstedt/actions/create-github-app-token@v1
+        with:
+          app-id: ${{ vars.GH_AUTH_APP_ID }}
+          private-key: ${{ secrets.GH_AUTH_APP_SECRET }}
+
+      - name: Setup
+        uses: verkstedt/actions/setup@v1
+        with:
+          working-directory: ${{ inputs.working-directory }}
+          token: ${{ steps.app-token.outputs.token }}
+          github-npm-registry-personal-access-token: ${{ secrets.GH_NPM_REGISTRY_PERSONAL_ACCESS_TOKEN }}
+
+      - name: Check licenses
+        id: check
+        working-directory: ${{ inputs.working-directory }}
+        shell: bash
+        env:
+          LICENSE_CHECK_ALLOW_LICENSES_GLOBAL: ${{ vars.LICENSE_CHECK_ALLOW_LICENSES_GLOBAL }}
+          LICENSE_CHECK_ALLOW_LICENSES: ${{ vars.LICENSE_CHECK_ALLOW_LICENSES }}
+          LICENSE_CHECK_ALLOW_LICENSES_DEV_GLOBAL: ${{ vars.LICENSE_CHECK_ALLOW_LICENSES_DEV_GLOBAL }}
+          LICENSE_CHECK_ALLOW_LICENSES_DEV: ${{ vars.LICENSE_CHECK_ALLOW_LICENSES_DEV }}
+          LICENSE_CHECK_EXCLUDE_PACKAGES_GLOBAL: ${{ vars.LICENSE_CHECK_EXCLUDE_PACKAGES_GLOBAL }}
+          LICENSE_CHECK_EXCLUDE_PACKAGES: ${{ vars.LICENSE_CHECK_EXCLUDE_PACKAGES }}
+          LICENSE_CHECK_EXCLUDE_PACKAGES_DEV_GLOBAL: ${{ vars.LICENSE_CHECK_EXCLUDE_PACKAGES_DEV_GLOBAL }}
+          LICENSE_CHECK_EXCLUDE_PACKAGES_DEV: ${{ vars.LICENSE_CHECK_EXCLUDE_PACKAGES_DEV }}
+          LICENSE_CHECK_CLARIFICATIONS: ${{ vars.LICENSE_CHECK_CLARIFICATIONS }}
+        run: |
+          output_file=$(mktemp)
+          trap 'rm -f "$output_file"' EXIT
+
+          set +e
+          npx --yes @verkstedt/check-licenses \
+            --allow-licenses="$LICENSE_CHECK_ALLOW_LICENSES_GLOBAL" \
+            --allow-licenses="$LICENSE_CHECK_ALLOW_LICENSES" \
+            --allow-licenses-dev="$LICENSE_CHECK_ALLOW_LICENSES_DEV_GLOBAL" \
+            --allow-licenses-dev="$LICENSE_CHECK_ALLOW_LICENSES_DEV" \
+            --exclude-packages="$LICENSE_CHECK_EXCLUDE_PACKAGES_GLOBAL" \
+            --exclude-packages="$LICENSE_CHECK_EXCLUDE_PACKAGES" \
+            --exclude-packages-dev="$LICENSE_CHECK_EXCLUDE_PACKAGES_DEV_GLOBAL" \
+            --exclude-packages-dev="$LICENSE_CHECK_EXCLUDE_PACKAGES_DEV" \
+            --clarifications="$LICENSE_CHECK_CLARIFICATIONS" \
+            . 2>&1 | tee "$output_file"
+          exit_code=${PIPESTATUS[0]}
+          set -e
+
+          {
+            echo "output<<CHECK_LICENSES_EOF"
+            cat "$output_file"
+            echo "CHECK_LICENSES_EOF"
+          } >> "$GITHUB_OUTPUT"
+
+          exit "$exit_code"
+
+      - name: Notify about violations
+        if: >
+          failure()
+          && (
+            github.ref == 'refs/heads/main'
+            || github.ref == 'refs/heads/production'
+            || startsWith(github.ref, 'refs/tags/v')
+          )
+        uses: verkstedt/actions/notify-status@v1
+        with:
+          status: warning
+          slack-bot-token: ${{ secrets.SLACK_BOT_TOKEN }}
+          slack-channel-id: ${{ vars.LICENSE_VIOLATIONS_SLACK_CHANNEL_ID }}
+          text: |
+            ${{ steps.check.outputs.output }}
 
   # We prefer to have lint script split into lint:*, but will use
   # generic lint if no lint:* scripts are found
