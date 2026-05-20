@@ -39,8 +39,17 @@ on:
           Slack channel ID to post the run summary into. Not a channel
           name.
           Typically passed from `vars.SLACK_CHANNEL_ID`.
-        required: true
+          Required when `notify-slack` is `true`.
+        required: false
         type: string
+        default: ''
+      notify-slack:
+        description: >
+          Post created PRs and failures to Slack. When `true`,
+          `slack-channel-id` and `slack-bot-token` are required.
+        required: false
+        type: boolean
+        default: true
     secrets:
       gh-auth-app-secret:
         description: >
@@ -52,7 +61,8 @@ on:
           Slack bot token with `chat:write` permission, used to post
           the run summary.
           Typically passed from `secrets.SLACK_BOT_TOKEN`.
-        required: true
+          Required when `notify-slack` is `true`.
+        required: false
 
 concurrency:
   # Never run in parallel for the same org — back-to-back runs would
@@ -82,8 +92,28 @@ jobs:
           repos: ${{ inputs.repos }}
           dry-run: ${{ inputs.dry-run }}
 
+      - name: Check Slack inputs
+        if: always() && inputs.notify-slack && !inputs.dry-run
+        env:
+          SLACK_CHANNEL_ID: ${{ inputs.slack-channel-id }}
+          SLACK_BOT_TOKEN: ${{ secrets.slack-bot-token }}
+        shell: sh
+        run: |
+          missing=
+          if [ -z "$SLACK_CHANNEL_ID" ]; then
+            missing="\`slack-channel-id\` input"
+          fi
+          if [ -z "$SLACK_BOT_TOKEN" ]; then
+            [ -n "$missing" ] && missing="$missing, "
+            missing="${missing}\`slack-bot-token\` secret"
+          fi
+          if [ -n "$missing" ]; then
+            echo "::error::\`notify-slack\` is enabled but the following are missing: ${missing}." >&2
+            exit 1
+          fi
+
       - name: Notify Slack
-        if: always() && !inputs.dry-run && steps.audit.outputs.should_notify == 'true'
+        if: always() && inputs.notify-slack && !inputs.dry-run && steps.audit.outputs.should_notify == 'true'
         uses: verkstedt/actions/notify-status@v1
         with:
           status: ${{ steps.audit.outputs.slack_status || 'failure' }}
@@ -92,7 +122,7 @@ jobs:
           text: ${{ steps.audit.outputs.slack_text }}
 
       - name: Notify Slack (audit step errored)
-        if: always() && !inputs.dry-run && steps.audit.conclusion == 'failure' && steps.audit.outputs.should_notify != 'true'
+        if: always() && inputs.notify-slack && !inputs.dry-run && steps.audit.conclusion == 'failure' && steps.audit.outputs.should_notify != 'true'
         uses: verkstedt/actions/notify-status@v1
         with:
           status: failure
