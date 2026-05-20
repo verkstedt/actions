@@ -58,6 +58,7 @@ jobs:
           private-key: ${{ secrets.GH_AUTH_APP_SECRET }}
 
       - name: Setup
+        id: setup
         uses: verkstedt/actions/setup@v1
         with:
           working-directory: ${{ inputs.working-directory }}
@@ -67,8 +68,15 @@ jobs:
 
       - name: Build StoryBook
         working-directory: ${{ inputs.working-directory }}
+        env:
+          PACKAGE_MANAGER: ${{ steps.setup.outputs.package-manager }}
         run: |
-          npx storybook build --webpack-stats-json
+          if jq -e '.scripts["build-storybook"]' package.json >/dev/null
+          then
+            "$PACKAGE_MANAGER" run build-storybook -- --webpack-stats-json
+          else
+            npx storybook build --webpack-stats-json
+          fi
 
       - name: Publish to Chromatic
         id: publish
