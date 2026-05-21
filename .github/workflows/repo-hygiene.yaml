@@ -78,14 +78,14 @@ jobs:
     steps:
       - name: GitHub App token
         id: app-token
-        uses: verkstedt/actions/create-github-app-token@feat/repo-hygiene
+        uses: verkstedt/actions/create-github-app-token@v1
         with:
           app-id: ${{ inputs.gh-auth-app-id }}
           private-key: ${{ secrets.gh-auth-app-secret }}
 
       - name: Audit repos
         id: audit
-        uses: verkstedt/actions/repo-hygiene@feat/repo-hygiene
+        uses: verkstedt/actions/repo-hygiene@v1
         with:
           github-token: ${{ steps.app-token.outputs.token }}
           org: ${{ inputs.org }}
