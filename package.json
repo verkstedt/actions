@@ -16,6 +16,7 @@
   },
   "homepage": "https://github.com/verkstedt/actions#readme",
   "workspaces": [
+    "jira-integration",
     "ref-comment-in-commit",
     "repo-hygiene"
   ],

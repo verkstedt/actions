@@ -1,8 +1,8 @@
-# Jira integration action
-
-Based on Remato’s [Trello integration action](https://github.com/rematocorp/trello-integration-action).
+# `verkstedt/actions/jira-integration`
 
 When PR status changes, moves Jira tickets to the appropriate column on the board.
+
+Usage:
 
 ```yaml
 name: Jira integration
@@ -23,7 +23,7 @@ jobs:
   jira:
     runs-on: ubuntu-latest
     steps:
-      - uses: verkstedt/jira-integration-action@v1
+      - uses: verkstedt/actions/jira-integration@v1
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           # Hint: Set these on an organisation level and override in repos only when necessary
@@ -45,8 +45,13 @@ jobs:
 ## Debugging
 
 - Create `mock-inputs.json` with input values AND additional `test-issue-id`.
+- Uncomment lines on the top of `index.mjs`.
 - Run `node index.mjs`.
 
 ## License
 
-[MIT](./LICENSE)
+Based on Remato’s
+[Trello integration action](https://github.com/rematocorp/trello-integration-action),
+licensed under [MIT](./LICENSE-trello-integration-action.md).
+
+[MIT](../LICENSE)
