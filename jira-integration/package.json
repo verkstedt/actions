@@ -6,8 +6,5 @@
   "main": "index.mjs",
   "scripts": {
     "build": "ncc build index.mjs -o dist"
-  },
-  "devDependencies": {
-    "axios": "^1.15.2"
   }
 }

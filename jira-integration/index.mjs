@@ -1,4 +1,3 @@
-import axios from 'axios'
 import * as core from '@actions/core'
 import * as github from '@actions/github'
 
@@ -27,49 +26,64 @@ const jiraStatusPrDraft = core.getInput('jira-status-pr-draft')
 const jiraStatusPrReady = core.getInput('jira-status-pr-ready')
 const jiraStatusPrMerged = core.getInput('jira-status-pr-merged')
 
-const headers = {
-  'Accept': 'application/json',
-  'Content-Type': 'application/json',
-}
-
-const auth = {
-  username: jiraUser,
-  password: jiraApiToken,
-}
-
 const timeoutMs = 10_000
 
-/** @param {import('axios').AxiosError} error */
-function onRejected(error) {
-  console.error(
-    `Error ${error.response.status} ${error.response.statusText}`,
-    error.request.path,
-    error.response.data
-  )
+const authHeader = `Basic ${Buffer.from(`${jiraUser}:${jiraApiToken}`).toString('base64')}`
+
+/**
+ * @param {URL} baseUrl
+ */
+function createJiraClient(baseUrl) {
+  async function request(method, path, { params, body } = {}) {
+    const url = new URL(path, baseUrl)
+    if (params) {
+      for (const [key, value] of Object.entries(params)) {
+        url.searchParams.set(key, value)
+      }
+    }
+    const response = await fetch(url, {
+      method,
+      headers: {
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
+        'Authorization': authHeader,
+      },
+      body: body == null ? undefined : JSON.stringify(body),
+      signal: AbortSignal.timeout(timeoutMs),
+    })
+    const responseText = await response.text()
+    const data = responseText ? JSON.parse(responseText) : undefined
+    if (!response.ok) {
+      core.error(
+        `Error ${response.status} ${response.statusText} ${url.pathname}`
+      )
+      if (data !== undefined) {
+        core.error(JSON.stringify(data))
+      }
+      throw new Error(
+        `Jira request failed: ${method} ${url.pathname} → ${response.status} ${response.statusText}`
+      )
+    }
+    return { data }
+  }
+
+  return {
+    get: (path, options) => request('GET', path, options),
+    post: (path, body) => request('POST', path, { body }),
+    put: (path, body) => request('PUT', path, { body }),
+  }
 }
 
 // https://developer.atlassian.com/cloud/jira/platform/rest/v3/
 const jiraApiBaseUrl = new URL('/rest/api/3/', `https://${jiraDomainInput}`)
-const jiraApi = axios.create({
-  baseURL: jiraApiBaseUrl.toString(),
-  headers,
-  auth,
-  timeout: timeoutMs,
-})
-jiraApi.interceptors.response.use(null, onRejected)
+const jiraApi = createJiraClient(jiraApiBaseUrl)
 
 // https://developer.atlassian.com/cloud/jira/software/rest/
 const jiraAgileApiBaseUrl = new URL(
   '/rest/agile/1.0/',
   `https://${jiraDomainInput}`
 )
-const jiraAgileApi = axios.create({
-  baseURL: jiraAgileApiBaseUrl.toString(),
-  headers,
-  auth,
-  timeout: timeoutMs,
-})
-jiraAgileApi.interceptors.response.use(null, onRejected)
+const jiraAgileApi = createJiraClient(jiraAgileApiBaseUrl)
 
 const octokit = github.getOctokit(githubToken)
 const repoOwner = (payload.organization || payload.repository.owner).login
