@@ -39,7 +39,8 @@ on:
           Slack channel ID to post the run summary into. Not a channel
           name.
           Typically passed from `vars.SLACK_CHANNEL_ID`.
-          Required when `notify-slack` is `true`.
+          Required when `notify-slack` is `true` and `dry-run` is
+          `false`.
         required: false
         type: string
         default: ''
@@ -61,7 +62,8 @@ on:
           Slack bot token with `chat:write` permission, used to post
           the run summary.
           Typically passed from `secrets.SLACK_BOT_TOKEN`.
-          Required when `notify-slack` is `true`.
+          Required when `notify-slack` is `true` and `dry-run` is
+          `false`.
         required: false
 
 concurrency:
