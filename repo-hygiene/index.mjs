@@ -33,8 +33,10 @@ function parseCodeowners(text) {
 }
 
 function findCoveringLine(required, existingLines) {
+  // CODEOWNERS uses the LAST matching pattern, per
+  // https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners#codeowners-syntax
   const reqNorm = normalisePattern(required)
-  for (const line of existingLines) {
+  for (const line of existingLines.toReversed()) {
     const pat = normalisePattern(line.pattern)
     if (pat === reqNorm) return line
     if (pat === '*' || pat === '.' || pat === '') return line
@@ -481,7 +483,8 @@ async function main() {
       const existingCodeowners = await tryGetContent(octokit, {
         owner: org,
         repo,
-        paths: ['CODEOWNERS', '.github/CODEOWNERS', 'docs/CODEOWNERS'],
+        // https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners#codeowners-file-location
+        paths: ['.github/CODEOWNERS', 'CODEOWNERS', 'docs/CODEOWNERS'],
         ref: defaultBranch,
       })
       const parsedLines = parseCodeowners(
