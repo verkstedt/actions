@@ -39,7 +39,7 @@ jobs:
           exit $exit_code
 
       - name: 'Move jira issues'
-        uses: verkstedt/jira-integration-action@v1
+        uses: verkstedt/actions/jira-integration@v1
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           # Hint: Set these on an organisation level and override in repos only when necessary
