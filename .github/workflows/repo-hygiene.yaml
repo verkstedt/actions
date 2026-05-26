@@ -1,0 +1,133 @@
+name: Repo hygiene
+
+# See [`repo-hygiene` action](../../repo-hygiene/README.md) for more info.
+
+on:
+  workflow_call:
+    inputs:
+      org:
+        description: >
+          Organisation to audit. Defaults to the repo’s own owner.
+        required: false
+        type: string
+        default: ''
+      repos:
+        description: >
+          List of repo names to process, without org prefix
+          (comma-, semicolon- or whitespace-separated).
+          Wildcards (`*`) are allowed.
+          Leave empty to process all repos in the org.
+        required: false
+        type: string
+        default: ''
+      dry-run:
+        description: >
+          Dry–run. Don’t actually create PRs.
+        required: false
+        type: boolean
+        default: false
+      gh-auth-app-id:
+        description: >
+          ID of a dedicated GitHub App installed on ALL org repos with
+          read/write access to Contents, Pull requests, and read access
+          to Members.
+          Typically passed from `vars.GH_AUTH_APP_ID`.
+        required: true
+        type: string
+      slack-channel-id:
+        description: >
+          Slack channel ID to post the run summary into. Not a channel
+          name.
+          Typically passed from `vars.SLACK_CHANNEL_ID`.
+          Required when `notify-slack` is `true` and `dry-run` is
+          `false`.
+        required: false
+        type: string
+        default: ''
+      notify-slack:
+        description: >
+          Post created PRs and failures to Slack. When `true`,
+          `slack-channel-id` and `slack-bot-token` are required.
+        required: false
+        type: boolean
+        default: true
+    secrets:
+      gh-auth-app-secret:
+        description: >
+          Private key for the GitHub App identified by `gh-auth-app-id`.
+          Typically passed from `secrets.GH_AUTH_APP_SECRET`.
+        required: true
+      slack-bot-token:
+        description: >
+          Slack bot token with `chat:write` permission, used to post
+          the run summary.
+          Typically passed from `secrets.SLACK_BOT_TOKEN`.
+          Required when `notify-slack` is `true` and `dry-run` is
+          `false`.
+        required: false
+
+concurrency:
+  # Never run in parallel for the same org — back-to-back runs would
+  # race when probing for existing hygiene PRs and could open
+  # duplicates.
+  group: repo-hygiene-${{ inputs.org || github.repository_owner }}
+  cancel-in-progress: false
+
+jobs:
+  repo-hygiene:
+    name: Repo hygiene
+    runs-on: ubuntu-latest
+    steps:
+      - name: GitHub App token
+        id: app-token
+        uses: verkstedt/actions/create-github-app-token@v1
+        with:
+          app-id: ${{ inputs.gh-auth-app-id }}
+          private-key: ${{ secrets.gh-auth-app-secret }}
+
+      - name: Audit repos
+        id: audit
+        uses: verkstedt/actions/repo-hygiene@v1
+        with:
+          github-token: ${{ steps.app-token.outputs.token }}
+          org: ${{ inputs.org }}
+          repos: ${{ inputs.repos }}
+          dry-run: ${{ inputs.dry-run }}
+
+      - name: Check Slack inputs
+        if: always() && inputs.notify-slack && !inputs.dry-run
+        env:
+          SLACK_CHANNEL_ID: ${{ inputs.slack-channel-id }}
+          SLACK_BOT_TOKEN: ${{ secrets.slack-bot-token }}
+        shell: sh
+        run: |
+          missing=
+          if [ -z "$SLACK_CHANNEL_ID" ]; then
+            missing="\`slack-channel-id\` input"
+          fi
+          if [ -z "$SLACK_BOT_TOKEN" ]; then
+            [ -n "$missing" ] && missing="$missing, "
+            missing="${missing}\`slack-bot-token\` secret"
+          fi
+          if [ -n "$missing" ]; then
+            echo "::error::\`notify-slack\` is enabled but the following are missing: ${missing}." >&2
+            exit 1
+          fi
+
+      - name: Notify Slack
+        if: always() && inputs.notify-slack && !inputs.dry-run && steps.audit.outputs.should_notify == 'true'
+        uses: verkstedt/actions/notify-status@v1
+        with:
+          status: ${{ steps.audit.outputs.slack_status || 'failure' }}
+          slack-bot-token: ${{ secrets.slack-bot-token }}
+          slack-channel-id: ${{ inputs.slack-channel-id }}
+          text: ${{ steps.audit.outputs.slack_text }}
+
+      - name: Notify Slack (audit step errored)
+        if: always() && inputs.notify-slack && !inputs.dry-run && steps.audit.conclusion == 'failure' && steps.audit.outputs.should_notify != 'true'
+        uses: verkstedt/actions/notify-status@v1
+        with:
+          status: failure
+          slack-bot-token: ${{ secrets.slack-bot-token }}
+          slack-channel-id: ${{ inputs.slack-channel-id }}
+          text: '`repo-hygiene` run failed before summary — see workflow logs'

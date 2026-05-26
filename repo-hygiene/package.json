@@ -1,0 +1,14 @@
+{
+  "name": "@verkstedt/actions-repo-hygiene",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "index.mjs",
+  "scripts": {
+    "build": "ncc build index.mjs -o dist"
+  },
+  "devDependencies": {
+    "picomatch": "^4.0.0",
+    "yaml": "^2.8.0"
+  }
+}

@@ -174,6 +174,15 @@ See [deploy-cloudfunction.yaml](./.github/workflows/deploy-cloudfunction.yaml) f
 
 - [🔍 Repositories using this workflow](https://github.com/search?q=-is:archived+path:.github/workflows/+"verkstedt/actions/.github/workflows/deploy-cloudfunction.yaml"+NOT+"https://github.com/verkstedt/.github/blob/main/workflow-templates/deploy-cloudfunction.yaml"&type=code)
 
+### Repo hygiene
+
+Loop over repos in an org and check checking if they are set up
+correctly. Open PRs fixing issues.
+
+See [repo-hygiene.yaml](./.github/workflows/repo-hygiene.yaml) for details.
+
+- [🔍 Repositories using this workflow](https://github.com/search?q=-is:archived+path:.github/workflows/+%22verkstedt/actions/.github/workflows/repo-hygiene.yaml%22&type=code)
+
 ## Deploying new versions of actions and workflows
 
 You might have noticed that main branch in this repository is called

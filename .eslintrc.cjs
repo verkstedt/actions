@@ -4,4 +4,8 @@ module.exports = {
     ecmaVersion: 'latest',
   },
   ignorePatterns: ['dist', 'node_modules'],
+  rules: {
+    'no-restricted-syntax': 'off',
+    'no-await-in-loop': 'off',
+  },
 }
