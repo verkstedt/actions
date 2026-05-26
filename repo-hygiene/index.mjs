@@ -32,21 +32,32 @@ function parseCodeowners(text) {
   return out
 }
 
+function codeownersPatternCovers(pat, reqNorm, reqIsDir) {
+  if (pat === reqNorm) return true
+  if (pat === '*' || pat === '.' || pat === '') return true
+  if (reqNorm.startsWith(`${pat}/`)) return true
+  // A required directory (e.g. `/.github/workflows/`) is covered by
+  // existing entries like `/.github/workflows/*` or `…/**`.
+  if (reqIsDir && (pat === `${reqNorm}/*` || pat === `${reqNorm}/**`)) {
+    return true
+  }
+  // Glob support via picomatch — lets entries like
+  // `docker-compose.*` cover `docker-compose.yml` /
+  // `docker-compose.yaml`. `dot: true` so `*` matches
+  // dot-prefixed names (CODEOWNERS doesn't treat them
+  // specially).
+  return pat.includes('*') && picomatch.isMatch(reqNorm, pat, { dot: true })
+}
+
 function findCoveringLine(required, existingLines) {
   // CODEOWNERS uses the LAST matching pattern, per
   // https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners#codeowners-syntax
   const reqNorm = normalisePattern(required)
+  const reqIsDir = String(required || '').endsWith('/')
   for (const line of existingLines.toReversed()) {
-    const pat = normalisePattern(line.pattern)
-    if (pat === reqNorm) return line
-    if (pat === '*' || pat === '.' || pat === '') return line
-    if (reqNorm.startsWith(`${pat}/`)) return line
-    // Glob support via picomatch — lets entries like
-    // `docker-compose.*` cover `docker-compose.yml` /
-    // `docker-compose.yaml`. `dot: true` so `*` matches
-    // dot-prefixed names (CODEOWNERS doesn't treat them
-    // specially).
-    if (pat.includes('*') && picomatch.isMatch(reqNorm, pat, { dot: true })) {
+    if (
+      codeownersPatternCovers(normalisePattern(line.pattern), reqNorm, reqIsDir)
+    ) {
       return line
     }
   }
