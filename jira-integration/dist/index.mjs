@@ -36165,11 +36165,15 @@ const octokit = getOctokit(githubToken)
 const repoOwner = (payload.organization || payload.repository.owner).login
 const issueNumber = (payload.pull_request || payload.issue).number
 
+const tipCommentMarker = '<!-- JIRA_INTEGRATION_NAG -->'
+
 /**
  * GitHub data
  *
  * @typedef {object} PullRequestComment
+ * @property {string} id
  * @property {string} body
+ * @property {boolean} isMinimized
  */
 
 /**
@@ -36235,7 +36239,12 @@ const keywords = [
  * @return {Array<IssueKey>}
  */
 function extractResolvedIssueKeys(prBody, comments) {
-  const text = [prBody, ...comments.map((comment) => comment.body)].join('\0')
+  const text = [
+    prBody,
+    ...comments
+      .filter((comment) => !comment.isMinimized)
+      .map((comment) => comment.body),
+  ].join('\0')
 
   const keywordsRegExp = githubRequireKeywordPrefix
     ? `(?:${keywords.join('|')})\\s+`
@@ -36271,15 +36280,72 @@ function extractResolvedIssueKeys(prBody, comments) {
 async function getPullRequestComments() {
   info('Requesting pull request comments')
 
-  return octokit.paginate(octokit.rest.issues.listComments, {
-    owner: repoOwner,
-    repo: payload.repository.name,
-    issue_number: issueNumber,
-    per_page: 100,
-  })
+  const query = `
+    query ($owner: String!, $repo: String!, $number: Int!, $cursor: String) {
+      repository(owner: $owner, name: $repo) {
+        issueOrPullRequest(number: $number) {
+          ... on Issue {
+            comments(first: 100, after: $cursor) {
+              nodes { id body isMinimized }
+              pageInfo { hasNextPage endCursor }
+            }
+          }
+          ... on PullRequest {
+            comments(first: 100, after: $cursor) {
+              nodes { id body isMinimized }
+              pageInfo { hasNextPage endCursor }
+            }
+          }
+        }
+      }
+    }
+  `
+
+  const comments = []
+  let cursor = null
+  let hasNextPage = true
+  while (hasNextPage) {
+    const result = await octokit.graphql(query, {
+      owner: repoOwner,
+      repo: payload.repository.name,
+      number: issueNumber,
+      cursor,
+    })
+    const page = result.repository.issueOrPullRequest.comments
+    comments.push(...page.nodes)
+    hasNextPage = page.pageInfo.hasNextPage
+    cursor = page.pageInfo.endCursor
+  }
+  return comments
 }
 
-async function postTipCommentLinkJiraIssue(comments) {
+/**
+ * @param {Array<PullRequestComment>} tipComments
+ * @return {Promise<void>}
+ */
+async function minimiseTipComments(tipComments) {
+  if (tipComments.length === 0) return
+
+  info('Issues found — minimising stale tip comment(s).')
+  await Promise.all(
+    tipComments.map(async (tip) => {
+      try {
+        await octokit.graphql(
+          `mutation ($id: ID!) {
+            minimizeComment(input: { subjectId: $id, classifier: RESOLVED }) {
+              minimizedComment { isMinimized }
+            }
+          }`,
+          { id: tip.id }
+        )
+      } catch (error) {
+        core_error(`Failed to minimise tip comment: ${error}`)
+      }
+    })
+  )
+}
+
+async function postTipCommentLinkJiraIssue(tipComments) {
   if (
     // Only post a comment, if acting upon an event that could’ve
     // changed PR body
@@ -36287,13 +36353,7 @@ async function postTipCommentLinkJiraIssue(comments) {
     ['opened', 'edited'].includes(payload.action)
   ) {
     try {
-      const tipCommentMarker = '<!-- JIRA_INTEGRATION_NAG -->'
-
-      const alreadyCommented = comments.some((comment) =>
-        comment.body?.includes(tipCommentMarker)
-      )
-
-      if (alreadyCommented) {
+      if (tipComments.length > 0) {
         info('No issues found, but tip comment already present.')
       } else {
         info('No issues found — posting a tip comment.')
@@ -36460,15 +36520,21 @@ async function transitionIssues(issueKeys, newStatusNames) {
 async function main() {
   try {
     const comments = await getPullRequestComments()
+    const tipComments = comments.filter(
+      (comment) =>
+        !comment.isMinimized && comment.body?.includes(tipCommentMarker)
+    )
     const issueIds = extractResolvedIssueKeys(pr.body, comments)
 
     if (!issueIds.length) {
       info('Could not find issue IDs')
       // Only post a tip comment when the PR body could have changed
-      await postTipCommentLinkJiraIssue(comments)
+      await postTipCommentLinkJiraIssue(tipComments)
       return
     }
     info('Found issue IDs:', issueIds.join(', '))
+
+    await minimiseTipComments(tipComments)
 
     // Treat PRs with “draft” or “wip” in brackets at the start or
     // end of the titles like drafts. Useful for orgs on unpaid
