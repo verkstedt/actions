@@ -422,11 +422,6 @@ async function main() {
 
           for (const u of updates.items) {
             const eco = u.get('package-ecosystem')
-            if (u.get('directory') !== '/') {
-              u.set('directory', '/')
-              changed = true
-              fixes.push(`set \`directory: "/"\` on \`${eco}\``)
-            }
             const cooldown = u.get('cooldown')
             const days = yaml.isMap(cooldown)
               ? cooldown.get('default-days')
