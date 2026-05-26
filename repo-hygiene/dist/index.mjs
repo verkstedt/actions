@@ -47143,8 +47143,8 @@ function codeownersPatternCovers(pat, reqNorm, reqIsDir) {
   // `docker-compose.*` cover `docker-compose.yml` /
   // `docker-compose.yaml`. `dot: true` so `*` matches
   // dot-prefixed names (CODEOWNERS doesn't treat them
-  // specially).
-  return pat.includes('*') && picomatch.isMatch(reqNorm, pat, { dot: true })
+  // specially). CODEOWNERS also supports `?` and `[…]`.
+  return /[*?[\]]/.test(pat) && picomatch.isMatch(reqNorm, pat, { dot: true })
 }
 
 function findCoveringLine(required, existingLines) {
