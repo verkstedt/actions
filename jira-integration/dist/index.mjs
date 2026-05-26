@@ -36414,6 +36414,7 @@ async function transitionIssues(issueKeys, newStatusNames) {
                 info(
                   `Did not transition ${issue.issueKey} — already in ${newStatusName}`
                 )
+                return null
               } else {
                 const newStatusId =
                   issue.availableTransitions.get(newStatusName)
@@ -36455,6 +36456,7 @@ async function transitionIssues(issueKeys, newStatusNames) {
   )
 }
 
+/* eslint complexity: ["error", 20] -- TODO Refactor */
 async function main() {
   try {
     const comments = await getPullRequestComments()
@@ -36472,7 +36474,7 @@ async function main() {
     // end of the titles like drafts. Useful for orgs on unpaid
     // plans which doesn’t support PR drafts.
     const titleDraftRegExp =
-      /^(?:\s*[\[(](?:wip|draft)[\])]\s+)|(?:\s+[\[(](?:wip|draft)[\])]\s*)$/i
+      /^(?:\s*[[(](?:wip|draft)[\])]\s+)|(?:\s+[[(](?:wip|draft)[\])]\s*)$/i
     const isRealDraft = pr.draft === true
     const isFauxDraft = Boolean(pr.title.match(titleDraftRegExp))
     const isDraft = isRealDraft || isFauxDraft
@@ -36504,8 +36506,14 @@ async function main() {
         await transitionIssues(issueIds, jiraStatusPrMerged.split('|'))
       }
     } else {
+      let type = 'not draft'
+      if (isFauxDraft) {
+        type = 'faux draft'
+      } else if (pr.draft) {
+        type = 'draft'
+      }
       info(
-        `Skipping transitioning the issues: pr.state=${pr.state}, ${pr.draft ? 'draft' : isFauxDraft ? 'faux draft' : 'not draft'}`
+        `Skipping transitioning the issues: pr.state=${pr.state}, ${type}`
       )
     }
   } catch (error) {

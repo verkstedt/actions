@@ -25,6 +25,8 @@ export const context = {
     },
   },
 }
+
+// eslint-disable-next-line no-console -- mock
 export const setFailed = console.error
 export const getInput = (name) => inputs[name]
 export const getOctokit = () => ({
