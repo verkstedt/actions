@@ -47821,8 +47821,8 @@ async function main() {
           repo: repoSlug,
           action: 'dry-run',
           reviewers: [
-            ...reviewerUsers,
-            ...reviewerTeams.map((t) => `${org}/${t}`),
+            ...reviewerUsers.map((u) => `@${u}`),
+            ...reviewerTeams.map((t) => `@${org}/${t}`),
           ],
           unresolvedOwner: hasUnresolvedOwner,
         })
@@ -47883,21 +47883,41 @@ async function main() {
         body: prBody,
       })
 
-      // Request reviewers
+      // Request reviewers one at a time. requestReviewers is
+      // all-or-nothing: a single invalid entry (e.g. a past contributor
+      // who is no longer a collaborator, or a team without repo access)
+      // 422s the whole call. Requesting each reviewer separately — calls
+      // are additive — means a bad entry only drops itself while the
+      // valid reviewers still get assigned.
       const reviewerList = []
-      if (reviewerUsers.length > 0 || reviewerTeams.length > 0) {
+      for (const user of reviewerUsers) {
         try {
           await octokit.rest.pulls.requestReviewers({
             owner: org,
             repo,
             pull_number: pr.data.number,
-            reviewers: reviewerUsers,
-            team_reviewers: reviewerTeams,
+            reviewers: [user],
           })
-          reviewerList.push(...reviewerUsers.map((u) => `@${u}`))
-          reviewerList.push(...reviewerTeams.map((t) => `@${org}/${t}`))
+          reviewerList.push(`@${user}`)
         } catch (e) {
-          warning(`${logPrefix} could not request reviewers: ${e.message}`)
+          warning(
+            `${logPrefix} could not request reviewer @${user}: ${e.message}`
+          )
+        }
+      }
+      for (const team of reviewerTeams) {
+        try {
+          await octokit.rest.pulls.requestReviewers({
+            owner: org,
+            repo,
+            pull_number: pr.data.number,
+            team_reviewers: [team],
+          })
+          reviewerList.push(`@${org}/${team}`)
+        } catch (e) {
+          warning(
+            `${logPrefix} could not request team reviewer @${org}/${team}: ${e.message}`
+          )
         }
       }
 
