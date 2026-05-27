@@ -1,7 +1,7 @@
 import * as core from '@actions/core'
 import * as github from '@actions/github'
 
-const { context = {} } = github
+const context = github.context ?? {}
 const { payload } = context
 
 const token = core.getInput('token')
