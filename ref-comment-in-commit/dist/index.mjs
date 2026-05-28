@@ -36121,7 +36121,7 @@ if (!commits?.length) {
           }))
           .map(async ({ url, owner, repo, prNumber, commentId }) => {
             _actions_core__WEBPACK_IMPORTED_MODULE_0__/* .info */ .pq(`Posting reply to ${url.toString()}`)
-            octokit.rest.pulls.createReplyForReviewComment({
+            return octokit.rest.pulls.createReplyForReviewComment({
               owner,
               repo,
               pull_number: prNumber,
