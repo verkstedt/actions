@@ -211,23 +211,22 @@ runs:
       working-directory: ${{ inputs.working-directory }}
       shell: bash
       run: |
-        case "${{ steps.package-manager.outputs['package-manager'] }}" in
-          pnpm)
-            pnpm run --if-present prepare
-            ;;
-          yarn)
-            # yarn:
-            # - doesn’t support `prepare` script (we use postinstall)
-            # - doesn’t have --if-present
-            if yarn run 2>/dev/null | grep -Eq '(^|\s)postinstall($|\s)'
-            then
-              yarn run postinstall
-            fi
-            ;;
-          *)
-            npm run --if-present prepare
-            ;;
-        esac
+        # NOTE: pnpm is intentionally NOT handled here — `pnpm install` (which always runs for pnpm,
+        # incl. on a cache hit) executes the project's own prepare/postinstall. This step only matters
+        # for npm/yarn, where install is skipped on a cache hit. (Its pre-existing `needs.initial-setup`
+        # condition is a separate latent bug — see PR discussion; deferred to a focused follow-up.)
+        if [ -e "yarn.lock" ]
+        then
+          # yarn:
+          # - doesn’t support `prepare` script (we use postinstall)
+          # - doesn’t have --if-present
+          if yarn run 2>/dev/null | grep -Eq '(^|\s)postinstall($|\s)'
+          then
+            yarn run postinstall
+          fi
+        else
+          npm run --if-present prepare
+        fi
 
     - name: Save cache
       if: steps.cache.outputs.cache-hit != 'true'
