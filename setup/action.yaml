@@ -73,10 +73,6 @@ runs:
       with:
         node-version-file: '${{ inputs.working-directory }}/.nvmrc'
 
-    - name: Enable Corepack
-      shell: bash
-      run: corepack enable
-
     - name: Collect npm scripts
       id: scripts
       working-directory: ${{ inputs.working-directory }}
@@ -115,6 +111,13 @@ runs:
 
     # pnpm is checked first because during migration a repo may temporarily have
     # both pnpm-lock.yaml and package-lock.json.
+
+    - name: Enable Corepack
+      # pnpm only — leaves npm/yarn repos (incl. any pinned to Node < 16.9 without
+      # Corepack, or relying on system yarn resolution) completely unchanged.
+      if: steps.package-manager.outputs.package-manager == 'pnpm'
+      shell: bash
+      run: corepack enable
 
     - name: Get pnpm store directory
       if: steps.package-manager.outputs.package-manager == 'pnpm'
@@ -161,7 +164,10 @@ runs:
           pkg--${{ steps.cache-keys.outputs.os }}--${{ steps.cache-keys.outputs.node }}--
 
     - name: Install dependencies
-      if: steps.cache.outputs.cache-hit != 'true'
+      # pnpm caches only the store, not node_modules — so a warm-cache run must STILL install to
+      # materialise node_modules from the store (fast, no downloads). npm/yarn cache node_modules
+      # directly, so they keep skipping install on a cache hit.
+      if: steps.cache.outputs.cache-hit != 'true' || steps.package-manager.outputs['package-manager'] == 'pnpm'
       working-directory: ${{ inputs.working-directory }}
       shell: bash
       env:
