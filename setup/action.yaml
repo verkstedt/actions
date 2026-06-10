@@ -156,12 +156,13 @@ runs:
         # Write registry auth to a job-local npmrc under $RUNNER_TEMP (wiped with the job) and point
         # npm/pnpm at it via NPM_CONFIG_USERCONFIG — instead of persisting the PAT to ~/.npmrc, which
         # would leave the token in $HOME on self-hosted/persistent runners (composite actions can't run
-        # a post-job cleanup step). npm and pnpm both resolve config through npm-conf, which honours
-        # `userconfig`; yarn (berry) reads the token from GH_REGISTRY_TOKEN in the install step, not
-        # from npmrc, so it is unaffected.
+        # a post-job cleanup step). Verified on pnpm 11.5.2 + npm: both read the registry _authToken from
+        # the NPM_CONFIG_USERCONFIG file. yarn (berry) reads the token from GH_REGISTRY_TOKEN in the
+        # install step, not from npmrc, so it is unaffected.
         NPMRC="$RUNNER_TEMP/setup-registry.npmrc"
-        if [ -f "$HOME/.npmrc" ]; then cp "$HOME/.npmrc" "$NPMRC"; fi
-        touch "$NPMRC"
+        # Start from a clean file each invocation (seeded from any existing ~/.npmrc) so re-invoking the
+        # action in the same job doesn't append a duplicate token line.
+        if [ -f "$HOME/.npmrc" ]; then cp "$HOME/.npmrc" "$NPMRC"; else : > "$NPMRC"; fi
         chmod 600 "$NPMRC"
         printf '//npm.pkg.github.com/:_authToken=%s\n' "$GITHUB_NPM_REGISTRY_PERSONAL_ACCESS_TOKEN" >> "$NPMRC"
         echo "NPM_CONFIG_USERCONFIG=$NPMRC" >> "$GITHUB_ENV"
