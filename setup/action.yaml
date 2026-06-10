@@ -148,8 +148,23 @@ runs:
     - name: Set up GitHub npm registry authentication
       if: inputs.github-npm-registry-personal-access-token
       shell: bash
+      env:
+        # Pass via env (not `${{ }}` interpolation into the script) so the token isn't rendered into
+        # the run command line.
+        GITHUB_NPM_REGISTRY_PERSONAL_ACCESS_TOKEN: ${{ inputs.github-npm-registry-personal-access-token }}
       run: |
-        echo "//npm.pkg.github.com/:_authToken=${{ inputs.github-npm-registry-personal-access-token }}" >> ~/.npmrc
+        # Write registry auth to a job-local npmrc under $RUNNER_TEMP (wiped with the job) and point
+        # npm/pnpm at it via NPM_CONFIG_USERCONFIG — instead of persisting the PAT to ~/.npmrc, which
+        # would leave the token in $HOME on self-hosted/persistent runners (composite actions can't run
+        # a post-job cleanup step). npm and pnpm both resolve config through npm-conf, which honours
+        # `userconfig`; yarn (berry) reads the token from GH_REGISTRY_TOKEN in the install step, not
+        # from npmrc, so it is unaffected.
+        NPMRC="$RUNNER_TEMP/setup-registry.npmrc"
+        if [ -f "$HOME/.npmrc" ]; then cp "$HOME/.npmrc" "$NPMRC"; fi
+        touch "$NPMRC"
+        chmod 600 "$NPMRC"
+        printf '//npm.pkg.github.com/:_authToken=%s\n' "$GITHUB_NPM_REGISTRY_PERSONAL_ACCESS_TOKEN" >> "$NPMRC"
+        echo "NPM_CONFIG_USERCONFIG=$NPMRC" >> "$GITHUB_ENV"
 
     - name: Restore cache
       id: cache
