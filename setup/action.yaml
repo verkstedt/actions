@@ -53,7 +53,7 @@ outputs:
   package-manager:
     description: >
       Detected package manager.
-      (npm or yarn)
+      (npm, yarn, or pnpm)
     value: ${{ steps.package-manager.outputs.package-manager }}
 
 runs:
@@ -73,6 +73,10 @@ runs:
       with:
         node-version-file: '${{ inputs.working-directory }}/.nvmrc'
 
+    - name: Enable Corepack
+      shell: bash
+      run: corepack enable
+
     - name: Collect npm scripts
       id: scripts
       working-directory: ${{ inputs.working-directory }}
@@ -90,19 +94,59 @@ runs:
       with:
         working-directory: ${{ inputs.working-directory }}
 
-    - name: Find all node_modules paths
+    - name: Determine package manager
+      id: package-manager
+      working-directory: ${{ inputs.working-directory }}
+      shell: bash
+      run: |
+        if [ -e "pnpm-lock.yaml" ]
+        then
+          echo "package-manager=pnpm" >> "$GITHUB_OUTPUT"
+        elif [ -e "yarn.lock" ]
+        then
+          echo "package-manager=yarn" >> "$GITHUB_OUTPUT"
+        elif [ -e "package-lock.json" ]
+        then
+          echo "package-manager=npm" >> "$GITHUB_OUTPUT"
+        else
+          echo "ERROR: Could not determine package manager. No pnpm-lock.yaml, yarn.lock, or package-lock.json found." >&2
+          exit 66 # EX_NOINPUT
+        fi
+
+    # pnpm is checked first because during migration a repo may temporarily have
+    # both pnpm-lock.yaml and package-lock.json.
+
+    - name: Get pnpm store directory
+      if: steps.package-manager.outputs.package-manager == 'pnpm'
+      id: pnpm-store
+      working-directory: ${{ inputs.working-directory }}
+      shell: bash
+      run: echo "path=$(pnpm store path)" >> "$GITHUB_OUTPUT"
+
+    - name: Find all cacheable paths
       id: cache-paths
       shell: sh
       run: |
         {
           echo 'paths<<PATHS'
-          {
-            echo 'node_modules/'
-            jq -r '.workspaces // [] | .[] + "/node_modules/"' package.json
-            echo '.yarn/install-state.gz'
-          } | sed 's~^~${{ inputs.working-directory }}/~'
+          if [ "${{ steps.package-manager.outputs.package-manager }}" = "pnpm" ]
+          then
+            echo '${{ steps.pnpm-store.outputs.path }}'
+          else
+            {
+              echo 'node_modules/'
+              jq -r '.workspaces // [] | .[] + "/node_modules/"' ${{ inputs.working-directory }}/package.json
+              echo '.yarn/install-state.gz'
+            } | sed 's~^~${{ inputs.working-directory }}/~'
+          fi
           echo 'PATHS'
         } >> "$GITHUB_OUTPUT"
+
+    - name: Set up GitHub npm registry authentication
+      if: inputs.github-npm-registry-personal-access-token
+      shell: bash
+      run: |
+        echo "//npm.pkg.github.com/:_authToken=${{ inputs.github-npm-registry-personal-access-token }}" >> ~/.npmrc
 
     - name: Restore cache
       id: cache
@@ -111,32 +155,10 @@ runs:
       with:
         path: ${{ steps.cache-paths.outputs.paths }}
         key: |
-          npm--${{ steps.cache-keys.outputs.os }}--${{ steps.cache-keys.outputs.node }}--${{ steps.cache-keys.outputs.packageJson }}--${{ steps.cache-keys.outputs.packageJsonLock }}--v2
+          pkg--${{ steps.cache-keys.outputs.os }}--${{ steps.cache-keys.outputs.node }}--${{ steps.cache-keys.outputs.packageJson }}--${{ steps.cache-keys.outputs.packageJsonLock }}--v3
         restore-keys: |
-          npm--${{ steps.cache-keys.outputs.os }}--${{ steps.cache-keys.outputs.node }}--${{ steps.cache-keys.outputs.packageJson }}--
-          npm--${{ steps.cache-keys.outputs.os }}--${{ steps.cache-keys.outputs.node }}--
-
-    - name: Set up GitHub npm registry authentication
-      if: inputs.github-npm-registry-personal-access-token
-      shell: bash
-      run: |
-        echo "//npm.pkg.github.com/:_authToken=${{ inputs.github-npm-registry-personal-access-token }}" >> ~/.npmrc
-
-    - name: Determine package manager
-      id: package-manager
-      working-directory: ${{ inputs.working-directory }}
-      shell: bash
-      run: |
-        if [ -e "yarn.lock" ]
-        then
-          echo "package-manager=yarn" >> "$GITHUB_OUTPUT"
-        elif [ -e "package-lock.json" ]
-        then
-          echo "package-manager=npm" >> "$GITHUB_OUTPUT"
-        else
-          echo "ERROR: Could not determine package manager. Neither package-lock.json nor yarn.lock found." >&2
-          exit 66 # EX_NOINPUT
-        fi
+          pkg--${{ steps.cache-keys.outputs.os }}--${{ steps.cache-keys.outputs.node }}--${{ steps.cache-keys.outputs.packageJson }}--
+          pkg--${{ steps.cache-keys.outputs.os }}--${{ steps.cache-keys.outputs.node }}--
 
     - name: Install dependencies
       if: steps.cache.outputs.cache-hit != 'true'
@@ -151,12 +173,17 @@ runs:
           export GH_REGISTRY_TOKEN="$GITHUB_NPM_REGISTRY_PERSONAL_ACCESS_TOKEN"
         fi
 
-        if [ "${{ steps.package-manager.outputs['package-manager'] }}" = "yarn" ]
-        then
-          yarn install --immutable
-        else
-          npm ci
-        fi
+        case "${{ steps.package-manager.outputs['package-manager'] }}" in
+          pnpm)
+            pnpm install --frozen-lockfile
+            ;;
+          yarn)
+            yarn install --immutable
+            ;;
+          *)
+            npm ci
+            ;;
+        esac
 
     - name: Verify the integrity of provenance attestations and registry signatures for installed dependencies
       if: steps.cache.outputs.cache-hit != 'true' && steps.package-manager.outputs['package-manager'] == 'npm'
@@ -178,18 +205,23 @@ runs:
       working-directory: ${{ inputs.working-directory }}
       shell: bash
       run: |
-        if [ -e "yarn.lock" ]
-        then
-          # yarn:
-          # - doesn’t support `prepare` script (we use postinstall)
-          # - doesn’t have --if-present
-          if yarn run 2>/dev/null | grep -Eq '(^|\s)postinstall($|\s)'
-          then
-            yarn run postinstall
-          fi
-        else
-          npm run --if-present prepare
-        fi
+        case "${{ steps.package-manager.outputs['package-manager'] }}" in
+          pnpm)
+            pnpm run --if-present prepare
+            ;;
+          yarn)
+            # yarn:
+            # - doesn’t support `prepare` script (we use postinstall)
+            # - doesn’t have --if-present
+            if yarn run 2>/dev/null | grep -Eq '(^|\s)postinstall($|\s)'
+            then
+              yarn run postinstall
+            fi
+            ;;
+          *)
+            npm run --if-present prepare
+            ;;
+        esac
 
     - name: Save cache
       if: steps.cache.outputs.cache-hit != 'true'
@@ -198,4 +230,4 @@ runs:
       with:
         path: ${{ steps.cache-paths.outputs.paths }}
         key: |
-          npm--${{ steps.cache-keys.outputs.os }}--${{ steps.cache-keys.outputs.node }}--${{ steps.cache-keys.outputs.packageJson }}--${{ steps.cache-keys.outputs.packageJsonLock }}--v2
+          pkg--${{ steps.cache-keys.outputs.os }}--${{ steps.cache-keys.outputs.node }}--${{ steps.cache-keys.outputs.packageJson }}--${{ steps.cache-keys.outputs.packageJsonLock }}--v3
