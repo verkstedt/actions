@@ -138,7 +138,7 @@ runs:
           else
             {
               echo 'node_modules/'
-              jq -r '.workspaces // [] | .[] + "/node_modules/"' ${{ inputs.working-directory }}/package.json
+              jq -r '.workspaces // [] | .[] + "/node_modules/"' "${{ inputs.working-directory }}/package.json"
               echo '.yarn/install-state.gz'
             } | sed 's~^~${{ inputs.working-directory }}/~'
           fi
