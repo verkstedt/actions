@@ -115,12 +115,12 @@ runs:
     - name: Enable Corepack
       # pnpm only — leaves npm/yarn repos (incl. any pinned to Node < 16.9 without
       # Corepack, or relying on system yarn resolution) completely unchanged.
-      if: steps.package-manager.outputs.package-manager == 'pnpm'
+      if: steps.package-manager.outputs['package-manager'] == 'pnpm'
       shell: bash
       run: corepack enable
 
     - name: Get pnpm store directory
-      if: steps.package-manager.outputs.package-manager == 'pnpm'
+      if: steps.package-manager.outputs['package-manager'] == 'pnpm'
       id: pnpm-store
       working-directory: ${{ inputs.working-directory }}
       shell: bash
@@ -132,7 +132,7 @@ runs:
       run: |
         {
           echo 'paths<<PATHS'
-          if [ "${{ steps.package-manager.outputs.package-manager }}" = "pnpm" ]
+          if [ "${{ steps.package-manager.outputs['package-manager'] }}" = "pnpm" ]
           then
             echo '${{ steps.pnpm-store.outputs.path }}'
           else
