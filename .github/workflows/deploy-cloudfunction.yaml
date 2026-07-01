@@ -61,7 +61,7 @@ jobs:
           app-id: ${{ vars.GH_AUTH_APP_ID }}
           private-key: ${{ secrets.GH_AUTH_APP_SECRET }}
       - name: Checkout code
-        uses: actions/checkout@v6.0.2
+        uses: actions/checkout@v7.0.0
         with:
           token: ${{ steps.app-token.outputs.token }}
           submodules: recursive
