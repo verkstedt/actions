@@ -435,7 +435,7 @@ jobs:
 
       - name: Check if we need to install browsers
         id: browsers
-        uses: actions/github-script@v8.0.0
+        uses: actions/github-script@v9.0.0
         with:
           script: |
             const { resolve } = await import('node:path');
