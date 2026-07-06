@@ -324,8 +324,19 @@ jobs:
           output_file=$(mktemp)
           trap 'rm -f "$output_file"' EXIT
 
+          package='@verkstedt/check-licenses'
+          # In the check-licenses repo itself npx would resolve the
+          # package name to the local workspace, whose bin is never
+          # linked into its own node_modules/.bin — run the local
+          # package via a path instead. Bonus: it checks the code
+          # under test.
+          if [ "$( jq -r '.name' package.json )" = "$package" ]
+          then
+            package='.'
+          fi
+
           set +e
-          npx --yes @verkstedt/check-licenses \
+          npx --yes "$package" \
             --allow-licenses="$LICENSE_CHECK_ALLOW_LICENSES_GLOBAL" \
             --allow-licenses="$LICENSE_CHECK_ALLOW_LICENSES" \
             --allow-licenses-dev="$LICENSE_CHECK_ALLOW_LICENSES_DEV_GLOBAL" \
