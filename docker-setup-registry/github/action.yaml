@@ -47,7 +47,7 @@ runs:
         echo "url=${registry}/$image_name" | tee -a "$GITHUB_OUTPUT"
 
     - name: 'Authenticate'
-      uses: docker/login-action@v3
+      uses: docker/login-action@v4
       with:
         registry: ghcr.io
         username: ${{ github.repository_owner }}
