@@ -38,7 +38,7 @@ runs:
       run: |
         printf "value<<EOM\n%s\nEOM\n" "$MESSAGE" | tee -a "$GITHUB_OUTPUT"
     - name: Send Slack message
-      uses: slackapi/slack-github-action@v2.1.1
+      uses: slackapi/slack-github-action@v3.0.3
       with:
         method: chat.postMessage
         token: ${{ inputs.slack-bot-token }}
