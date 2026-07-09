@@ -36263,10 +36263,10 @@ function extractResolvedIssueKeys(prBody, comments) {
     new Set(
       matches.flatMap((match) => {
         // Find URLs
-        const urlMatches = match.match(new RegExp(urlRegExp, 'g'))
+        const urlMatches = match.match(new RegExp(urlRegExp, 'gi'))
         // Find issueId in the URL (only capture group in urlRegExp)
-        const issueKeys = urlMatches.map(
-          (url) => url.match(new RegExp(urlRegExp))[1]
+        const issueKeys = urlMatches.map((url) =>
+          url.match(new RegExp(urlRegExp, 'i'))[1].toUpperCase()
         )
         return issueKeys
       })
