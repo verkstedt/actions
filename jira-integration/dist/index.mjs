@@ -36253,8 +36253,8 @@ function extractResolvedIssueKeys(prBody, comments) {
   // It’s extremely important for this regexp to match only simple
   // jira keys as extracted keys will be used in JQL queries.
   const issueKeyRegExp = '[A-Z][A-Z0-9]+-[0-9]+'
-  const urlRegExp = `${jiraApiBaseUrl.origin}/browse/(${issueKeyRegExp})`
-  const closesRegExp = `${keywordsRegExp}${urlRegExp}(?:\\s*,\\s*${urlRegExp})*`
+  const urlRegExp = `${RegExp.escape(jiraApiBaseUrl.origin)}/browse/(${issueKeyRegExp})`
+  const closesRegExp = `${keywordsRegExp}<?${urlRegExp}>?(?:\\s*,\\s*<?${urlRegExp}>?)*`
 
   // Find all “Closes URL, URL…”
   const matches = text.match(new RegExp(closesRegExp, 'gi')) || []
@@ -36263,10 +36263,10 @@ function extractResolvedIssueKeys(prBody, comments) {
     new Set(
       matches.flatMap((match) => {
         // Find URLs
-        const urlMatches = match.match(new RegExp(urlRegExp, 'g'))
+        const urlMatches = match.match(new RegExp(urlRegExp, 'gi'))
         // Find issueId in the URL (only capture group in urlRegExp)
-        const issueKeys = urlMatches.map(
-          (url) => url.match(new RegExp(urlRegExp))[1]
+        const issueKeys = urlMatches.map((url) =>
+          url.match(new RegExp(urlRegExp, 'i'))[1].toUpperCase()
         )
         return issueKeys
       })
