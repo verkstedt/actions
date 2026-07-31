@@ -95,6 +95,7 @@ runs:
       working-directory: ${{ inputs.working-directory }}
       shell: bash
       run: |
+        # pnpm first: mid-migration a repo may still have package-lock.json too.
         if [ -e "pnpm-lock.yaml" ]
         then
           echo "package-manager=pnpm" >> "$GITHUB_OUTPUT"
@@ -109,12 +110,7 @@ runs:
           exit 66 # EX_NOINPUT
         fi
 
-    # pnpm is checked first because during migration a repo may temporarily have
-    # both pnpm-lock.yaml and package-lock.json.
-
-    - name: Enable Corepack
-      # pnpm only — leaves npm/yarn repos (incl. any pinned to Node < 16.9 without
-      # Corepack, or relying on system yarn resolution) completely unchanged.
+    - name: Enable Corepack for pnpm
       if: steps.package-manager.outputs['package-manager'] == 'pnpm'
       shell: bash
       run: corepack enable
@@ -132,8 +128,12 @@ runs:
       run: |
         {
           echo 'paths<<PATHS'
-          if [ "${{ steps.package-manager.outputs['package-manager'] }}" = "pnpm" ]
+          # Only set for pnpm: the "Get pnpm store directory" step is skipped otherwise.
+          if [ -n "${{ steps.pnpm-store.outputs.path }}" ]
           then
+            # pnpm: cache the store only. node_modules is a symlink farm pointing
+            # into it, and install always runs for pnpm (see below), so archiving
+            # it would cost a lot of file operations to no benefit.
             echo '${{ steps.pnpm-store.outputs.path }}'
           else
             {
@@ -149,22 +149,17 @@ runs:
       if: inputs.github-npm-registry-personal-access-token
       shell: bash
       env:
-        # Pass via env (not `${{ }}` interpolation into the script) so the token isn't rendered into
-        # the run command line.
         GITHUB_NPM_REGISTRY_PERSONAL_ACCESS_TOKEN: ${{ inputs.github-npm-registry-personal-access-token }}
       run: |
-        # Write registry auth to a job-local npmrc under $RUNNER_TEMP (wiped with the job) and point
-        # npm/pnpm at it via NPM_CONFIG_USERCONFIG — instead of persisting the PAT to ~/.npmrc, which
-        # would leave the token in $HOME on self-hosted/persistent runners (composite actions can't run
-        # a post-job cleanup step). Verified on pnpm 11.5.2 + npm: both read the registry _authToken from
-        # the NPM_CONFIG_USERCONFIG file. yarn (berry) reads the token from GH_REGISTRY_TOKEN in the
-        # install step, not from npmrc, so it is unaffected.
+        # Keep config where it’s wiped with the job to avoid it being persisted
         NPMRC="$RUNNER_TEMP/setup-registry.npmrc"
-        # Start from a clean file each invocation (seeded from any existing ~/.npmrc) so re-invoking the
-        # action in the same job doesn't append a duplicate token line.
-        if [ -f "$HOME/.npmrc" ]; then cp "$HOME/.npmrc" "$NPMRC"; else : > "$NPMRC"; fi
+        touch "$NPMRC"
         chmod 600 "$NPMRC"
-        printf '//npm.pkg.github.com/:_authToken=%s\n' "$GITHUB_NPM_REGISTRY_PERSONAL_ACCESS_TOKEN" >> "$NPMRC"
+        {
+          cat "$HOME/.npmrc" 2>/dev/null
+          printf '//npm.pkg.github.com/:_authToken=%s\n' \
+            "$GITHUB_NPM_REGISTRY_PERSONAL_ACCESS_TOKEN"
+        } > "$NPMRC"
         echo "NPM_CONFIG_USERCONFIG=$NPMRC" >> "$GITHUB_ENV"
 
     - name: Restore cache
@@ -174,10 +169,10 @@ runs:
       with:
         path: ${{ steps.cache-paths.outputs.paths }}
         key: |
-          pkg--${{ steps.cache-keys.outputs.os }}--${{ steps.cache-keys.outputs.node }}--${{ steps.cache-keys.outputs.packageJson }}--${{ steps.cache-keys.outputs.packageJsonLock }}--v3
+          npm--${{ steps.cache-keys.outputs.os }}--${{ steps.cache-keys.outputs.node }}--${{ steps.cache-keys.outputs.packageJson }}--${{ steps.cache-keys.outputs.packageJsonLock }}--v3
         restore-keys: |
-          pkg--${{ steps.cache-keys.outputs.os }}--${{ steps.cache-keys.outputs.node }}--${{ steps.cache-keys.outputs.packageJson }}--
-          pkg--${{ steps.cache-keys.outputs.os }}--${{ steps.cache-keys.outputs.node }}--
+          npm--${{ steps.cache-keys.outputs.os }}--${{ steps.cache-keys.outputs.node }}--${{ steps.cache-keys.outputs.packageJson }}--
+          npm--${{ steps.cache-keys.outputs.os }}--${{ steps.cache-keys.outputs.node }}--
 
     - name: Install dependencies
       # pnpm caches only the store, not node_modules — so a warm-cache run must STILL install to
@@ -208,29 +203,35 @@ runs:
         esac
 
     - name: Verify the integrity of provenance attestations and registry signatures for installed dependencies
-      if: steps.cache.outputs.cache-hit != 'true' && steps.package-manager.outputs['package-manager'] == 'npm'
+      # pnpm supports the same subcommand: https://pnpm.io/cli/audit#signatures
+      # yarn (berry) does not, so it stays excluded.
+      if: >
+        steps.cache.outputs.cache-hit != 'true'
+        && (
+          steps.package-manager.outputs['package-manager'] == 'npm'
+          || steps.package-manager.outputs['package-manager'] == 'pnpm'
+        )
       working-directory: ${{ inputs.working-directory }}
       shell: bash
       run: |
         if [ 0 -lt "$( jq -r '( .dependencies + .devDependencies ) // {} | to_entries | length' package.json )" ]
         then
-          npm audit signatures
+          ${{ steps.package-manager.outputs['package-manager'] }} audit signatures
         fi
 
     - name: Run prepare npm script
+      # Only needed for npm/yarn, where install is skipped on a cache hit. `pnpm
+      # install` always runs (see above) and executes prepare/postinstall itself.
       if: >
         steps.cache.outputs.cache-hit == 'true'
+        && steps.package-manager.outputs['package-manager'] != 'pnpm'
         && (
-          contains(needs.initial-setup.outputs.scripts, ',prepare,')
-          || contains(needs.initial-setup.outputs.scripts, ',postinstall,')
+          contains(steps.scripts.outputs.scripts, ',prepare,')
+          || contains(steps.scripts.outputs.scripts, ',postinstall,')
         )
       working-directory: ${{ inputs.working-directory }}
       shell: bash
       run: |
-        # NOTE: pnpm is intentionally NOT handled here — `pnpm install` (which always runs for pnpm,
-        # incl. on a cache hit) executes the project's own prepare/postinstall. This step only matters
-        # for npm/yarn, where install is skipped on a cache hit. (Its pre-existing `needs.initial-setup`
-        # condition is a separate latent bug — see PR discussion; deferred to a focused follow-up.)
         if [ -e "yarn.lock" ]
         then
           # yarn:
@@ -251,4 +252,4 @@ runs:
       with:
         path: ${{ steps.cache-paths.outputs.paths }}
         key: |
-          pkg--${{ steps.cache-keys.outputs.os }}--${{ steps.cache-keys.outputs.node }}--${{ steps.cache-keys.outputs.packageJson }}--${{ steps.cache-keys.outputs.packageJsonLock }}--v3
+          npm--${{ steps.cache-keys.outputs.os }}--${{ steps.cache-keys.outputs.node }}--${{ steps.cache-keys.outputs.packageJson }}--${{ steps.cache-keys.outputs.packageJsonLock }}--v3
