@@ -73,7 +73,18 @@ jobs:
         run: |
           if jq -e '.scripts["build-storybook"]' package.json >/dev/null
           then
-            "$PACKAGE_MANAGER" run build-storybook -- --webpack-stats-json
+            # npm and yarn need `--` to forward the flag to the script. pnpm does
+            # not: it passes the `--` through literally, so `storybook build`
+            # receives it as an argument and exits 1 with "too many arguments for
+            # 'build'. Expected 0 arguments but got 1."
+            case "$PACKAGE_MANAGER" in
+              pnpm)
+                pnpm run build-storybook --webpack-stats-json
+                ;;
+              *)
+                "$PACKAGE_MANAGER" run build-storybook -- --webpack-stats-json
+                ;;
+            esac
           else
             npx storybook build --webpack-stats-json
           fi
