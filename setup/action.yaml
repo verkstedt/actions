@@ -86,7 +86,7 @@ runs:
 
     - name: Calculate cache key parts
       id: cache-keys
-      uses: verkstedt/actions/cache-keys@v1
+      uses: verkstedt/actions/cache-keys@chore/pnpm-support
       with:
         working-directory: ${{ inputs.working-directory }}
 
