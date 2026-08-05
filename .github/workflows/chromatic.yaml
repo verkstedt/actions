@@ -9,6 +9,12 @@ on:
         type: string
         required: false
         default: '.'
+      npm-workspace:
+        description: >
+          npm workspace to use storybook from. Can be a dir or pkg name.
+        type: string
+        required: false
+        default: ''
     secrets:
       CHROMATIC_PROJECT_TOKEN:
         description: >
@@ -66,8 +72,35 @@ jobs:
           github-npm-registry-personal-access-token: ${{ secrets.GH_NPM_REGISTRY_PERSONAL_ACCESS_TOKEN }}
           fetch-depth: 0
 
-      - name: Build StoryBook
+      - name: Determine StoryBook directory
+        id: sb-dir
         working-directory: ${{ inputs.working-directory }}
+        env:
+          NPM_WORKSPACE: '${{ inputs.npm-workspace }}'
+        run: |
+          dir="$(
+            npm exec --include-workspace-root -w "$NPM_WORKSPACE" -c pwd 2>/dev/null \
+              | head -n2 | tail -n1
+          )"
+          if [ -z "$dir" ]
+          then
+            echo 2>&1 "::error::Failed to determine directory to look Storybook in."
+            exit 64
+          fi
+          if ! [ -d "$dir/.storybook" ]
+          then
+            echo 2>&1 "::error::Failed to find '.storybook' directory."
+            exit 64
+          fi
+          printf "dir=%s\n" "$dir" | tee -a "$GITHUB_OUTPUT"
+          # chromaui/action resolves `workingDir` against the workspace,
+          # so it needs a relative path.
+          printf "relative-dir=%s\n" \
+            "$(realpath --relative-to="$GITHUB_WORKSPACE" "$dir")" \
+            | tee -a "$GITHUB_OUTPUT"
+
+      - name: Build StoryBook
+        working-directory: ${{ steps.sb-dir.outputs.dir }}
         env:
           PACKAGE_MANAGER: ${{ steps.setup.outputs.package-manager }}
         run: |
@@ -82,7 +115,7 @@ jobs:
         id: publish
         uses: chromaui/action@v18.0.1
         with:
-          workingDir: ${{ inputs.working-directory }}
+          workingDir: ${{ steps.sb-dir.outputs.relative-dir }}
           projectToken: ${{ secrets.CHROMATIC_PROJECT_TOKEN }}
           # Take screenshots only of components that changed
           onlyChanged: true
