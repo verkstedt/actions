@@ -34,7 +34,9 @@ outputs:
   results_json:
     description: JSON-encoded list of per-repo result objects.
   slack_text:
-    description: Pre-formatted run summary suitable for Slack `text:`.
+    description: >
+      Pre-formatted run summary suitable for Slack `text:`, sized to fit
+      a single Block Kit section block.
   should_notify:
     description: '`true` when there are opened or failed repos worth posting.'
   slack_status:
