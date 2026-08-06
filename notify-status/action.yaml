@@ -36,6 +36,21 @@ runs:
           }}
       shell: bash
       run: |
+        # The message goes into a single Block Kit section block, whose
+        # text holds at most 3000 characters (`<!here> ` included), per
+        # https://docs.slack.dev/reference/block-kit/blocks/section-block
+        # Truncate, rather than have Slack reject the whole message and
+        # leave us with no notification at all.
+        max=2900
+        marker='… (truncated)'
+        if [ "${#MESSAGE}" -gt "$max" ]; then
+          MESSAGE="${MESSAGE:0:$(( max - ${#marker} - 1 ))}"
+          # Back off to a line boundary, so a `<url|label>` link is not
+          # cut in half and rendered as plain text.
+          MESSAGE="${MESSAGE%$'\n'*}"
+          MESSAGE="${MESSAGE}"$'\n'"${marker}"
+          echo "::warning::Slack message truncated to fit a Block Kit section block"
+        fi
         printf "value<<EOM\n%s\nEOM\n" "$MESSAGE" | tee -a "$GITHUB_OUTPUT"
     - name: Send Slack message
       uses: slackapi/slack-github-action@v3.0.3
