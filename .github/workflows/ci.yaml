@@ -9,6 +9,16 @@ on:
         type: string
         required: false
         default: '.'
+      browsers:
+        description: >
+          Whitespace–separated list of Playwright browsers to install
+          before running unit tests (e.g. `chromium firefox`).
+
+          Leave at `auto` to detect them from the vitest config, or set
+          to an empty string to skip installing browsers altogether.
+        type: string
+        required: false
+        default: 'auto'
     secrets:
       env_vars:
         description: >
@@ -444,52 +454,64 @@ jobs:
           token: ${{ steps.app-token.outputs.token }}
           github-npm-registry-personal-access-token: ${{ secrets.GH_NPM_REGISTRY_PERSONAL_ACCESS_TOKEN }}
 
-      - name: Check if we need to install browsers
+      - name: Determine browsers to install
         id: browsers
         uses: actions/github-script@v9.0.0
+        env:
+          INPUT_BROWSERS: ${{ inputs.browsers }}
         with:
           script: |
-            const { resolve } = await import('node:path');
-            const { existsSync, globSync } = await import('node:fs');
-            const fileName = globSync(resolve(
-              '${{ github.workspace }}',
-              '${{ inputs.working-directory }}',
-              './vitest.config.*',
-            )).at(0)
+            const input = process.env.INPUT_BROWSERS.trim();
+            if (input !== 'auto') {
+              core.setOutput('browsers', input);
+            } else {
+              const { resolve } = await import('node:path');
+              const { globSync } = await import('node:fs');
+              const fileName = globSync(resolve(
+                '${{ github.workspace }}',
+                '${{ inputs.working-directory }}',
+                './vitest.config.*',
+              )).at(0)
 
-            if (fileName) {
-              let vitestConfig;
-              // We don’t know if vitest config is CJS or ESM. Try both.
-              try {
-                vitestConfig = await import(fileName);
-              } catch {
-                vitestConfig = require(fileName);
+              if (fileName) {
+                let vitestConfig;
+                // We don’t know if vitest config is CJS or ESM. Try both.
+                try {
+                  vitestConfig = await import(fileName);
+                } catch {
+                  vitestConfig = require(fileName);
+                }
+                vitestConfig = vitestConfig?.default || vitestConfig;
+                const browsers = new Set(
+                  vitestConfig.test?.projects
+                    ?.filter(proj => proj.test?.browser?.enabled)
+                    .filter(proj => {
+                      const provider = proj.test?.browser?.provider;
+                      return (
+                        provider == undefined
+                        || provider === 'playwright'
+                        || provider?.name === 'playwright'
+                      )
+                    })
+                    .flatMap(proj => proj.test?.browser?.instances ?? [{ browser: 'chromium' }])
+                    .filter(Boolean)
+                    .map(instance => instance?.browser)
+                );
+                console.log('Needed browsers:', browsers);
+                core.setOutput('browsers', Array.from(browsers).join(' '));
               }
-              vitestConfig = vitestConfig?.default || vitestConfig;
-              const browsers = new Set(
-                vitestConfig.test?.projects
-                  ?.filter(proj => proj.test?.browser?.enabled)
-                  .filter(proj => {
-                    const provider = proj.test?.browser?.provider;
-                    return (
-                      provider == undefined
-                      || provider === 'playwright'
-                      || provider?.name === 'playwright'
-                    )
-                  })
-                  .flatMap(proj => proj.test?.browser?.instances ?? [{ browser: 'chromium' }])
-                  .filter(Boolean)
-                  .map(instance => instance?.browser)
-              );
-              console.log('Needed browsers:', browsers);
-              core.setOutput('browsers', Array.from(browsers).join(' '));
             }
 
       - name: Install browsers (with system deps)
         if: steps.browsers.outputs.browsers != ''
         working-directory: ${{ inputs.working-directory }}
+        env:
+          BROWSERS: ${{ steps.browsers.outputs.browsers }}
         run: |
-          npx playwright install --with-deps ${{ steps.browsers.outputs.browsers }}
+          # Word splitting is intentional (it’s a list), globbing is not.
+          set -f
+          # shellcheck disable=SC2086 # intentional word splitting
+          npx playwright install --with-deps $BROWSERS
       - name: Test units
         working-directory: ${{ inputs.working-directory }}
         run: npm run test:unit
