@@ -15,6 +15,15 @@ on:
         type: string
         required: false
         default: ''
+      environment-suffix:
+        description: >
+          Suffix for the GitHub environment name. Set it when a repo
+          publishes more than one StoryBook, so that each workflow gets
+          its own environment (and its own deployment URL and
+          environment–scoped secrets).
+        type: string
+        required: false
+        default: ''
     secrets:
       CHROMATIC_PROJECT_TOKEN:
         description: >
@@ -40,7 +49,7 @@ jobs:
     if: github.ref == 'refs/heads/main' || github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     environment:
-      name: ${{ github.ref == 'refs/heads/main' && 'storybook' || 'PR storybook' }}
+      name: ${{ github.ref == 'refs/heads/main' && 'storybook' || 'PR storybook' }}${{ inputs.environment-suffix && format(' ({0})', inputs.environment-suffix) }}
       url: ${{ steps.publish.outputs.storybookUrl == 'undefined' && '' || steps.publish.outputs.storybookUrl }}
     steps:
       - name: Verify workflow setup
