@@ -57,6 +57,22 @@ const config = {
           then
             set -- "$@" -f previous_tag_name=$lastGitTag
           fi
+          # Pin the lineage the notes are read from. The tag does not exist
+          # yet at this point, so without target_commitish the API falls back
+          # to the repository's default branch — which is right for a normal
+          # release, where the release branch IS the default branch, and wrong
+          # for a maintenance release, which then gets notes describing the
+          # default branch instead of its own history: listing changes it does
+          # not contain and omitting the ones it does.
+          releaseBranch="\${branch.name}"
+          if [ -z "$releaseBranch" ] || [ "$releaseBranch" = "null" ]
+          then
+            releaseBranch="$GITHUB_REF_NAME"
+          fi
+          if [ -n "$releaseBranch" ]
+          then
+            set -- "$@" -f target_commitish="$releaseBranch"
+          fi
           # Note: We need to include name of the release,
           # because it will not be added to CHANGELOG otherwise.
           # Sad side–effect of this is that it’s also included
