@@ -64,14 +64,12 @@ const config = {
           # for a maintenance release, which then gets notes describing the
           # default branch instead of its own history: listing changes it does
           # not contain and omitting the ones it does.
-          releaseBranch="\${branch.name}"
-          if [ -z "$releaseBranch" ] || [ "$releaseBranch" = "null" ]
+          # semantic-release resolves its own branch from GITHUB_REF too, and
+          # only gets here once that branch matched the release config, so
+          # GITHUB_REF_NAME is that same branch — and needs no templating.
+          if [ -n "$GITHUB_REF_NAME" ]
           then
-            releaseBranch="$GITHUB_REF_NAME"
-          fi
-          if [ -n "$releaseBranch" ]
-          then
-            set -- "$@" -f target_commitish="$releaseBranch"
+            set -- "$@" -f target_commitish="$GITHUB_REF_NAME"
           fi
           # Note: We need to include name of the release,
           # because it will not be added to CHANGELOG otherwise.
