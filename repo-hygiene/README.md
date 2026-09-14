@@ -28,9 +28,10 @@ Slack notification) lives at
 ```sh
 cd repo-hygiene
 npm install
+npm test
 npm run build
 ```
 
 `dist/` is committed because GitHub Actions runs the action straight
 from the repo without `npm install`. Always rebuild before committing
-changes to `index.mjs`.
+changes in the source code.
