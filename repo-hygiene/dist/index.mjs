@@ -47399,6 +47399,64 @@ function codeownersPatternCovers(pat, reqNorm, reqIsDir) {
   return /[*?[\]]/.test(pat) && picomatch.isMatch(reqNorm, pat, { dot: true })
 }
 
+const GLOB_CHARS = /[*?[\]]/
+
+/**
+ * Translate a CODEOWNERS pattern into the picomatch globs it stands
+ * for, following the gitignore-like rules documented at
+ * https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners#codeowners-syntax
+ *
+ * - A leading `/` anchors the pattern to the repository root.
+ * - A pattern with a slash anywhere but the end is anchored as well.
+ * - A pattern without one matches at any depth.
+ * - A trailing `/` names a directory and covers everything inside.
+ * - A pattern whose last segment has no glob characters covers the
+ *   path itself and, when it is a directory, everything inside it.
+ *   `docs/*` on the other hand only covers files directly in `docs`.
+ */
+function codeownersPatternToGlobs(pattern) {
+  let p = String(pattern || '')
+  const withoutTrailingSlash = p.endsWith('/') ? p.slice(0, -1) : p
+  const anchored = p.startsWith('/') || withoutTrailingSlash.includes('/')
+  if (p.startsWith('/')) p = p.slice(1)
+  if (!anchored) p = `**/${p}`
+  if (p.endsWith('/')) return [`${p}**`]
+  const lastSegment = p.slice(p.lastIndexOf('/') + 1)
+  if (GLOB_CHARS.test(lastSegment)) return [p]
+  return [p, `${p}/**`]
+}
+
+/**
+ * Owners of a single file, or `null` when no rule matches. The last
+ * matching rule wins; a matching rule with no owners yields `[]`.
+ */
+function codeownersFor(file, parsedLines) {
+  const path = String(file || '').replace(/^\//, '')
+  for (const line of parsedLines.toReversed()) {
+    const globs = codeownersPatternToGlobs(line.pattern)
+    // `dot: true` so `*` matches dot-prefixed names (CODEOWNERS does
+    // not treat them specially).
+    if (picomatch.isMatch(path, globs, { dot: true })) {
+      return line.owners
+    }
+  }
+  return null
+}
+
+/**
+ * Union of the owners of all `files`, in the order they are first
+ * encountered.
+ */
+function codeownersForFiles(files, parsedLines) {
+  const owners = new Set()
+  for (const file of files) {
+    for (const owner of codeownersFor(file, parsedLines) || []) {
+      owners.add(owner)
+    }
+  }
+  return [...owners]
+}
+
 /**
  * The existing line that covers a `required` pattern, or `null`.
  * CODEOWNERS uses the LAST matching pattern, per
@@ -48058,6 +48116,116 @@ async function requestReviewersOneByOne(
   return requested
 }
 
+// Open Dependabot PRs nobody has been asked to review. Reviewers drop
+// off `requested_reviewers` once they review, so an empty list alone
+// does not mean nobody was ever asked; check for reviews too.
+async function findUnreviewedDependabotPrs(octokit, { org, repo, openPrs }) {
+  const candidates = openPrs.filter(
+    (pr) =>
+      pr.user?.login === 'dependabot[bot]' &&
+      (pr.requested_reviewers || []).length === 0 &&
+      (pr.requested_teams || []).length === 0
+  )
+  const unreviewed = []
+  for (const pr of candidates) {
+    const reviews = await octokit.paginate(octokit.rest.pulls.listReviews, {
+      owner: org,
+      repo,
+      pull_number: pr.number,
+      per_page: 100,
+    })
+    if (reviews.length === 0) unreviewed.push(pr)
+  }
+  return unreviewed
+}
+
+// Files a PR touches, including the old names of renamed files.
+async function listPrFiles(octokit, { org, repo, pr }) {
+  const changedFiles = await octokit.paginate(octokit.rest.pulls.listFiles, {
+    owner: org,
+    repo,
+    pull_number: pr.number,
+    per_page: 100,
+  })
+  return changedFiles.flatMap((f) =>
+    [f.filename, f.previous_filename].filter(Boolean)
+  )
+}
+
+/**
+ * Dependabot PRs opened before CODEOWNERS covered their files never
+ * get reviewers: GitHub only applies CODEOWNERS when a PR is opened or
+ * pushed to. Find such PRs, work out who the current CODEOWNERS would
+ * name for the files they touch and request those reviewers. Returns
+ * one result per affected PR. `ctx` is the per-repo audit context.
+ */
+async function checkDependabotReviewers(
+  ctx,
+  { openPrs, parsedCodeowners }
+) {
+  const { octokit, org, repo, repoSlug, dryRun, log } = ctx
+  const results = []
+  const prs = await findUnreviewedDependabotPrs(octokit, {
+    org,
+    repo,
+    openPrs,
+  })
+
+  for (const pr of prs) {
+    const files = await listPrFiles(octokit, { org, repo, pr })
+    const ownerTokens = codeownersForFiles(files, parsedCodeowners).filter(
+      // Emails are valid owners but cannot be requested as reviewers.
+      (tok) => tok.startsWith('@')
+    )
+    const { users, teams } = splitReviewers(ownerTokens)
+    const wanted = [
+      ...users.map((u) => `@${u}`),
+      ...teams.map((t) => `@${org}/${t}`),
+    ]
+
+    if (wanted.length === 0) {
+      log.warning(
+        `Dependabot PR ${pr.html_url} has no reviewers and CODEOWNERS names nobody for: ${files.join(', ')}`
+      )
+      results.push({
+        repo: repoSlug,
+        action: 'dependabot-no-reviewers',
+        prUrl: pr.html_url,
+        files,
+      })
+    } else if (dryRun) {
+      log.info(
+        `Dry run, would request ${wanted.join(', ')} on Dependabot PR ${pr.html_url}`
+      )
+      results.push({
+        repo: repoSlug,
+        action: 'dependabot-dry-run',
+        prUrl: pr.html_url,
+        reviewers: wanted,
+      })
+    } else {
+      const reviewers = await requestReviewersOneByOne(octokit, {
+        org,
+        repo,
+        pullNumber: pr.number,
+        users,
+        teams,
+        log,
+      })
+      log.info(
+        `requested ${reviewers.join(', ') || 'nobody'} on Dependabot PR ${pr.html_url}`
+      )
+      results.push({
+        repo: repoSlug,
+        action: 'dependabot-requested-reviewers',
+        prUrl: pr.html_url,
+        reviewers,
+      })
+    }
+  }
+  return results
+}
+
 ;// CONCATENATED MODULE: ./lib/audit-repo.mjs
 
 
@@ -48238,22 +48406,42 @@ async function auditRepo(runCtx, repoMeta) {
   const { octokit, org, repo, repoSlug, defaultBranch, dryRun, template, log } =
     ctx
 
-  // 1. Short-circuit if hygiene PR already open
   const openPrs = await octokit.paginate(octokit.rest.pulls.list, {
     owner: org,
     repo,
     state: 'open',
     per_page: 100,
   })
+  const existingCodeowners = await tryGetContent(octokit, {
+    owner: org,
+    repo,
+    // https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners#codeowners-file-location
+    paths: ['.github/CODEOWNERS', 'CODEOWNERS', 'docs/CODEOWNERS'],
+    ref: defaultBranch,
+  })
+  const parsedLines = parseCodeowners(
+    existingCodeowners ? existingCodeowners.content : ''
+  )
+
+  // 1. Reviewer-less Dependabot PRs
+  const results = await checkDependabotReviewers(ctx, {
+    openPrs,
+    parsedCodeowners: parsedLines,
+  })
+
+  // 2. Short-circuit if hygiene PR already open
   const existingHygienePrs = findExistingHygienePrs(openPrs, repoSlug)
   if (existingHygienePrs.length > 0) {
     return {
-      results: existingHygienePrs.map((pr) => skippedResult(pr, ctx)),
+      results: [
+        ...results,
+        ...existingHygienePrs.map((pr) => skippedResult(pr, ctx)),
+      ],
       summary: null,
     }
   }
 
-  // 2. Detect ecosystems & required CODEOWNERS patterns
+  // 3. Detect ecosystems & required CODEOWNERS patterns
   const { headSha, paths } = await fetchBranchTree(octokit, {
     org,
     repo,
@@ -48262,7 +48450,7 @@ async function auditRepo(runCtx, repoMeta) {
   })
   const { detected, requiredCodeowners } = detectEcosystems(paths)
 
-  // 3. Check existing dependabot config
+  // 4. Check existing dependabot config
   const existingDependabot = await tryGetContent(octokit, {
     owner: org,
     repo,
@@ -48276,27 +48464,20 @@ async function auditRepo(runCtx, repoMeta) {
     log,
   })
 
-  // 4. Check CODEOWNERS
-  const existingCodeowners = await tryGetContent(octokit, {
-    owner: org,
-    repo,
-    // https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners#codeowners-file-location
-    paths: ['.github/CODEOWNERS', 'CODEOWNERS', 'docs/CODEOWNERS'],
-    ref: defaultBranch,
-  })
-  const parsedLines = parseCodeowners(
-    existingCodeowners ? existingCodeowners.content : ''
-  )
+  // 5. Check CODEOWNERS
   const missingCodeowners = requiredCodeowners.filter(
     (r) => !findOwningLine(r, parsedLines)
   )
 
   if (!dependabotChange && missingCodeowners.length === 0) {
     log.info('nothing to do')
-    return { results: [{ repo: repoSlug, action: 'ok' }], summary: null }
+    return {
+      results: [...results, { repo: repoSlug, action: 'ok' }],
+      summary: null,
+    }
   }
 
-  // 5. Decide reviewers / OWNER substitution
+  // 6. Decide reviewers / OWNER substitution
   const { reviewerTokens, reviewerSource, ownerSubstitute } =
     await chooseReviewers(octokit, {
       org,
@@ -48311,7 +48492,7 @@ async function auditRepo(runCtx, repoMeta) {
     ...reviewerTeams.map((t) => `@${org}/${t}`),
   ]
 
-  // 6. Build CODEOWNERS addition
+  // 7. Build CODEOWNERS addition
   const codeownersChange =
     missingCodeowners.length > 0
       ? buildCodeownersAddition({
@@ -48324,7 +48505,7 @@ async function auditRepo(runCtx, repoMeta) {
       : null
   const hasUnresolvedOwner = Boolean(codeownersChange) && !ownerSubstitute
 
-  // 7. Compose the PR
+  // 8. Compose the PR
   const plan = {
     files: planFiles([
       [dependabotChange, existingDependabot, 'yaml'],
@@ -48339,11 +48520,12 @@ async function auditRepo(runCtx, repoMeta) {
   }
   plan.prBody = composePrBody(plan)
 
-  // 8. Dry run → summary; otherwise create branch + commits + PR
+  // 9. Dry run → summary; otherwise create branch + commits + PR
   if (dryRun) {
     log.info('Dry run, skipping PR creation')
     return {
       results: [
+        ...results,
         {
           repo: repoSlug,
           action: 'dry-run',
@@ -48359,6 +48541,7 @@ async function auditRepo(runCtx, repoMeta) {
   log.info(`opened ${pr.html_url}`)
   return {
     results: [
+      ...results,
       {
         repo: repoSlug,
         action: 'opened-pr',
@@ -48479,6 +48662,15 @@ function report(results) {
   const failed = results.filter((r) => r.action === 'failed')
   const dryRuns = results.filter((r) => r.action === 'dry-run')
   const preexisting = results.filter((r) => r.action === 'skipped-existing-pr')
+  const dependabotRequested = results.filter(
+    (r) => r.action === 'dependabot-requested-reviewers'
+  )
+  const dependabotDryRuns = results.filter(
+    (r) => r.action === 'dependabot-dry-run'
+  )
+  const dependabotUnowned = results.filter(
+    (r) => r.action === 'dependabot-no-reviewers'
+  )
 
   const reviewerSummary = (r) =>
     r.reviewers && r.reviewers.length > 0
@@ -48490,12 +48682,20 @@ function report(results) {
   const preexistingItems = preexisting.map(prItem)
   const dryRunItems = dryRuns.map((r) => `${r.repo} — ${reviewerSummary(r)}`)
   const failedItems = failed.map((r) => `${r.repo} — ${r.error}`)
+  const dependabotItems = dependabotRequested.map(prItem)
+  const dependabotDryRunItems = dependabotDryRuns.map(prItem)
+  const dependabotUnownedItems = dependabotUnowned.map(
+    (r) => `<${r.prUrl}> — ${r.files.map((f) => `\`${f}\``).join(', ')}`
+  )
 
   const HEADINGS = {
     opened: '*Opened PRs:*',
     preexisting: '*Pre-existing PRs:*',
     dryRun: '*Would open PRs (dry run):*',
     failed: '*Failed repos:*',
+    dependabot: '*Requested reviewers on Dependabot PRs:*',
+    dependabotDryRun: '*Would request reviewers on Dependabot PRs (dry run):*',
+    dependabotUnowned: '*Dependabot PRs with no reviewers and no code owner:*',
   }
 
   // The job summary lists everything.
@@ -48505,14 +48705,18 @@ function report(results) {
     ...listIfAny(HEADINGS.opened, openedItems),
     ...listIfAny(HEADINGS.preexisting, preexistingItems),
     ...listIfAny(HEADINGS.dryRun, dryRunItems),
+    ...listIfAny(HEADINGS.dependabot, dependabotItems),
+    ...listIfAny(HEADINGS.dependabotDryRun, dependabotDryRunItems),
+    ...listIfAny(HEADINGS.dependabotUnowned, dependabotUnownedItems),
     ...listIfAny(HEADINGS.failed, failedItems),
   ]
 
   // Slack gets the same lists, fitted into one section block. Sections
   // are filled in order of importance — failures, then opened, then
-  // pre-existing — and shown in a different order, with the failures
-  // first and the longest list last. Dry runs are left out: the workflow
-  // does not notify on a dry run.
+  // Dependabot reviewers, then pre-existing — and shown in a different
+  // order, with the failures first and the longest list last. Dry runs
+  // and reviewer-less Dependabot PRs are left out: the workflow does
+  // not notify on a dry run, and the latter only warn in the log.
   const runUrl = [
     process.env.GITHUB_SERVER_URL,
     process.env.GITHUB_REPOSITORY,
@@ -48523,18 +48727,23 @@ function report(results) {
     sections: {
       failed: { heading: HEADINGS.failed, items: failedItems },
       opened: { heading: HEADINGS.opened, items: openedItems },
+      dependabot: { heading: HEADINGS.dependabot, items: dependabotItems },
       preexisting: { heading: HEADINGS.preexisting, items: preexistingItems },
     },
     fillOrder: [
       { key: 'failed', partial: true },
       { key: 'opened', partial: true },
+      { key: 'dependabot', partial: true },
       // A partial list of the least important PRs would be noise.
       { key: 'preexisting', partial: false },
     ],
-    showOrder: ['failed', 'preexisting', 'opened'],
+    showOrder: ['failed', 'preexisting', 'dependabot', 'opened'],
     runUrl,
   })
-  outputs.should_notify = opened.length + failed.length > 0 ? 'true' : 'false'
+  outputs.should_notify =
+    opened.length + failed.length + dependabotRequested.length > 0
+      ? 'true'
+      : 'false'
   outputs.slack_status = failed.length > 0 ? 'failure' : 'warning'
 
   const summary = [
@@ -48659,7 +48868,7 @@ async function main() {
   if (dryRun) {
     await summary_summary
       .addRaw(
-        '> [!NOTE]\n> This is a **dry run**. No pull requests will be created. Will show info about ones that would, here in the summary.\n\n'
+        '> [!NOTE]\n> This is a **dry run**. No pull requests will be created and no reviewers will be requested. Will show info about ones that would, here in the summary.\n\n'
       )
       .write()
   }

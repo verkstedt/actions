@@ -1,4 +1,4 @@
-import { findCoveringLine } from './codeowners.mjs'
+import { findCoveringLine, codeownersForFiles } from './codeowners.mjs'
 
 const KNOWN_BOTS = new Set(['dependabot', 'github-actions', 'renovate'])
 
@@ -149,4 +149,114 @@ export async function requestReviewersOneByOne(
     }
   }
   return requested
+}
+
+// Open Dependabot PRs nobody has been asked to review. Reviewers drop
+// off `requested_reviewers` once they review, so an empty list alone
+// does not mean nobody was ever asked; check for reviews too.
+async function findUnreviewedDependabotPrs(octokit, { org, repo, openPrs }) {
+  const candidates = openPrs.filter(
+    (pr) =>
+      pr.user?.login === 'dependabot[bot]' &&
+      (pr.requested_reviewers || []).length === 0 &&
+      (pr.requested_teams || []).length === 0
+  )
+  const unreviewed = []
+  for (const pr of candidates) {
+    const reviews = await octokit.paginate(octokit.rest.pulls.listReviews, {
+      owner: org,
+      repo,
+      pull_number: pr.number,
+      per_page: 100,
+    })
+    if (reviews.length === 0) unreviewed.push(pr)
+  }
+  return unreviewed
+}
+
+// Files a PR touches, including the old names of renamed files.
+async function listPrFiles(octokit, { org, repo, pr }) {
+  const changedFiles = await octokit.paginate(octokit.rest.pulls.listFiles, {
+    owner: org,
+    repo,
+    pull_number: pr.number,
+    per_page: 100,
+  })
+  return changedFiles.flatMap((f) =>
+    [f.filename, f.previous_filename].filter(Boolean)
+  )
+}
+
+/**
+ * Dependabot PRs opened before CODEOWNERS covered their files never
+ * get reviewers: GitHub only applies CODEOWNERS when a PR is opened or
+ * pushed to. Find such PRs, work out who the current CODEOWNERS would
+ * name for the files they touch and request those reviewers. Returns
+ * one result per affected PR. `ctx` is the per-repo audit context.
+ */
+export async function checkDependabotReviewers(
+  ctx,
+  { openPrs, parsedCodeowners }
+) {
+  const { octokit, org, repo, repoSlug, dryRun, log } = ctx
+  const results = []
+  const prs = await findUnreviewedDependabotPrs(octokit, {
+    org,
+    repo,
+    openPrs,
+  })
+
+  for (const pr of prs) {
+    const files = await listPrFiles(octokit, { org, repo, pr })
+    const ownerTokens = codeownersForFiles(files, parsedCodeowners).filter(
+      // Emails are valid owners but cannot be requested as reviewers.
+      (tok) => tok.startsWith('@')
+    )
+    const { users, teams } = splitReviewers(ownerTokens)
+    const wanted = [
+      ...users.map((u) => `@${u}`),
+      ...teams.map((t) => `@${org}/${t}`),
+    ]
+
+    if (wanted.length === 0) {
+      log.warning(
+        `Dependabot PR ${pr.html_url} has no reviewers and CODEOWNERS names nobody for: ${files.join(', ')}`
+      )
+      results.push({
+        repo: repoSlug,
+        action: 'dependabot-no-reviewers',
+        prUrl: pr.html_url,
+        files,
+      })
+    } else if (dryRun) {
+      log.info(
+        `Dry run, would request ${wanted.join(', ')} on Dependabot PR ${pr.html_url}`
+      )
+      results.push({
+        repo: repoSlug,
+        action: 'dependabot-dry-run',
+        prUrl: pr.html_url,
+        reviewers: wanted,
+      })
+    } else {
+      const reviewers = await requestReviewersOneByOne(octokit, {
+        org,
+        repo,
+        pullNumber: pr.number,
+        users,
+        teams,
+        log,
+      })
+      log.info(
+        `requested ${reviewers.join(', ') || 'nobody'} on Dependabot PR ${pr.html_url}`
+      )
+      results.push({
+        repo: repoSlug,
+        action: 'dependabot-requested-reviewers',
+        prUrl: pr.html_url,
+        reviewers,
+      })
+    }
+  }
+  return results
 }

@@ -14,6 +14,7 @@ import {
   chooseReviewers,
   splitReviewers,
   requestReviewersOneByOne,
+  checkDependabotReviewers,
 } from './reviewers.mjs'
 
 const WORKFLOW_LINK =
@@ -190,22 +191,42 @@ export async function auditRepo(runCtx, repoMeta) {
   const { octokit, org, repo, repoSlug, defaultBranch, dryRun, template, log } =
     ctx
 
-  // 1. Short-circuit if hygiene PR already open
   const openPrs = await octokit.paginate(octokit.rest.pulls.list, {
     owner: org,
     repo,
     state: 'open',
     per_page: 100,
   })
+  const existingCodeowners = await tryGetContent(octokit, {
+    owner: org,
+    repo,
+    // https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners#codeowners-file-location
+    paths: ['.github/CODEOWNERS', 'CODEOWNERS', 'docs/CODEOWNERS'],
+    ref: defaultBranch,
+  })
+  const parsedLines = parseCodeowners(
+    existingCodeowners ? existingCodeowners.content : ''
+  )
+
+  // 1. Reviewer-less Dependabot PRs
+  const results = await checkDependabotReviewers(ctx, {
+    openPrs,
+    parsedCodeowners: parsedLines,
+  })
+
+  // 2. Short-circuit if hygiene PR already open
   const existingHygienePrs = findExistingHygienePrs(openPrs, repoSlug)
   if (existingHygienePrs.length > 0) {
     return {
-      results: existingHygienePrs.map((pr) => skippedResult(pr, ctx)),
+      results: [
+        ...results,
+        ...existingHygienePrs.map((pr) => skippedResult(pr, ctx)),
+      ],
       summary: null,
     }
   }
 
-  // 2. Detect ecosystems & required CODEOWNERS patterns
+  // 3. Detect ecosystems & required CODEOWNERS patterns
   const { headSha, paths } = await fetchBranchTree(octokit, {
     org,
     repo,
@@ -214,7 +235,7 @@ export async function auditRepo(runCtx, repoMeta) {
   })
   const { detected, requiredCodeowners } = detectEcosystems(paths)
 
-  // 3. Check existing dependabot config
+  // 4. Check existing dependabot config
   const existingDependabot = await tryGetContent(octokit, {
     owner: org,
     repo,
@@ -228,27 +249,20 @@ export async function auditRepo(runCtx, repoMeta) {
     log,
   })
 
-  // 4. Check CODEOWNERS
-  const existingCodeowners = await tryGetContent(octokit, {
-    owner: org,
-    repo,
-    // https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners#codeowners-file-location
-    paths: ['.github/CODEOWNERS', 'CODEOWNERS', 'docs/CODEOWNERS'],
-    ref: defaultBranch,
-  })
-  const parsedLines = parseCodeowners(
-    existingCodeowners ? existingCodeowners.content : ''
-  )
+  // 5. Check CODEOWNERS
   const missingCodeowners = requiredCodeowners.filter(
     (r) => !findOwningLine(r, parsedLines)
   )
 
   if (!dependabotChange && missingCodeowners.length === 0) {
     log.info('nothing to do')
-    return { results: [{ repo: repoSlug, action: 'ok' }], summary: null }
+    return {
+      results: [...results, { repo: repoSlug, action: 'ok' }],
+      summary: null,
+    }
   }
 
-  // 5. Decide reviewers / OWNER substitution
+  // 6. Decide reviewers / OWNER substitution
   const { reviewerTokens, reviewerSource, ownerSubstitute } =
     await chooseReviewers(octokit, {
       org,
@@ -263,7 +277,7 @@ export async function auditRepo(runCtx, repoMeta) {
     ...reviewerTeams.map((t) => `@${org}/${t}`),
   ]
 
-  // 6. Build CODEOWNERS addition
+  // 7. Build CODEOWNERS addition
   const codeownersChange =
     missingCodeowners.length > 0
       ? buildCodeownersAddition({
@@ -276,7 +290,7 @@ export async function auditRepo(runCtx, repoMeta) {
       : null
   const hasUnresolvedOwner = Boolean(codeownersChange) && !ownerSubstitute
 
-  // 7. Compose the PR
+  // 8. Compose the PR
   const plan = {
     files: planFiles([
       [dependabotChange, existingDependabot, 'yaml'],
@@ -291,11 +305,12 @@ export async function auditRepo(runCtx, repoMeta) {
   }
   plan.prBody = composePrBody(plan)
 
-  // 8. Dry run → summary; otherwise create branch + commits + PR
+  // 9. Dry run → summary; otherwise create branch + commits + PR
   if (dryRun) {
     log.info('Dry run, skipping PR creation')
     return {
       results: [
+        ...results,
         {
           repo: repoSlug,
           action: 'dry-run',
@@ -311,6 +326,7 @@ export async function auditRepo(runCtx, repoMeta) {
   log.info(`opened ${pr.html_url}`)
   return {
     results: [
+      ...results,
       {
         repo: repoSlug,
         action: 'opened-pr',
