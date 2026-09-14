@@ -19,6 +19,11 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
 ```
 
+Each reply carries a hidden `<!-- verkstedt/ref-comment-in-commit/<sha> -->`
+marker. Before replying, the thread is checked for that marker, so a commit
+that gets pushed again — a force–push, or the same commit landing in every
+branch of a PR stack — is only ever referenced once per thread.
+
 ## Building
 
 > [!NOTE]
