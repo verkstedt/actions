@@ -1,204 +1,96 @@
 import * as core from '@actions/core'
 import * as actionsGithub from '@actions/github'
-import yaml from 'yaml'
 import picomatch from 'picomatch'
 
-const WORKFLOW_LINK =
-  'https://github.com/verkstedt/actions/blob/HEAD/repo-hygiene/'
-const BRANCH_PREFIX = 'chore/repo-hygiene/'
-const OWNER_PLACEHOLDER = '@OWNER'
-const KNOWN_BOTS = new Set(['dependabot', 'github-actions', 'renovate'])
+import { auditRepo } from './lib/audit-repo.mjs'
+import { loadDependabotTemplate } from './lib/dependabot-config.mjs'
+import { createLogger } from './lib/log.mjs'
+import { report } from './lib/report.mjs'
 
 /**
- * Slack renders the whole summary inside a single Block Kit `section`
- * block, whose text is capped at 3000 characters, per
- * https://docs.slack.dev/reference/block-kit/blocks/section-block
- * About 400 of those go to the header `notify-status` composes around
- * our text, which we cannot measure from here.
+ * Org repos to audit: sources only, skipping archived, disabled and
+ * empty ones, narrowed by `reposFilter` globs when given. Returns
+ * `null` after failing the run if a filter matched nothing.
  */
-const SLACK_MAX_CHARS = 2600
+async function listTargetRepos(octokit, { org, reposFilter }) {
+  const allRepos = await octokit.paginate(octokit.rest.repos.listForOrg, {
+    org,
+    type: 'sources',
+    per_page: 100,
+  })
 
-// --- Helpers ---
+  let targets = allRepos.filter(
+    (r) => !r.archived && !r.disabled && (r.size || 0) > 0
+  )
 
-function normalisePattern(p) {
-  let s = String(p || '')
-  if (s.startsWith('**/')) s = s.slice(3)
-  if (s.startsWith('/')) s = s.slice(1)
-  if (s.endsWith('/')) s = s.slice(0, -1)
-  return s
+  if (reposFilter.length === 0) return targets
+
+  await core.summary
+    .addRaw(
+      [
+        'Running only for:',
+        '',
+        ...reposFilter.map((f) => `- \`${f}\``),
+        '',
+      ].join('\n')
+    )
+    .write()
+
+  // Each entry is a picomatch glob; literal names match exactly (no
+  // wildcards). Lets you pass e.g. `demo-*`. Walk every target once so
+  // we discover all unmatched patterns before failing — surface them
+  // all at once.
+  const matchers = reposFilter.map((pat) => ({
+    pattern: pat,
+    isMatch: picomatch(pat, { dot: true }),
+  }))
+  const hitPatterns = new Set()
+  targets = targets.filter((r) => {
+    const matched = matchers.filter((m) => m.isMatch(r.name))
+    matched.forEach((m) => hitPatterns.add(m.pattern))
+    return matched.length > 0
+  })
+  const missing = reposFilter.filter((p) => !hitPatterns.has(p))
+  for (const pat of missing) {
+    core.error(
+      `Requested repo pattern "${pat}" matched no repos in ${org} (after filtering archived/disabled/fork/empty).`
+    )
+  }
+  if (missing.length > 0) {
+    core.setFailed(
+      `Aborting: ${missing.length} requested repo pattern(s) matched nothing.`
+    )
+    return null
+  }
+  return targets
 }
 
-function parseCodeowners(text) {
-  const out = []
-  const lines = String(text || '').split('\n')
-  for (let i = 0; i < lines.length; i += 1) {
-    const stripped = lines[i].replace(/#.*$/, '').trim()
-    if (stripped) {
-      const [pattern, ...owners] = stripped.split(/\s+/)
-      out.push({ pattern, owners, rawIndex: i })
-    }
-  }
-  return out
-}
-
-function codeownersPatternCovers(pat, reqNorm, reqIsDir) {
-  if (pat === reqNorm) return true
-  if (pat === '*' || pat === '.' || pat === '') return true
-  if (reqNorm.startsWith(`${pat}/`)) return true
-  // A required directory (e.g. `/.github/workflows/`) is covered by
-  // existing entries like `/.github/workflows/*` or `…/**`.
-  if (reqIsDir && (pat === `${reqNorm}/*` || pat === `${reqNorm}/**`)) {
-    return true
-  }
-  // Glob support via picomatch — lets entries like
-  // `docker-compose.*` cover `docker-compose.yml` /
-  // `docker-compose.yaml`. `dot: true` so `*` matches
-  // dot-prefixed names (CODEOWNERS doesn't treat them
-  // specially). CODEOWNERS also supports `?` and `[…]`.
-  return /[*?[\]]/.test(pat) && picomatch.isMatch(reqNorm, pat, { dot: true })
-}
-
-function findCoveringLine(required, existingLines) {
-  // CODEOWNERS uses the LAST matching pattern, per
-  // https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners#codeowners-syntax
-  const reqNorm = normalisePattern(required)
-  const reqIsDir = String(required || '').endsWith('/')
-  for (const line of existingLines.toReversed()) {
-    if (
-      codeownersPatternCovers(normalisePattern(line.pattern), reqNorm, reqIsDir)
-    ) {
-      return line
-    }
-  }
-  return null
-}
-
-function splitReviewers(ownerTokens) {
-  const users = new Set()
-  const teams = new Set()
-  for (const tok of ownerTokens) {
-    const login = String(tok).replace(/^@/, '')
-    if (login) {
-      if (login.includes('/')) {
-        const [, team] = login.split('/')
-        if (team) teams.add(team)
-      } else {
-        users.add(login)
-      }
-    }
-  }
-  return {
-    users: [...users].slice(0, 15),
-    teams: [...teams].slice(0, 15),
-  }
-}
-
-async function tryGetContent(octokit, { paths, ...params }) {
-  for (const path of paths) {
+/**
+ * Audit every repo in `targets`, one after the other. A repo whose
+ * audit throws becomes a `failed` result instead of ending the run.
+ * Dry-run summaries are appended to the job summary as they come.
+ */
+async function auditRepos(ctx, targets) {
+  const results = []
+  let number = 0
+  for (const repoMeta of targets) {
+    number += 1
+    const repoSlug = `${ctx.org}/${repoMeta.name}`
+    const log = createLogger(`${number}/${targets.length}. ${repoSlug}:`)
     try {
-      const res = await octokit.rest.repos.getContent({ ...params, path })
-      if (!Array.isArray(res.data)) {
-        return {
-          sha: res.data.sha,
-          path: res.data.path,
-          content: Buffer.from(res.data.content, 'base64').toString('utf8'),
-        }
+      const audit = await auditRepo({ ...ctx, log }, repoMeta)
+      results.push(...audit.results)
+      if (audit.summary) {
+        await core.summary.addRaw(audit.summary).write()
       }
     } catch (e) {
-      if (e.status !== 404) {
-        throw e
-      }
+      log.error(e.message)
+      results.push({ repo: repoSlug, action: 'failed', error: e.message })
     }
   }
-
-  return null
+  return results
 }
 
-// Pick up the first quoted string scalar's style so new scalars we
-// add match what's already there. Plain/block scalars are ignored —
-// they don't tell us a quoting preference.
-const QUOTED_TYPES = ['QUOTE_SINGLE', 'QUOTE_DOUBLE']
-function inferStringType(doc) {
-  let found = 'QUOTE_SINGLE'
-  yaml.visit(doc, {
-    Scalar(_, node) {
-      if (QUOTED_TYPES.includes(node.type)) {
-        found = node.type
-        return yaml.visit.BREAK
-      }
-      return undefined
-    },
-  })
-  return found
-}
-
-function stringifyDependabotDoc(doc) {
-  return doc.toString({
-    defaultKeyType: 'PLAIN',
-    defaultStringType: inferStringType(doc),
-    lineWidth: 120,
-    aliasDuplicateObjects: false,
-  })
-}
-
-// Drop `.type` from every string scalar in a node (or document) so
-// `defaultStringType` decides their quoting on serialise. Use this on
-// cloned template entries before splicing them into a host doc that
-// uses a different quote style.
-function clearScalarQuoting(node) {
-  yaml.visit(node, {
-    Scalar(_, scalar) {
-      if (typeof scalar.value === 'string') {
-        // eslint-disable-next-line no-param-reassign -- mutating the visited node is the point
-        scalar.type = undefined
-      }
-    },
-  })
-}
-
-// The newline is included, so section costs add up to the length of the
-// joined text.
-function linesCost(lines) {
-  return lines.reduce((sum, line) => sum + line.length + 1, 0)
-}
-
-function renderList(heading, items) {
-  return ['', heading, ...items.map((item, idx) => `${idx + 1}. ${item}`)]
-}
-
-// One line standing in for a section we have no room to list.
-function countLabel({ heading, items }) {
-  return ['', `${heading} ${items.length} — see the run summary`]
-}
-
-/**
- * As many of a section’s items as `budget` allows, ending in a note
- * counting the rest. A section that does not fit at all — or one asked
- * not to list `partial`ly, where half a list would be noise — collapses
- * to its count label instead.
- */
-function fillSection(section, budget, { partial }) {
-  const { heading, items } = section
-  const noteFor = (left) => `… and ${left} more`
-  let kept = []
-  for (const item of items) {
-    const next = [...kept, item]
-    const left = items.length - next.length
-    const lines = [
-      ...renderList(heading, next),
-      ...(left > 0 ? [noteFor(left)] : []),
-    ]
-    if (linesCost(lines) > budget) break
-    kept = next
-  }
-  if (kept.length === items.length) return renderList(heading, items)
-  if (!partial || kept.length === 0) return countLabel(section)
-  return [...renderList(heading, kept), noteFor(items.length - kept.length)]
-}
-
-// --- Main ---
-
-// eslint-disable-next-line complexity -- TODO Refactor
 async function main() {
   const token = core.getInput('github-token', { required: true })
   const octokit = actionsGithub.getOctokit(token)
@@ -219,8 +111,7 @@ async function main() {
       .write()
   }
 
-  // --- Verify App has access to all org repos ---
-
+  // Verify App has access to all org repos
   const inst = await octokit.request('GET /installation/repositories', {
     per_page: 1,
   })
@@ -231,808 +122,23 @@ async function main() {
     return
   }
 
-  // --- Fetch dependabot template once ---
+  const template = await loadDependabotTemplate(octokit)
 
-  const templateRes = await octokit.rest.repos.getContent({
-    owner: 'verkstedt',
-    repo: '.github',
-    path: 'templates/dependabot.yaml',
-  })
-  const templateText = Buffer.from(templateRes.data.content, 'base64').toString(
-    'utf8'
-  )
-  const templateDoc = yaml.parseDocument(templateText)
-  const templateUpdates = templateDoc.get('updates')
-  const templateEntryByEcosystem = new Map()
-  if (yaml.isSeq(templateUpdates)) {
-    for (const item of templateUpdates.items) {
-      templateEntryByEcosystem.set(item.get('package-ecosystem'), item)
-    }
-  }
-
-  // --- List target repos ---
-
-  const allRepos = await octokit.paginate(octokit.rest.repos.listForOrg, {
-    org,
-    type: 'sources',
-    per_page: 100,
-  })
-
-  let targets = allRepos.filter(
-    (r) => !r.archived && !r.disabled && (r.size || 0) > 0
-  )
-
-  if (reposFilter.length > 0) {
-    await core.summary
-      .addRaw(
-        [
-          'Running only for:',
-          '',
-          ...reposFilter.map((f) => `- \`${f}\``),
-          '',
-        ].join('\n')
-      )
-      .write()
-
-    // Each entry is a picomatch glob; literal names match exactly (no
-    // wildcards). Lets you pass e.g. `demo-*`. Walk every target once
-    // so we discover all unmatched patterns before failing — surface
-    // them all at once.
-    const matchers = reposFilter.map((pat) => ({
-      pattern: pat,
-      isMatch: picomatch(pat, { dot: true }),
-    }))
-    const hitPatterns = new Set()
-    targets = targets.filter((r) => {
-      const matched = matchers.filter((m) => m.isMatch(r.name))
-      matched.forEach((m) => hitPatterns.add(m.pattern))
-      return matched.length > 0
-    })
-    const missing = reposFilter.filter((p) => !hitPatterns.has(p))
-    for (const pat of missing) {
-      core.error(
-        `Requested repo pattern "${pat}" matched no repos in ${org} (after filtering archived/disabled/fork/empty).`
-      )
-    }
-    if (missing.length > 0) {
-      core.setFailed(
-        `Aborting: ${missing.length} requested repo pattern(s) matched nothing.`
-      )
-      return
-    }
-  }
+  const targets = await listTargetRepos(octokit, { org, reposFilter })
+  if (!targets) return
 
   core.info(
     `Auditing ${targets.length} repo(s) in ${org}${dryRun ? ' (dry run)' : ''}`
   )
 
-  // --- Per repo ---
+  const ctx = { octokit, org, dryRun, template, runId: context.runId }
+  const results = await auditRepos(ctx, targets)
 
-  const results = []
-
-  const totalCount = targets.length
-  let number = 0
-  for (const repoMeta of targets) {
-    number += 1
-    const repo = repoMeta.name
-    const repoSlug = `${org}/${repo}`
-    const logPrefix = `${number}/${totalCount}. ${repoSlug}:`
-    try {
-      // 1. Short-circuit if hygiene PR already open
-      const openPrs = await octokit.paginate(octokit.rest.pulls.list, {
-        owner: org,
-        repo,
-        state: 'open',
-        per_page: 100,
-      })
-      const existingHygienePrs = openPrs.filter(
-        (pr) =>
-          pr.user?.type === 'Bot' &&
-          pr.head.ref.startsWith(BRANCH_PREFIX) &&
-          pr.head.repo?.full_name?.toLowerCase() === repoSlug.toLowerCase()
-      )
-      if (existingHygienePrs.length > 0) {
-        for (const pr of existingHygienePrs) {
-          const reviewers = [
-            ...(pr.requested_reviewers || []).map((u) => `@${u.login}`),
-            ...(pr.requested_teams || []).map((t) => `@${org}/${t.slug}`),
-          ]
-          core.info(
-            `${logPrefix} existing hygiene PR open (${pr.html_url}), skipping`
-          )
-          results.push({
-            repo: repoSlug,
-            action: 'skipped-existing-pr',
-            prUrl: pr.html_url,
-            reviewers,
-          })
-        }
-        // eslint-disable-next-line no-continue -- TODO Refactor
-        continue
-      }
-
-      // 2. Detect ecosystems & required CODEOWNERS patterns
-      const defaultBranch = repoMeta.default_branch
-      const refData = await octokit.rest.git.getRef({
-        owner: org,
-        repo,
-        ref: `heads/${defaultBranch}`,
-      })
-      const headSha = refData.data.object.sha
-      const commitData = await octokit.rest.git.getCommit({
-        owner: org,
-        repo,
-        commit_sha: headSha,
-      })
-      const treeSha = commitData.data.tree.sha
-      const treeData = await octokit.rest.git.getTree({
-        owner: org,
-        repo,
-        tree_sha: treeSha,
-        recursive: '1',
-      })
-      if (treeData.data.truncated) {
-        core.warning(
-          `${logPrefix} tree response truncated; detection may be incomplete`
-        )
-      }
-      const paths = (treeData.data.tree || []).map((e) => `/${e.path}`)
-
-      const hasFile = (predicate) => paths.some(predicate)
-
-      const detected = new Set()
-      const requiredCodeowners = []
-
-      if (hasFile((p) => p.endsWith('/package.json'))) {
-        detected.add('npm')
-        if (hasFile((p) => p.endsWith('/package-lock.json'))) {
-          requiredCodeowners.push('package-lock.json')
-        }
-        if (hasFile((p) => p.endsWith('/yarn.lock'))) {
-          requiredCodeowners.push('yarn.lock')
-        }
-        if (hasFile((p) => p.endsWith('/pnpm-lock.yaml'))) {
-          requiredCodeowners.push('pnpm-lock.yaml')
-        }
-      }
-      if (hasFile((p) => /\/Dockerfile$/.test(p) || /\.Dockerfile$/.test(p))) {
-        detected.add('docker')
-        requiredCodeowners.push('Dockerfile')
-      }
-      const composePaths = paths.filter((p) =>
-        /\/docker-compose[^/]*\.ya?ml$/.test(p)
-      )
-      if (composePaths.length > 0) {
-        detected.add('docker-compose')
-        const names = new Set(composePaths.map((p) => p.split('/').pop()))
-        for (const n of [...names].sort()) {
-          requiredCodeowners.push(n)
-        }
-      }
-      if (paths.includes('/.devcontainer/devcontainer.json')) {
-        detected.add('devcontainers')
-        requiredCodeowners.push('/.devcontainer/devcontainer.json')
-      }
-      if (hasFile((p) => p.startsWith('/.github/workflows/'))) {
-        detected.add('github-actions')
-        requiredCodeowners.push('/.github/workflows/')
-      }
-
-      // 3. Check existing dependabot config
-      const existingDependabot = await tryGetContent(octokit, {
-        owner: org,
-        repo,
-        paths: ['.github/dependabot.yaml', '.github/dependabot.yml'],
-        ref: defaultBranch,
-      })
-
-      let dependabotChange = null // null | { path, newContent, sha?, summary }
-
-      if (detected.size === 0) {
-        // No detected ecosystems — nothing to add.
-      } else if (!existingDependabot) {
-        // Start from a clone of the template Document so we keep its
-        // header / per-entry comments. Prune entries for ecosystems
-        // we didn't detect.
-        const newDoc = templateDoc.clone()
-        const updates = newDoc.get('updates')
-        const kept = []
-        if (yaml.isSeq(updates)) {
-          for (let i = updates.items.length - 1; i >= 0; i -= 1) {
-            const eco = updates.items[i].get('package-ecosystem')
-            if (detected.has(eco)) {
-              kept.unshift(eco)
-            } else {
-              updates.delete(i)
-            }
-          }
-        }
-        if (kept.length > 0) {
-          const body = stringifyDependabotDoc(newDoc)
-          dependabotChange = {
-            path: '.github/dependabot.yaml',
-            newContent: body,
-            summary: `created \`.github/dependabot.yaml\` with sections: ${kept.map((e) => `\`${e}\``).join(', ')}`,
-          }
-        }
-      } else {
-        let parsed
-        try {
-          parsed = yaml.parseDocument(existingDependabot.content)
-          if (parsed.errors.length > 0) {
-            core.warning(
-              `${logPrefix} could not parse existing dependabot file: ${parsed.errors[0].message}`
-            )
-            parsed = null
-          }
-        } catch (e) {
-          core.warning(
-            `${logPrefix} could not parse existing dependabot file: ${e.message}`
-          )
-          parsed = null
-        }
-        if (parsed) {
-          if (parsed.get('version') == null) {
-            parsed.set('version', 2)
-          }
-          let updates = parsed.get('updates')
-          if (!yaml.isSeq(updates)) {
-            updates = parsed.createNode([])
-            parsed.set('updates', updates)
-          }
-          let changed = false
-          const fixes = []
-
-          for (const u of updates.items) {
-            const eco = u.get('package-ecosystem')
-            const cooldown = u.get('cooldown')
-            const days = yaml.isMap(cooldown)
-              ? cooldown.get('default-days')
-              : undefined
-            if (typeof days !== 'number' || days < 7) {
-              if (yaml.isMap(cooldown)) {
-                cooldown.set('default-days', 7)
-              } else {
-                u.set('cooldown', parsed.createNode({ 'default-days': 7 }))
-              }
-              changed = true
-              fixes.push(`set \`cooldown.default-days: 7\` on \`${eco}\``)
-            }
-          }
-
-          const existingEcos = new Set(
-            updates.items.map((u) => u.get('package-ecosystem'))
-          )
-          const added = []
-          for (const eco of detected) {
-            if (!existingEcos.has(eco) && templateEntryByEcosystem.has(eco)) {
-              // Clone so we don't share nodes with templateDoc; the
-              // clone keeps the comments attached to the template
-              // entry. Strip its scalar quoting so the spliced block
-              // matches the host doc's style instead of the
-              // template's.
-              const cloned = templateEntryByEcosystem.get(eco).clone()
-              clearScalarQuoting(cloned)
-              updates.add(cloned)
-              added.push(eco)
-              changed = true
-            }
-          }
-
-          if (changed) {
-            const body = stringifyDependabotDoc(parsed)
-            const parts = []
-            if (added.length > 0) {
-              parts.push(
-                `added sections: ${added.map((e) => `\`${e}\``).join(', ')}`
-              )
-            }
-            if (fixes.length > 0) {
-              parts.push(...fixes)
-            }
-            dependabotChange = {
-              path: existingDependabot.path,
-              sha: existingDependabot.sha,
-              newContent: body,
-              summary: `updated \`${existingDependabot.path}\`: ${parts.join('; ')}`,
-            }
-          }
-        }
-      }
-
-      // 4. Check CODEOWNERS
-      const existingCodeowners = await tryGetContent(octokit, {
-        owner: org,
-        repo,
-        // https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners#codeowners-file-location
-        paths: ['.github/CODEOWNERS', 'CODEOWNERS', 'docs/CODEOWNERS'],
-        ref: defaultBranch,
-      })
-      const parsedLines = parseCodeowners(
-        existingCodeowners ? existingCodeowners.content : ''
-      )
-
-      const missingCodeowners = requiredCodeowners.filter(
-        (r) => !findCoveringLine(r, parsedLines)
-      )
-
-      // Early exit if nothing to do
-      if (!dependabotChange && missingCodeowners.length === 0) {
-        core.info(`${logPrefix} nothing to do`)
-        results.push({
-          repo: repoSlug,
-          action: 'ok',
-        })
-        // eslint-disable-next-line no-continue -- TODO Refactor
-        continue
-      }
-
-      // 7. Decide reviewer / OWNER substitution
-      let ownerSubstitute = null
-      let reviewerSource = 'none'
-      const reviewerTokens = new Set()
-
-      // 7.1 owners matched from required paths
-      const matchedOwners = new Set()
-      for (const req of requiredCodeowners) {
-        const match = findCoveringLine(req, parsedLines)
-        if (match) {
-          match.owners.forEach((o) => matchedOwners.add(o))
-        }
-      }
-      if (matchedOwners.size > 0) {
-        reviewerSource = 'codeowners-match'
-        matchedOwners.forEach((o) => reviewerTokens.add(o))
-        // Reuse the owners from existing CODEOWNERS lines that already
-        // cover required paths — they're the right owners for the new
-        // lines too. Space-join when there are several, matching
-        // CODEOWNERS multi-owner syntax.
-        ownerSubstitute = [...matchedOwners].join(' ')
-      } else {
-        // 7.2 any existing CODEOWNERS entries
-        const allOwners = new Set()
-        for (const line of parsedLines) {
-          line.owners.forEach((o) => allOwners.add(o))
-        }
-        if (allOwners.size > 0) {
-          reviewerSource = 'codeowners-fallback'
-          allOwners.forEach((o) => reviewerTokens.add(o))
-        } else {
-          // 7.3 contributors
-          let contribs = []
-          try {
-            const { data } = await octokit.rest.repos.listContributors({
-              owner: org,
-              repo,
-              per_page: 100,
-            })
-            contribs = Array.isArray(data) ? data : []
-          } catch (e) {
-            if (e.status !== 404 && e.status !== 204) {
-              throw e
-            }
-          }
-          const humans = contribs.filter(
-            (c) =>
-              c.type === 'User' &&
-              !/\[bot\]$/.test(c.login) &&
-              !KNOWN_BOTS.has(c.login)
-          )
-          if (humans.length > 0) {
-            reviewerSource = 'contributors'
-            humans.forEach((h) => reviewerTokens.add(`@${h.login}`))
-          }
-        }
-      }
-
-      // 6. Build CODEOWNERS addition
-      let codeownersChange = null
-      if (missingCodeowners.length > 0) {
-        const ownerToken = ownerSubstitute || OWNER_PLACEHOLDER
-
-        // Find the last existing line that already covers any required
-        // pattern. New lines get inserted right after it (no
-        // blank-line separator, no header comment) so they sit next to
-        // their relatives. If no such line exists, append at the end
-        // with a blank line + header.
-        let insertAfterIdx = -1
-        for (const req of requiredCodeowners) {
-          const match = findCoveringLine(req, parsedLines)
-          if (match && match.rawIndex > insertAfterIdx) {
-            insertAfterIdx = match.rawIndex
-          }
-        }
-        const includeHeader = insertAfterIdx === -1
-
-        const addedLines = []
-        if (includeHeader) {
-          addedLines.push('# Make sure dependabot PRs get reviewers assigned')
-        }
-        for (const pat of missingCodeowners) {
-          addedLines.push(`${pat}  ${ownerToken}`)
-        }
-
-        const baseText = existingCodeowners ? existingCodeowners.content : ''
-        const baseLines = baseText.split('\n')
-        // split on a string ending with \n leaves a trailing empty
-        // element; drop it for clean splicing.
-        if (baseLines.length > 0 && baseLines[baseLines.length - 1] === '') {
-          baseLines.pop()
-        }
-
-        let combinedLines
-        let patternStartLine // 1-indexed line of first added pattern
-        if (insertAfterIdx >= 0) {
-          combinedLines = [
-            ...baseLines.slice(0, insertAfterIdx + 1),
-            ...addedLines,
-            ...baseLines.slice(insertAfterIdx + 1),
-          ]
-          // No header in this branch; first added line is the first
-          // pattern.
-          patternStartLine = insertAfterIdx + 2
-        } else if (baseLines.length > 0) {
-          combinedLines = [...baseLines, '', ...addedLines]
-          patternStartLine =
-            baseLines.length + 1 /* blank */ + (includeHeader ? 1 : 0) + 1
-        } else {
-          combinedLines = [...addedLines]
-          patternStartLine = (includeHeader ? 1 : 0) + 1
-        }
-
-        const newContent = `${combinedLines.join('\n')}\n`
-
-        codeownersChange = {
-          path: existingCodeowners ? existingCodeowners.path : 'CODEOWNERS',
-          sha: existingCodeowners ? existingCodeowners.sha : undefined,
-          newContent,
-          missingLines: missingCodeowners.map((pat, i) => ({
-            pattern: pat,
-            lineNumber: patternStartLine + i,
-            ownerToken,
-          })),
-          addedLines,
-          summary: existingCodeowners
-            ? `added ${missingCodeowners.length} line(s) to \`${existingCodeowners.path}\`: ${missingCodeowners.map((p) => `\`${p}\``).join(', ')}`
-            : `created \`CODEOWNERS\` with ${missingCodeowners.length} line(s): ${missingCodeowners.map((p) => `\`${p}\``).join(', ')}`,
-        }
-      }
-
-      // 8. Compose PR body
-      const bodyParts = [
-        `🤖 Opened automatically by [repo-hygiene action from verkstedt/actions](${WORKFLOW_LINK}).`,
-      ]
-      const reviewerParagraph = {
-        'codeowners-fallback':
-          'Assigned people from CODEOWNERS as reviewers of this PR.',
-        'contributors': 'Assigned repo contributors as reviewers of this PR.',
-        'none': 'Could not determine who to assign as reviewers of this PR.',
-      }[reviewerSource]
-      if (reviewerParagraph) {
-        bodyParts.push(reviewerParagraph)
-      }
-      const whatBullets = [dependabotChange, codeownersChange]
-        .filter(Boolean)
-        .map((change) => `- ${change.summary}`)
-      bodyParts.push(`## What?\n\n${whatBullets.join('\n')}`)
-      const prBody = bodyParts.join('\n\n')
-
-      // 9 / 10. Dry run → log; otherwise create branch + commits + PR
-      const { users: reviewerUsers, teams: reviewerTeams } =
-        splitReviewers(reviewerTokens)
-      const hasUnresolvedOwner =
-        codeownersChange && !ownerSubstitute && missingCodeowners.length > 0
-
-      if (dryRun) {
-        core.info(`${logPrefix} Dry run, skipping PR creation`)
-
-        const lines = [
-          `### ${repoSlug}`,
-          '',
-          '#### Title',
-          '',
-          'chore: Repo hygiene',
-          '',
-          '#### Reviewers',
-          '',
-          [
-            ...reviewerUsers.map((u) => `- @${u}`),
-            ...reviewerTeams.map((t) => `- @${org}/${t}`),
-          ].join('\n') || '(none)',
-          '',
-          '#### Body',
-          '',
-          '<blockquote>',
-          '',
-          prBody,
-          '',
-          '</blockquote>',
-        ]
-        if (dependabotChange) {
-          lines.push(
-            '',
-            `**${dependabotChange.path}** (${existingDependabot ? 'update' : 'create'}):`,
-            '',
-            '```yaml',
-            dependabotChange.newContent,
-            '```'
-          )
-        }
-        if (codeownersChange) {
-          lines.push(
-            '',
-            `**${codeownersChange.path}** (${existingCodeowners ? 'update' : 'create'}):`,
-            '',
-            '```',
-            codeownersChange.newContent,
-            '```'
-          )
-        }
-        await core.summary.addRaw(`${lines.join('\n')}\n`).write()
-        results.push({
-          repo: repoSlug,
-          action: 'dry-run',
-          reviewers: [
-            ...reviewerUsers.map((u) => `@${u}`),
-            ...reviewerTeams.map((t) => `@${org}/${t}`),
-          ],
-          unresolvedOwner: hasUnresolvedOwner,
-        })
-        // eslint-disable-next-line no-continue -- TODO Refactor
-        continue
-      }
-
-      // Create branch. Always include run ID so each run gets a fresh
-      // branch — never reuse a stale one from an earlier run whose PR
-      // was closed without merging.
-      const branchName = `${BRANCH_PREFIX}${context.runId}`
-      await octokit.rest.git.createRef({
-        owner: org,
-        repo,
-        ref: `refs/heads/${branchName}`,
-        sha: headSha,
-      })
-
-      // Commit files
-      if (dependabotChange) {
-        await octokit.rest.repos.createOrUpdateFileContents({
-          owner: org,
-          repo,
-          branch: branchName,
-          path: dependabotChange.path,
-          message: dependabotChange.sha
-            ? `chore: Update ${dependabotChange.path}`
-            : `chore: Add ${dependabotChange.path}`,
-          content: Buffer.from(dependabotChange.newContent, 'utf8').toString(
-            'base64'
-          ),
-          sha: dependabotChange.sha,
-        })
-      }
-      if (codeownersChange) {
-        await octokit.rest.repos.createOrUpdateFileContents({
-          owner: org,
-          repo,
-          branch: branchName,
-          path: codeownersChange.path,
-          message: codeownersChange.sha
-            ? `chore: Update ${codeownersChange.path}`
-            : `chore: Add ${codeownersChange.path}`,
-          content: Buffer.from(codeownersChange.newContent, 'utf8').toString(
-            'base64'
-          ),
-          sha: codeownersChange.sha,
-        })
-      }
-
-      // Open PR
-      const pr = await octokit.rest.pulls.create({
-        owner: org,
-        repo,
-        title: 'chore: Repo hygiene',
-        head: branchName,
-        base: defaultBranch,
-        body: prBody,
-      })
-
-      // Request reviewers one at a time. requestReviewers is
-      // all-or-nothing: a single invalid entry (e.g. a past contributor
-      // who is no longer a collaborator, or a team without repo access)
-      // 422s the whole call. Requesting each reviewer separately — calls
-      // are additive — means a bad entry only drops itself while the
-      // valid reviewers still get assigned.
-      const reviewerList = []
-      for (const user of reviewerUsers) {
-        try {
-          await octokit.rest.pulls.requestReviewers({
-            owner: org,
-            repo,
-            pull_number: pr.data.number,
-            reviewers: [user],
-          })
-          reviewerList.push(`@${user}`)
-        } catch (e) {
-          core.warning(
-            `${logPrefix} could not request reviewer @${user}: ${e.message}`
-          )
-        }
-      }
-      for (const team of reviewerTeams) {
-        try {
-          await octokit.rest.pulls.requestReviewers({
-            owner: org,
-            repo,
-            pull_number: pr.data.number,
-            team_reviewers: [team],
-          })
-          reviewerList.push(`@${org}/${team}`)
-        } catch (e) {
-          core.warning(
-            `${logPrefix} could not request team reviewer @${org}/${team}: ${e.message}`
-          )
-        }
-      }
-
-      // Inline review comment on the @OWNER lines. The added lines are
-      // always a contiguous block, so post a single comment spanning
-      // them rather than one per line.
-      if (hasUnresolvedOwner) {
-        const lineNumbers = codeownersChange.missingLines.map(
-          (ml) => ml.lineNumber
-        )
-        const startLine = Math.min(...lineNumbers)
-        const endLine = Math.max(...lineNumbers)
-        const comment = {
-          path: codeownersChange.path,
-          body: 'Failed to guess who the owner should be — please replace the `@OWNER` placeholder with one or more people.',
-          side: 'RIGHT',
-          line: endLine,
-        }
-        if (startLine !== endLine) {
-          comment.start_line = startLine
-          comment.start_side = 'RIGHT'
-        }
-        try {
-          await octokit.rest.pulls.createReview({
-            owner: org,
-            repo,
-            pull_number: pr.data.number,
-            commit_id: pr.data.head.sha,
-            event: 'COMMENT',
-            comments: [comment],
-          })
-        } catch (e) {
-          core.warning(
-            `${logPrefix} could not create review comment: ${e.message}`
-          )
-        }
-      }
-
-      core.info(`${logPrefix} opened ${pr.data.html_url}`)
-      results.push({
-        repo: repoSlug,
-        action: 'opened-pr',
-        prUrl: pr.data.html_url,
-        reviewers: reviewerList,
-      })
-    } catch (e) {
-      core.error(`${logPrefix} ${e.message}`)
-      results.push({
-        repo: repoSlug,
-        action: 'failed',
-        error: e.message,
-      })
-    }
+  const { outputs, summary } = report(results)
+  for (const [name, value] of Object.entries(outputs)) {
+    core.setOutput(name, value)
   }
-
-  // --- Summarise ---
-
-  core.setOutput('results_json', JSON.stringify(results))
-
-  const opened = results.filter((r) => r.action === 'opened-pr')
-  const failed = results.filter((r) => r.action === 'failed')
-  const dryRuns = results.filter((r) => r.action === 'dry-run')
-  const preexisting = results.filter((r) => r.action === 'skipped-existing-pr')
-
-  const reviewerSummary = (r) =>
-    r.reviewers && r.reviewers.length > 0
-      ? `reviewer(s): ${r.reviewers.join(', ')}`
-      : 'no reviewer assigned'
-
-  const prItem = (r) => `<${r.prUrl}> — ${reviewerSummary(r)}`
-  const openedItems = opened.map(prItem)
-  const preexistingItems = preexisting.map(prItem)
-  const dryRunItems = dryRuns.map((r) => `${r.repo} — ${reviewerSummary(r)}`)
-  const failedItems = failed.map((r) => `${r.repo} — ${r.error}`)
-
-  const HEADINGS = {
-    opened: '*Opened PRs:*',
-    preexisting: '*Pre-existing PRs:*',
-    dryRun: '*Would open PRs (dry run):*',
-    failed: '*Failed repos:*',
-  }
-
-  // The job summary lists everything.
-  const lines = [
-    ...(opened.length > 0 ? renderList(HEADINGS.opened, openedItems) : []),
-    ...(preexisting.length > 0
-      ? renderList(HEADINGS.preexisting, preexistingItems)
-      : []),
-    ...(dryRuns.length > 0 ? renderList(HEADINGS.dryRun, dryRunItems) : []),
-    ...(failed.length > 0 ? renderList(HEADINGS.failed, failedItems) : []),
-  ]
-
-  // Slack gets the same lists, fitted into one section block. Sections
-  // are filled in order of importance — failures, then opened, then
-  // pre-existing — and shown in a different order, with the failures
-  // first and the longest list last. Dry runs are left out: the workflow
-  // does not notify on a dry run.
-  const runUrl = [
-    process.env.GITHUB_SERVER_URL,
-    process.env.GITHUB_REPOSITORY,
-    'actions/runs',
-    process.env.GITHUB_RUN_ID,
-  ].join('/')
-  const footerLines = ['', `<${runUrl}|Full list in the run summary>`]
-  const slackSections = {
-    failed: { heading: HEADINGS.failed, items: failedItems },
-    opened: { heading: HEADINGS.opened, items: openedItems },
-    preexisting: { heading: HEADINGS.preexisting, items: preexistingItems },
-  }
-  const listed = Object.values(slackSections).filter(
-    ({ items }) => items.length > 0
-  )
-  // Reserve the footer and every section’s count label up front, so
-  // each section is guaranteed at least its count. A section gets its
-  // own reserve back when its turn comes; what the others leave unspent
-  // stays as a buffer.
-  let budget =
-    SLACK_MAX_CHARS -
-    linesCost(footerLines) -
-    listed.reduce((sum, section) => sum + linesCost(countLabel(section)), 0)
-  const filled = {}
-  for (const key of ['failed', 'opened', 'preexisting']) {
-    const section = slackSections[key]
-    if (section.items.length === 0) {
-      filled[key] = []
-    } else {
-      const reserve = linesCost(countLabel(section))
-      // A partial list of the least important PRs would be noise.
-      filled[key] = fillSection(section, budget + reserve, {
-        partial: key !== 'preexisting',
-      })
-      budget += reserve - linesCost(filled[key])
-    }
-  }
-
-  core.setOutput(
-    'slack_text',
-    [
-      ...filled.failed,
-      ...filled.preexisting,
-      ...filled.opened,
-      ...footerLines,
-    ].join('\n')
-  )
-  core.setOutput(
-    'should_notify',
-    opened.length + failed.length > 0 ? 'true' : 'false'
-  )
-  core.setOutput('slack_status', failed.length > 0 ? 'failure' : 'warning')
-
-  await core.summary
-    .addRaw(
-      [
-        '',
-        '## Summary',
-        '',
-        `\`repo-hygiene\` run complete (${results.length} repo(s) checked)`,
-        '',
-        ...lines,
-        '',
-      ].join('\n')
-    )
-    .write()
+  await core.summary.addRaw(summary).write()
 }
 
 main().catch((err) => {
