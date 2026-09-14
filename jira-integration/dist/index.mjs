@@ -36610,7 +36610,10 @@ async function postTipCommentLinkJiraIssue(tipComments) {
     // Only post a comment, if acting upon an event that could’ve
     // changed PR body
     ['pull_request', 'pull_request_target'].includes(index_context.eventName) &&
-    ['opened', 'edited'].includes(payload.action)
+    ['opened', 'edited'].includes(payload.action) &&
+    // Bots (e.g. Dependabot) won’t read or act on the tip, so don’t
+    // bother posting it
+    pr.user.type !== 'Bot'
   ) {
     try {
       if (tipComments.length > 0) {
