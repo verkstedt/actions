@@ -75,6 +75,9 @@ describe('detectEcosystems', () => {
     const { detected, requiredCodeowners } = detectEcosystems([
       '/Dockerfile',
       '/images/base.Dockerfile',
+      '/Dockerfile.worker',
+      '/services/Dockerfile.worker',
+      '/Containerfile',
       '/docker-compose.yml',
       '/deploy/docker-compose.prod.yaml',
       '/deploy/docker-compose.yml',
@@ -86,7 +89,10 @@ describe('detectEcosystems', () => {
       ['docker', 'docker-compose', 'devcontainers', 'github-actions']
     )
     assert.deepEqual(requiredCodeowners, [
+      'Containerfile',
       'Dockerfile',
+      'Dockerfile.worker',
+      'base.Dockerfile',
       'docker-compose.prod.yaml',
       'docker-compose.yml',
       '/.devcontainer/devcontainer.json',
