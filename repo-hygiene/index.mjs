@@ -131,7 +131,15 @@ async function main() {
     `Auditing ${targets.length} repo(s) in ${org}${dryRun ? ' (dry run)' : ''}`
   )
 
-  const ctx = { octokit, org, dryRun, template, runId: context.runId }
+  const ctx = {
+    octokit,
+    org,
+    dryRun,
+    template,
+    runId: context.runId,
+    // Not on `context`; re-runs keep the run ID but bump the attempt.
+    runAttempt: Number(process.env.GITHUB_RUN_ATTEMPT) || 1,
+  }
   const results = await auditRepos(ctx, targets)
 
   const { outputs, summary } = report(results)
