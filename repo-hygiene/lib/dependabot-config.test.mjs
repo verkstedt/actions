@@ -197,6 +197,38 @@ describe('planDependabotChange', () => {
     assert.equal(change.summary, 'updated `x`: added sections: `npm`')
   })
 
+  it('adds a missing version to an otherwise complete file', () => {
+    const change = planDependabotChange({
+      detected: new Set(['npm', 'docker']),
+      existing: {
+        path: 'x',
+        sha: 's',
+        content: DEPENDABOT_TEMPLATE.replace(/^version: 2\n/m, ''),
+      },
+      template,
+      log,
+    })
+    assert.match(change.newContent, /^version: 2\n/m)
+    assert.equal(change.summary, 'updated `x`: set `version: 2`')
+  })
+
+  it('warns and skips a file whose updates is not a list', () => {
+    const warningsBefore = warnings.length
+    const change = planDependabotChange({
+      detected: new Set(['npm']),
+      existing: {
+        path: 'x',
+        sha: 's',
+        content: 'version: 2\nupdates:\n  package-ecosystem: npm\n',
+      },
+      template,
+      log,
+    })
+    assert.equal(change, null)
+    assert.equal(warnings.length, warningsBefore + 1)
+    assert.match(warnings.at(-1), /non-list `updates`/)
+  })
+
   it('warns and skips an unparseable file', () => {
     const warningsBefore = warnings.length
     const change = planDependabotChange({
