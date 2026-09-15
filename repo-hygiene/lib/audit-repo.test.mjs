@@ -56,6 +56,7 @@ describe('auditRepo', () => {
     dryRun,
     template,
     runId: 123,
+    runAttempt: 2,
     log: fakeLog(),
   })
 
@@ -123,7 +124,7 @@ describe('auditRepo', () => {
       {
         owner: 'org',
         repo: 'r',
-        ref: 'refs/heads/chore/repo-hygiene/123',
+        ref: 'refs/heads/chore/repo-hygiene/123-2',
         sha: 'head',
       },
     ])
@@ -135,9 +136,9 @@ describe('auditRepo', () => {
         [
           '.github/dependabot.yaml',
           'chore: Add .github/dependabot.yaml',
-          'chore/repo-hygiene/123',
+          'chore/repo-hygiene/123-2',
         ],
-        ['CODEOWNERS', 'chore: Add CODEOWNERS', 'chore/repo-hygiene/123'],
+        ['CODEOWNERS', 'chore: Add CODEOWNERS', 'chore/repo-hygiene/123-2'],
       ]
     )
     const codeowners = Buffer.from(commits[1].content, 'base64').toString()
@@ -154,7 +155,7 @@ describe('auditRepo', () => {
     const [pr] = callsTo(octokit, 'pulls.create')
     assert.equal(pr.title, 'chore: Repo hygiene')
     assert.equal(pr.base, 'main')
-    assert.equal(pr.head, 'chore/repo-hygiene/123')
+    assert.equal(pr.head, 'chore/repo-hygiene/123-2')
     assert.match(pr.body, /Assigned repo contributors as reviewers/)
     assert.match(
       pr.body,
