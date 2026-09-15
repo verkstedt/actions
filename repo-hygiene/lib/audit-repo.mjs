@@ -1,6 +1,6 @@
 import {
   parseCodeowners,
-  findCoveringLine,
+  findOwningLine,
   buildCodeownersAddition,
 } from './codeowners.mjs'
 import { detectEcosystems, planDependabotChange } from './dependabot-config.mjs'
@@ -241,7 +241,7 @@ export async function auditRepo(runCtx, repoMeta) {
     existingCodeowners ? existingCodeowners.content : ''
   )
   const missingCodeowners = requiredCodeowners.filter(
-    (r) => !findCoveringLine(r, parsedLines)
+    (r) => !findOwningLine(r, parsedLines)
   )
 
   if (!dependabotChange && missingCodeowners.length === 0) {
