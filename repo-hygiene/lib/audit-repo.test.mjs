@@ -200,6 +200,29 @@ describe('auditRepo', () => {
     assert.doesNotMatch(pr.body, /Assigned/)
   })
 
+  it('adds an owner when the covering CODEOWNERS line has none', async () => {
+    const octokit = fakeRepo({
+      paths: ['package.json', 'package-lock.json'],
+      files: {
+        '.github/dependabot.yaml': DEPENDABOT_TEMPLATE,
+        '.github/CODEOWNERS': '/docs/ @writer\npackage-lock.json\n',
+      },
+    })
+    const { results } = await auditRepo(ctx(octokit), repoMeta)
+    assert.equal(results[0].action, 'opened-pr')
+    assert.deepEqual(results[0].reviewers, ['@writer'])
+
+    const commits = callsTo(octokit, 'repos.createOrUpdateFileContents')
+    assert.deepEqual(
+      commits.map((c) => c.path),
+      ['.github/CODEOWNERS']
+    )
+    assert.equal(
+      Buffer.from(commits[0].content, 'base64').toString(),
+      '/docs/ @writer\npackage-lock.json\npackage-lock.json  @OWNER\n'
+    )
+  })
+
   it('only renders the summary in a dry run', async () => {
     const octokit = fakeRepo({
       paths: ['package.json', 'yarn.lock'],
