@@ -208,22 +208,28 @@ function addMissingEcosystems(updates, template, detected) {
   return added
 }
 
-// Add missing ecosystems from the template and enforce a cooldown on
-// every entry. Returns null when the file is fine or unparseable.
+// Add missing ecosystems from the template, set a missing `version`
+// and enforce a cooldown on every entry. Returns null when the file is
+// fine, unparseable, or has an `updates` that is not a list.
 function updateExisting(existing, template, detected, log) {
   const parsed = parseExisting(existing, log)
   if (!parsed) return null
 
+  const fixes = []
   if (parsed.get('version') == null) {
     parsed.set('version', 2)
+    fixes.push('set `version: 2`')
   }
   let updates = parsed.get('updates')
-  if (!yaml.isSeq(updates)) {
+  if (updates == null) {
     updates = parsed.createNode([])
     parsed.set('updates', updates)
+  } else if (!yaml.isSeq(updates)) {
+    log.warning('existing dependabot file has a non-list `updates`, skipping')
+    return null
   }
 
-  const fixes = ensureCooldowns(parsed, updates)
+  fixes.push(...ensureCooldowns(parsed, updates))
   const added = addMissingEcosystems(updates, template, detected)
   if (fixes.length === 0 && added.length === 0) return null
 
