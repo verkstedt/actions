@@ -81,11 +81,27 @@ runs:
                   {
                     "type": "image",
                     "alt_text": "",
-                    "image_url": "${{ github.event.sender.avatar_url }}"
+                    "image_url": ${{
+                      toJson(
+                        github.event_name == 'schedule'
+                          && 'https://github.com/github.png?size=48'
+                          || github.event.sender.avatar_url
+                      )
+                    }}
                   },
                   {
                     "type": "mrkdwn",
-                    "text": "<${{ github.event.sender.html_url }}|${{ github.event.sender.login }}>"
+                    "text": ${{
+                      toJson(
+                        github.event_name == 'schedule'
+                          && 'a schedule'
+                          || format(
+                            '<{0}|{1}>',
+                            github.event.sender.html_url,
+                            github.event.sender.login
+                          )
+                      )
+                    }}
                   }
               ]
               },
