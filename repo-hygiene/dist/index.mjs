@@ -47995,7 +47995,9 @@ async function chooseReviewers(
  * a collaborator, or a team without repo access) 422s the whole call.
  * Requesting each reviewer separately — calls are additive — means
  * a bad entry only drops itself while the valid reviewers still get
- * assigned. Returns the reviewers that were requested, as `@` handles.
+ * assigned. Any other failure (auth, rate limit, server error) is
+ * rethrown so the audit reports it instead of a partial success.
+ * Returns the reviewers that were requested, as `@` handles.
  */
 async function requestReviewersOneByOne(
   octokit,
@@ -48012,6 +48014,7 @@ async function requestReviewersOneByOne(
       })
       requested.push(`@${user}`)
     } catch (e) {
+      if (e.status !== 422) throw e
       log.warning(`could not request reviewer @${user}: ${e.message}`)
     }
   }
@@ -48025,6 +48028,7 @@ async function requestReviewersOneByOne(
       })
       requested.push(`@${org}/${team}`)
     } catch (e) {
+      if (e.status !== 422) throw e
       log.warning(
         `could not request team reviewer @${org}/${team}: ${e.message}`
       )
