@@ -61,19 +61,19 @@ jobs:
           app-id: ${{ vars.GH_AUTH_APP_ID }}
           private-key: ${{ secrets.GH_AUTH_APP_SECRET }}
       - name: Checkout code
-        uses: actions/checkout@v7.0.0
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           token: ${{ steps.app-token.outputs.token }}
           submodules: recursive
       - name: Google Auth
-        uses: 'google-github-actions/auth@v3.0.0'
+        uses: 'google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093' # v3.0.0
         with:
           service_account: ${{ inputs.workload-identity-service-account-mail }}
           workload_identity_provider: ${{ inputs.workload-identity-provider }}
       - name: Set up gcloud-cli
-        uses: 'google-github-actions/setup-gcloud@v3.0.1'
+        uses: 'google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db' # v3.0.1
       - name: Deploy Cloud Function
-        uses: google-github-actions/deploy-cloud-functions@v4.0.0
+        uses: google-github-actions/deploy-cloud-functions@ab10d6b9be21630aafc15ced4c464c16cd6640d6 # v4.0.0
         with:
           name: ${{ inputs.function-name }}
           runtime: ${{ inputs.runtime }}
