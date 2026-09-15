@@ -146,4 +146,23 @@ describe('requestReviewersOneByOne', () => {
     })
     assert.deepEqual(octokit.calls[4].params.team_reviewers, ['devs'])
   })
+
+  it('rethrows failures other than an invalid reviewer', async () => {
+    const octokit = fakeOctokit({
+      'pulls.requestReviewers': () => {
+        throw httpError(403)
+      },
+    })
+    await assert.rejects(
+      requestReviewersOneByOne(octokit, {
+        org: 'org',
+        repo: 'r',
+        pullNumber: 3,
+        users: ['alice'],
+        teams: [],
+        log: fakeLog(),
+      }),
+      { status: 403 }
+    )
+  })
 })
