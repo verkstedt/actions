@@ -47417,6 +47417,17 @@ function findCoveringLine(required, existingLines) {
   return null
 }
 
+/**
+ * The existing line that gives a `required` pattern an owner, or
+ * `null`. A covering line without owners (GitHub’s syntax for clearing
+ * ownership) counts as no coverage, since nobody would get requested
+ * as a reviewer.
+ */
+function findOwningLine(required, existingLines) {
+  const line = findCoveringLine(required, existingLines)
+  return line && line.owners.length > 0 ? line : null
+}
+
 // The last existing line that already covers any required pattern, or
 // -1. New lines get inserted right after it (no blank-line separator,
 // no header comment) so they sit next to their relatives.
@@ -47680,6 +47691,16 @@ function parseDependabotTemplate(text) {
   return { doc, entryByEcosystem }
 }
 
+// Sorted unique basenames of `paths` whose basename matches `re`.
+// CODEOWNERS matches a bare name at any depth, so one line per
+// distinct name covers every copy of it.
+function basenamesMatching(paths, re) {
+  const names = new Set(
+    paths.map((p) => p.split('/').pop()).filter((name) => re.test(name))
+  )
+  return [...names].sort()
+}
+
 /**
  * Fetch and parse the org-wide dependabot template, once per run. The
  * template missing is fatal: nothing sensible can be added without it.
@@ -47719,19 +47740,21 @@ function detectEcosystems(paths) {
       requiredCodeowners.push('pnpm-lock.yaml')
     }
   }
-  if (hasFile((p) => /\/Dockerfile$/.test(p) || /\.Dockerfile$/.test(p))) {
-    detected.add('docker')
-    requiredCodeowners.push('Dockerfile')
-  }
-  const composePaths = paths.filter((p) =>
-    /\/docker-compose[^/]*\.ya?ml$/.test(p)
+  // Dependabot matches “dockerfile” or “containerfile” anywhere in the
+  // file name, case-insensitively. Cover the names people actually use:
+  // `Dockerfile`, `Dockerfile.worker`, `base.Dockerfile`, `Containerfile`.
+  const dockerfileNames = basenamesMatching(
+    paths,
+    /^(dockerfile|containerfile)(\.|$)|\.(dockerfile|containerfile)$/i
   )
-  if (composePaths.length > 0) {
+  if (dockerfileNames.length > 0) {
+    detected.add('docker')
+    requiredCodeowners.push(...dockerfileNames)
+  }
+  const composeNames = basenamesMatching(paths, /^docker-compose.*\.ya?ml$/)
+  if (composeNames.length > 0) {
     detected.add('docker-compose')
-    const names = new Set(composePaths.map((p) => p.split('/').pop()))
-    for (const n of [...names].sort()) {
-      requiredCodeowners.push(n)
-    }
+    requiredCodeowners.push(...composeNames)
   }
   if (paths.includes('/.devcontainer/devcontainer.json')) {
     detected.add('devcontainers')
@@ -47827,22 +47850,28 @@ function addMissingEcosystems(updates, template, detected) {
   return added
 }
 
-// Add missing ecosystems from the template and enforce a cooldown on
-// every entry. Returns null when the file is fine or unparseable.
+// Add missing ecosystems from the template, set a missing `version`
+// and enforce a cooldown on every entry. Returns null when the file is
+// fine, unparseable, or has an `updates` that is not a list.
 function updateExisting(existing, template, detected, log) {
   const parsed = parseExisting(existing, log)
   if (!parsed) return null
 
+  const fixes = []
   if (parsed.get('version') == null) {
     parsed.set('version', 2)
+    fixes.push('set `version: 2`')
   }
   let updates = parsed.get('updates')
-  if (!dist.isSeq(updates)) {
+  if (updates == null) {
     updates = parsed.createNode([])
     parsed.set('updates', updates)
+  } else if (!dist.isSeq(updates)) {
+    log.warning('existing dependabot file has a non-list `updates`, skipping')
+    return null
   }
 
-  const fixes = ensureCooldowns(parsed, updates)
+  fixes.push(...ensureCooldowns(parsed, updates))
   const added = addMissingEcosystems(updates, template, detected)
   if (fixes.length === 0 && added.length === 0) return null
 
@@ -47880,10 +47909,12 @@ function planDependabotChange({ detected, existing, template, log }) {
 
 const KNOWN_BOTS = new Set(['dependabot', 'github-actions', 'renovate'])
 
+/** GitHub allows at most this many requested reviewers on a PR. */
+const MAX_REVIEWERS = 15
+
 /**
- * Split CODEOWNERS owner tokens into user logins and team slugs,
- * without the `@` and org prefixes. Capped at GitHub's limit of 15
- * reviewers per request.
+ * Split CODEOWNERS owner tokens into unique user logins and team
+ * slugs, without the `@` and org prefixes.
  */
 function splitReviewers(ownerTokens) {
   const users = new Set()
@@ -47899,10 +47930,7 @@ function splitReviewers(ownerTokens) {
       }
     }
   }
-  return {
-    users: [...users].slice(0, 15),
-    teams: [...teams].slice(0, 15),
-  }
+  return { users: [...users], teams: [...teams] }
 }
 
 async function listHumanContributors(octokit, { org, repo }) {
@@ -47984,7 +48012,11 @@ async function chooseReviewers(
  * a collaborator, or a team without repo access) 422s the whole call.
  * Requesting each reviewer separately — calls are additive — means
  * a bad entry only drops itself while the valid reviewers still get
- * assigned. Returns the reviewers that were requested, as `@` handles.
+ * assigned. Any other failure (auth, rate limit, server error) is
+ * rethrown so the audit reports it instead of a partial success.
+ * Stops once MAX_REVIEWERS have been accepted, so an invalid candidate
+ * does not use up a slot. Returns the reviewers that were requested,
+ * as `@` handles.
  */
 async function requestReviewersOneByOne(
   octokit,
@@ -47992,6 +48024,7 @@ async function requestReviewersOneByOne(
 ) {
   const requested = []
   for (const user of users) {
+    if (requested.length >= MAX_REVIEWERS) break
     try {
       await octokit.rest.pulls.requestReviewers({
         owner: org,
@@ -48001,10 +48034,12 @@ async function requestReviewersOneByOne(
       })
       requested.push(`@${user}`)
     } catch (e) {
+      if (e.status !== 422) throw e
       log.warning(`could not request reviewer @${user}: ${e.message}`)
     }
   }
   for (const team of teams) {
+    if (requested.length >= MAX_REVIEWERS) break
     try {
       await octokit.rest.pulls.requestReviewers({
         owner: org,
@@ -48014,6 +48049,7 @@ async function requestReviewersOneByOne(
       })
       requested.push(`@${org}/${team}`)
     } catch (e) {
+      if (e.status !== 422) throw e
       log.warning(
         `could not request team reviewer @${org}/${team}: ${e.message}`
       )
@@ -48106,10 +48142,10 @@ function renderDryRun(repoSlug, plan) {
 async function openPullRequest(ctx, headSha, plan) {
   const { octokit, org, repo, defaultBranch, log } = ctx
 
-  // Always include run ID so each run gets a fresh branch — never
-  // reuse a stale one from an earlier run whose PR was closed without
-  // merging.
-  const branchName = `${BRANCH_PREFIX}${ctx.runId}`
+  // Always include run ID and attempt so each run gets a fresh branch —
+  // never reuse a stale one from an earlier run whose PR was closed
+  // without merging, or from a failed attempt of this run.
+  const branchName = `${BRANCH_PREFIX}${ctx.runId}-${ctx.runAttempt}`
   await octokit.rest.git.createRef({
     owner: org,
     repo,
@@ -48188,9 +48224,9 @@ function skippedResult(pr, { org, repoSlug, log }) {
  * (otherwise `null`).
  *
  * `runCtx` carries what is shared across repos — `octokit`, `org`,
- * `dryRun`, `runId` and the parsed dependabot `template` — plus a
- * `log` already prefixed for this repo. The per-repo facts are added
- * to it once here, and the helpers get that one object.
+ * `dryRun`, `runId`, `runAttempt` and the parsed dependabot `template` —
+ * plus a `log` already prefixed for this repo. The per-repo facts are
+ * added to it once here, and the helpers get that one object.
  */
 async function auditRepo(runCtx, repoMeta) {
   const ctx = {
@@ -48252,7 +48288,7 @@ async function auditRepo(runCtx, repoMeta) {
     existingCodeowners ? existingCodeowners.content : ''
   )
   const missingCodeowners = requiredCodeowners.filter(
-    (r) => !findCoveringLine(r, parsedLines)
+    (r) => !findOwningLine(r, parsedLines)
   )
 
   if (!dependabotChange && missingCodeowners.length === 0) {
@@ -48648,7 +48684,15 @@ async function main() {
     `Auditing ${targets.length} repo(s) in ${org}${dryRun ? ' (dry run)' : ''}`
   )
 
-  const ctx = { octokit, org, dryRun, template, runId: context.runId }
+  const ctx = {
+    octokit,
+    org,
+    dryRun,
+    template,
+    runId: context.runId,
+    // Not on `context`; re-runs keep the run ID but bump the attempt.
+    runAttempt: Number(process.env.GITHUB_RUN_ATTEMPT) || 1,
+  }
   const results = await auditRepos(ctx, targets)
 
   const { outputs, summary } = report(results)

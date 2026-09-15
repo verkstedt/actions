@@ -4,6 +4,7 @@ import assert from 'node:assert/strict'
 import {
   parseCodeowners,
   findCoveringLine,
+  findOwningLine,
   buildCodeownersAddition,
 } from './codeowners.mjs'
 
@@ -61,6 +62,21 @@ docker-compose.*     @ops
 
   it('returns null when nothing covers the pattern', () => {
     assert.equal(findCoveringLine('Dockerfile', parseCodeowners('/x @a')), null)
+  })
+})
+
+describe('findOwningLine', () => {
+  it('returns the covering line when it has owners', () => {
+    const lines = parseCodeowners('package-lock.json @npm')
+    assert.deepEqual(findOwningLine('package-lock.json', lines).owners, [
+      '@npm',
+    ])
+  })
+
+  it('treats an ownerless covering line as no coverage', () => {
+    const lines = parseCodeowners('* @everyone\npackage-lock.json')
+    assert.equal(findOwningLine('package-lock.json', lines), null)
+    assert.deepEqual(findOwningLine('Dockerfile', lines).owners, ['@everyone'])
   })
 })
 

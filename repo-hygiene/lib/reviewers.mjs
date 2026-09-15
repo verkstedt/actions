@@ -2,10 +2,12 @@ import { findCoveringLine } from './codeowners.mjs'
 
 const KNOWN_BOTS = new Set(['dependabot', 'github-actions', 'renovate'])
 
+/** GitHub allows at most this many requested reviewers on a PR. */
+const MAX_REVIEWERS = 15
+
 /**
- * Split CODEOWNERS owner tokens into user logins and team slugs,
- * without the `@` and org prefixes. Capped at GitHub's limit of 15
- * reviewers per request.
+ * Split CODEOWNERS owner tokens into unique user logins and team
+ * slugs, without the `@` and org prefixes.
  */
 export function splitReviewers(ownerTokens) {
   const users = new Set()
@@ -21,10 +23,7 @@ export function splitReviewers(ownerTokens) {
       }
     }
   }
-  return {
-    users: [...users].slice(0, 15),
-    teams: [...teams].slice(0, 15),
-  }
+  return { users: [...users], teams: [...teams] }
 }
 
 async function listHumanContributors(octokit, { org, repo }) {
@@ -106,7 +105,11 @@ export async function chooseReviewers(
  * a collaborator, or a team without repo access) 422s the whole call.
  * Requesting each reviewer separately — calls are additive — means
  * a bad entry only drops itself while the valid reviewers still get
- * assigned. Returns the reviewers that were requested, as `@` handles.
+ * assigned. Any other failure (auth, rate limit, server error) is
+ * rethrown so the audit reports it instead of a partial success.
+ * Stops once MAX_REVIEWERS have been accepted, so an invalid candidate
+ * does not use up a slot. Returns the reviewers that were requested,
+ * as `@` handles.
  */
 export async function requestReviewersOneByOne(
   octokit,
@@ -114,6 +117,7 @@ export async function requestReviewersOneByOne(
 ) {
   const requested = []
   for (const user of users) {
+    if (requested.length >= MAX_REVIEWERS) break
     try {
       await octokit.rest.pulls.requestReviewers({
         owner: org,
@@ -123,10 +127,12 @@ export async function requestReviewersOneByOne(
       })
       requested.push(`@${user}`)
     } catch (e) {
+      if (e.status !== 422) throw e
       log.warning(`could not request reviewer @${user}: ${e.message}`)
     }
   }
   for (const team of teams) {
+    if (requested.length >= MAX_REVIEWERS) break
     try {
       await octokit.rest.pulls.requestReviewers({
         owner: org,
@@ -136,6 +142,7 @@ export async function requestReviewersOneByOne(
       })
       requested.push(`@${org}/${team}`)
     } catch (e) {
+      if (e.status !== 422) throw e
       log.warning(
         `could not request team reviewer @${org}/${team}: ${e.message}`
       )
