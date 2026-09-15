@@ -64,6 +64,18 @@ export function parseDependabotTemplate(text) {
 }
 
 /**
+ * Sorted unique basenames of `paths` whose basename matches `re`.
+ * CODEOWNERS matches a bare name at any depth, so one line per
+ * distinct name covers every copy of it.
+ */
+function collectBasenamesMatching(paths, re) {
+  const names = new Set(
+    paths.map((p) => p.split('/').pop()).filter((name) => re.test(name))
+  )
+  return [...names].sort()
+}
+
+/**
  * Fetch and parse the org-wide dependabot template, once per run. The
  * template missing is fatal: nothing sensible can be added without it.
  */
@@ -102,19 +114,24 @@ export function detectEcosystems(paths) {
       requiredCodeowners.push('pnpm-lock.yaml')
     }
   }
-  if (hasFile((p) => /\/Dockerfile$/.test(p) || /\.Dockerfile$/.test(p))) {
-    detected.add('docker')
-    requiredCodeowners.push('Dockerfile')
-  }
-  const composePaths = paths.filter((p) =>
-    /\/docker-compose[^/]*\.ya?ml$/.test(p)
+  // Dependabot matches “dockerfile” or “containerfile” anywhere in the
+  // file name, case-insensitively. Cover the names people actually use:
+  // `Dockerfile`, `Dockerfile.worker`, `base.Dockerfile`, `Containerfile`.
+  const dockerfileNames = collectBasenamesMatching(
+    paths,
+    /^(dockerfile|containerfile)(\.|$)|\.(dockerfile|containerfile)$/i
   )
-  if (composePaths.length > 0) {
+  if (dockerfileNames.length > 0) {
+    detected.add('docker')
+    requiredCodeowners.push(...dockerfileNames)
+  }
+  const composeNames = collectBasenamesMatching(
+    paths,
+    /^docker-compose.*\.ya?ml$/
+  )
+  if (composeNames.length > 0) {
     detected.add('docker-compose')
-    const names = new Set(composePaths.map((p) => p.split('/').pop()))
-    for (const n of [...names].sort()) {
-      requiredCodeowners.push(n)
-    }
+    requiredCodeowners.push(...composeNames)
   }
   if (paths.includes('/.devcontainer/devcontainer.json')) {
     detected.add('devcontainers')
