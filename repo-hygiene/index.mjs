@@ -106,7 +106,7 @@ async function main() {
   if (dryRun) {
     await core.summary
       .addRaw(
-        '> [!NOTE]\n> This is a **dry run**. No pull requests will be created. Will show info about ones that would, here in the summary.\n\n'
+        '> [!NOTE]\n> This is a **dry run**. No pull requests will be created and no reviewers will be requested. Will show info about ones that would, here in the summary.\n\n'
       )
       .write()
   }

@@ -89,6 +89,15 @@ export function report(results) {
   const failed = results.filter((r) => r.action === 'failed')
   const dryRuns = results.filter((r) => r.action === 'dry-run')
   const preexisting = results.filter((r) => r.action === 'skipped-existing-pr')
+  const dependabotRequested = results.filter(
+    (r) => r.action === 'dependabot-requested-reviewers'
+  )
+  const dependabotDryRuns = results.filter(
+    (r) => r.action === 'dependabot-dry-run'
+  )
+  const dependabotUnowned = results.filter(
+    (r) => r.action === 'dependabot-no-reviewers'
+  )
 
   const reviewerSummary = (r) =>
     r.reviewers && r.reviewers.length > 0
@@ -100,12 +109,20 @@ export function report(results) {
   const preexistingItems = preexisting.map(prItem)
   const dryRunItems = dryRuns.map((r) => `${r.repo} — ${reviewerSummary(r)}`)
   const failedItems = failed.map((r) => `${r.repo} — ${r.error}`)
+  const dependabotItems = dependabotRequested.map(prItem)
+  const dependabotDryRunItems = dependabotDryRuns.map(prItem)
+  const dependabotUnownedItems = dependabotUnowned.map(
+    (r) => `<${r.prUrl}> — ${r.files.map((f) => `\`${f}\``).join(', ')}`
+  )
 
   const HEADINGS = {
     opened: '*Opened PRs:*',
     preexisting: '*Pre-existing PRs:*',
     dryRun: '*Would open PRs (dry run):*',
     failed: '*Failed repos:*',
+    dependabot: '*Requested reviewers on Dependabot PRs:*',
+    dependabotDryRun: '*Would request reviewers on Dependabot PRs (dry run):*',
+    dependabotUnowned: '*Dependabot PRs with no reviewers and no code owner:*',
   }
 
   // The job summary lists everything.
@@ -115,14 +132,18 @@ export function report(results) {
     ...listIfAny(HEADINGS.opened, openedItems),
     ...listIfAny(HEADINGS.preexisting, preexistingItems),
     ...listIfAny(HEADINGS.dryRun, dryRunItems),
+    ...listIfAny(HEADINGS.dependabot, dependabotItems),
+    ...listIfAny(HEADINGS.dependabotDryRun, dependabotDryRunItems),
+    ...listIfAny(HEADINGS.dependabotUnowned, dependabotUnownedItems),
     ...listIfAny(HEADINGS.failed, failedItems),
   ]
 
   // Slack gets the same lists, fitted into one section block. Sections
   // are filled in order of importance — failures, then opened, then
-  // pre-existing — and shown in a different order, with the failures
-  // first and the longest list last. Dry runs are left out: the workflow
-  // does not notify on a dry run.
+  // Dependabot reviewers, then pre-existing — and shown in a different
+  // order, with the failures first and the longest list last. Dry runs
+  // and reviewer-less Dependabot PRs are left out: the workflow does
+  // not notify on a dry run, and the latter only warn in the log.
   const runUrl = [
     process.env.GITHUB_SERVER_URL,
     process.env.GITHUB_REPOSITORY,
@@ -133,18 +154,23 @@ export function report(results) {
     sections: {
       failed: { heading: HEADINGS.failed, items: failedItems },
       opened: { heading: HEADINGS.opened, items: openedItems },
+      dependabot: { heading: HEADINGS.dependabot, items: dependabotItems },
       preexisting: { heading: HEADINGS.preexisting, items: preexistingItems },
     },
     fillOrder: [
       { key: 'failed', partial: true },
       { key: 'opened', partial: true },
+      { key: 'dependabot', partial: true },
       // A partial list of the least important PRs would be noise.
       { key: 'preexisting', partial: false },
     ],
-    showOrder: ['failed', 'preexisting', 'opened'],
+    showOrder: ['failed', 'preexisting', 'dependabot', 'opened'],
     runUrl,
   })
-  outputs.should_notify = opened.length + failed.length > 0 ? 'true' : 'false'
+  outputs.should_notify =
+    opened.length + failed.length + dependabotRequested.length > 0
+      ? 'true'
+      : 'false'
   outputs.slack_status = failed.length > 0 ? 'failure' : 'warning'
 
   const summary = [

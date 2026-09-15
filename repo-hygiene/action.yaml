@@ -32,7 +32,10 @@ inputs:
 
 outputs:
   results_json:
-    description: JSON-encoded list of per-repo result objects.
+    description: >
+      JSON-encoded list of result objects, one per repo plus one per
+      Dependabot PR that reviewers were requested on (or would be, in
+      a dry run) or that has no matching code owner.
   slack_text:
     description: >
       Pre-formatted run summary suitable for Slack `text:`, sized to fit
