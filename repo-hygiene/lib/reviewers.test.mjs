@@ -17,10 +17,10 @@ describe('splitReviewers', () => {
     })
   })
 
-  it('deduplicates and caps at 15 each', () => {
+  it('deduplicates', () => {
     const users = Array.from({ length: 20 }, (_, i) => `@u${i}`)
     const result = splitReviewers([...users, '@u0', '@u1'])
-    assert.equal(result.users.length, 15)
+    assert.equal(result.users.length, 20)
     assert.deepEqual(result.teams, [])
   })
 })
@@ -145,6 +145,30 @@ describe('requestReviewersOneByOne', () => {
       reviewers: ['alice'],
     })
     assert.deepEqual(octokit.calls[4].params.team_reviewers, ['devs'])
+  })
+
+  it('caps accepted reviewers at 15 without counting invalid ones', async () => {
+    const octokit = fakeOctokit({
+      'pulls.requestReviewers': ({ reviewers }) => {
+        if (reviewers?.[0] === 'gone') {
+          throw createHttpError(422)
+        }
+        return {}
+      },
+    })
+    const users = ['gone', ...Array.from({ length: 20 }, (_, i) => `u${i}`)]
+    const requested = await requestReviewersOneByOne(octokit, {
+      org: 'org',
+      repo: 'r',
+      pullNumber: 3,
+      users,
+      teams: ['devs'],
+      log: fakeLog(),
+    })
+    assert.equal(requested.length, 15)
+    assert.equal(requested[0], '@u0')
+    assert.equal(requested[14], '@u14')
+    assert.equal(octokit.calls.length, 16)
   })
 
   it('rethrows failures other than an invalid reviewer', async () => {

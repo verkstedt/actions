@@ -47891,10 +47891,12 @@ function planDependabotChange({ detected, existing, template, log }) {
 
 const KNOWN_BOTS = new Set(['dependabot', 'github-actions', 'renovate'])
 
+/** GitHub allows at most this many requested reviewers on a PR. */
+const MAX_REVIEWERS = 15
+
 /**
- * Split CODEOWNERS owner tokens into user logins and team slugs,
- * without the `@` and org prefixes. Capped at GitHub's limit of 15
- * reviewers per request.
+ * Split CODEOWNERS owner tokens into unique user logins and team
+ * slugs, without the `@` and org prefixes.
  */
 function splitReviewers(ownerTokens) {
   const users = new Set()
@@ -47910,10 +47912,7 @@ function splitReviewers(ownerTokens) {
       }
     }
   }
-  return {
-    users: [...users].slice(0, 15),
-    teams: [...teams].slice(0, 15),
-  }
+  return { users: [...users], teams: [...teams] }
 }
 
 async function listHumanContributors(octokit, { org, repo }) {
@@ -47997,7 +47996,9 @@ async function chooseReviewers(
  * a bad entry only drops itself while the valid reviewers still get
  * assigned. Any other failure (auth, rate limit, server error) is
  * rethrown so the audit reports it instead of a partial success.
- * Returns the reviewers that were requested, as `@` handles.
+ * Stops once MAX_REVIEWERS have been accepted, so an invalid candidate
+ * does not use up a slot. Returns the reviewers that were requested,
+ * as `@` handles.
  */
 async function requestReviewersOneByOne(
   octokit,
@@ -48005,6 +48006,7 @@ async function requestReviewersOneByOne(
 ) {
   const requested = []
   for (const user of users) {
+    if (requested.length >= MAX_REVIEWERS) break
     try {
       await octokit.rest.pulls.requestReviewers({
         owner: org,
@@ -48019,6 +48021,7 @@ async function requestReviewersOneByOne(
     }
   }
   for (const team of teams) {
+    if (requested.length >= MAX_REVIEWERS) break
     try {
       await octokit.rest.pulls.requestReviewers({
         owner: org,
