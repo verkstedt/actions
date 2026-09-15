@@ -47417,6 +47417,17 @@ function findCoveringLine(required, existingLines) {
   return null
 }
 
+/**
+ * The existing line that gives a `required` pattern an owner, or
+ * `null`. A covering line without owners (GitHub’s syntax for clearing
+ * ownership) counts as no coverage, since nobody would get requested
+ * as a reviewer.
+ */
+function findOwningLine(required, existingLines) {
+  const line = findCoveringLine(required, existingLines)
+  return line && line.owners.length > 0 ? line : null
+}
+
 // The last existing line that already covers any required pattern, or
 // -1. New lines get inserted right after it (no blank-line separator,
 // no header comment) so they sit next to their relatives.
@@ -48252,7 +48263,7 @@ async function auditRepo(runCtx, repoMeta) {
     existingCodeowners ? existingCodeowners.content : ''
   )
   const missingCodeowners = requiredCodeowners.filter(
-    (r) => !findCoveringLine(r, parsedLines)
+    (r) => !findOwningLine(r, parsedLines)
   )
 
   if (!dependabotChange && missingCodeowners.length === 0) {
