@@ -9,6 +9,7 @@ import {
   fetchBranchTree,
   commitChange,
   createLineComment,
+  errorMessage,
 } from './github.ts'
 import {
   chooseReviewers,
@@ -141,7 +142,14 @@ async function openPullRequest(
   })
 
   for (const { change } of plan.files) {
-    await commitChange(octokit, { org, repo, branch: branchName, change })
+    await commitChange(octokit, {
+      org,
+      repo,
+      branch: branchName,
+      path: change.path,
+      content: change.newContent,
+      sha: change.sha,
+    })
   }
 
   const pr = await octokit.rest.pulls.create({
@@ -166,17 +174,20 @@ async function openPullRequest(
   // always a contiguous block, so post a single comment spanning them
   // rather than one per line.
   if (plan.hasUnresolvedOwner && plan.codeownersChange) {
-    await createLineComment(octokit, {
-      org,
-      repo,
-      pr: pr.data,
-      path: plan.codeownersChange.path,
-      lineNumbers: plan.codeownersChange.missingLines.map(
-        (ml) => ml.lineNumber
-      ),
-      body: 'Failed to guess who the owner should be — please replace the `@OWNER` placeholder with one or more people.',
-      log,
-    })
+    try {
+      await createLineComment(octokit, {
+        org,
+        repo,
+        pr: pr.data,
+        path: plan.codeownersChange.path,
+        lineNumbers: plan.codeownersChange.missingLines.map(
+          (ml) => ml.lineNumber
+        ),
+        body: 'Failed to guess who the owner should be — please replace the `@OWNER` placeholder with one or more people.',
+      })
+    } catch (e) {
+      log.warning(`could not create review comment: ${errorMessage(e)}`)
+    }
   }
 
   return { pr: pr.data, reviewerList }

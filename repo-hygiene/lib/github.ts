@@ -1,4 +1,6 @@
-import type { FileContent, Change, Logger, Octokit } from './types.ts'
+import picomatch from 'picomatch'
+
+import type { FileContent, Logger, Octokit, RepoMeta } from './types.ts'
 
 /** The HTTP status of a failed Octokit request, or `undefined`. */
 export function getHttpStatus(error: unknown): number | undefined {
@@ -83,29 +85,33 @@ export async function fetchBranchTree(
   return { headSha, paths }
 }
 
-/**
- * Commit a `{ path, newContent, sha? }` change onto `branch`. `sha`
- * present means the file is being updated rather than added.
- */
+/** Commit `content` to `path` on `branch`; `sha` set means an update. */
 export async function commitChange(
   octokit: Octokit,
   {
     org,
     repo,
     branch,
-    change,
-  }: { org: string; repo: string; branch: string; change: Change }
+    path,
+    content,
+    sha,
+  }: {
+    org: string
+    repo: string
+    branch: string
+    path: string
+    content: string
+    sha?: string
+  }
 ): Promise<void> {
   await octokit.rest.repos.createOrUpdateFileContents({
     owner: org,
     repo,
     branch,
-    path: change.path,
-    message: change.sha
-      ? `chore: Update ${change.path}`
-      : `chore: Add ${change.path}`,
-    content: Buffer.from(change.newContent, 'utf8').toString('base64'),
-    sha: change.sha,
+    path,
+    message: sha ? `chore: Update ${path}` : `chore: Add ${path}`,
+    content: Buffer.from(content, 'utf8').toString('base64'),
+    sha,
   })
 }
 
@@ -116,16 +122,12 @@ interface LineCommentParams {
   path: string
   lineNumbers: Array<number>
   body: string
-  log: Logger
 }
 
-/**
- * Leave a single review comment spanning `lineNumbers` of `path` on
- * the PR. Failure to comment is logged through `log`, not thrown.
- */
+/** Leave one review comment spanning `lineNumbers` of `path` on the PR. */
 export async function createLineComment(
   octokit: Octokit,
-  { org, repo, pr, path, lineNumbers, body, log }: LineCommentParams
+  { org, repo, pr, path, lineNumbers, body }: LineCommentParams
 ): Promise<void> {
   const startLine = Math.min(...lineNumbers)
   const endLine = Math.max(...lineNumbers)
@@ -141,16 +143,73 @@ export async function createLineComment(
     comment.start_line = startLine
     comment.start_side = 'RIGHT'
   }
-  try {
-    await octokit.rest.pulls.createReview({
-      owner: org,
-      repo,
-      pull_number: pr.number,
-      commit_id: pr.head.sha,
-      event: 'COMMENT',
-      comments: [comment],
-    })
-  } catch (e) {
-    log.warning(`could not create review comment: ${errorMessage(e)}`)
+  await octokit.rest.pulls.createReview({
+    owner: org,
+    repo,
+    pull_number: pr.number,
+    commit_id: pr.head.sha,
+    event: 'COMMENT',
+    comments: [comment],
+  })
+}
+
+/** The App must be installed on every org repo, or the audit is partial. */
+export async function assertAppSeesAllRepos(octokit: Octokit): Promise<void> {
+  const inst = await octokit.request('GET /installation/repositories', {
+    per_page: 1,
+  })
+  if (inst.data.repository_selection !== 'all') {
+    throw new Error(
+      `App has repository_selection='${inst.data.repository_selection}'; expected 'all'. Reconfigure the App’s repository access to “All repositories”.`
+    )
   }
+}
+
+/**
+ * Org repos to audit: sources only, skipping archived, disabled and
+ * empty ones, narrowed by `reposFilter` picomatch globs when given.
+ * Every pattern must match at least one repo.
+ */
+export async function listTargetRepos(
+  octokit: Octokit,
+  { org, reposFilter }: { org: string; reposFilter: Array<string> }
+): Promise<Array<GitHub.RepoMeta>> {
+  const allRepos = await octokit.paginate(octokit.rest.repos.listForOrg, {
+    org,
+    type: 'sources',
+    per_page: 100,
+  })
+  const targets = allRepos.filter(
+    (r): r is typeof r & GitHub.RepoMeta =>
+      !r.archived &&
+      !r.disabled &&
+      (r.size || 0) > 0 &&
+      typeof r.default_branch === 'string'
+  )
+  if (reposFilter.length === 0) {
+    return targets
+  }
+
+  const matchers = reposFilter.map((pattern) => ({
+    pattern,
+    isMatch: picomatch(pattern, { dot: true }),
+  }))
+  const hitPatterns = new Set<string>()
+  const matched = targets.filter((r) => {
+    const hits = matchers.filter((m) => m.isMatch(r.name))
+    hits.forEach((m) => hitPatterns.add(m.pattern))
+    return hits.length > 0
+  })
+  const missing = reposFilter.filter((p) => !hitPatterns.has(p))
+  if (missing.length > 0) {
+    throw new Error(
+      missing
+        .map(
+          (p) =>
+            `Requested repo pattern "${p}" matched no repos in ${org} (after filtering archived/disabled/fork/empty).`
+        )
+        .join('\n')
+    )
+  }
+  return matched
 }
