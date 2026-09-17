@@ -57,6 +57,17 @@ const config = {
           then
             set -- "$@" -f previous_tag_name=$lastGitTag
           fi
+          # Pin the lineage the notes are read from.
+          # The tag does not exist yet at this point and without this it
+          # would fall back to the repository's default branch — which is
+          # wrong if tag is not there (i.e. hotfix).
+          # semantic-release resolves its own branch from GITHUB_REF too, and
+          # only gets here once that branch matched the release config, so
+          # GITHUB_REF_NAME is that same branch — and needs no templating.
+          if [ -n "$GITHUB_REF_NAME" ]
+          then
+            set -- "$@" -f target_commitish="$GITHUB_REF_NAME"
+          fi
           # Note: We need to include name of the release,
           # because it will not be added to CHANGELOG otherwise.
           # Sad side–effect of this is that it’s also included
