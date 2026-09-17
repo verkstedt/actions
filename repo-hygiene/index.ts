@@ -4,6 +4,7 @@ import * as actionsGithub from '@actions/github'
 import { auditRepo } from './lib/audit-repo.ts'
 import { codeowners } from './lib/checks/codeowners.ts'
 import { dependabotConfig } from './lib/checks/dependabot-config.ts'
+import { dependabotReviewers } from './lib/checks/dependabot-reviewers.ts'
 import {
   assertAppSeesAllRepos,
   errorMessage,
@@ -13,10 +14,10 @@ import { createLogger } from './lib/log.ts'
 import { publish } from './lib/report.ts'
 import type { Check, Finding, RepoMeta } from './lib/types.ts'
 
-const checks: Array<Check> = [dependabotConfig, codeowners]
+const checks: Array<Check> = [dependabotReviewers, dependabotConfig, codeowners]
 
 const DRY_RUN_NOTE =
-  '> [!NOTE]\n> This is a **dry run**. No pull requests will be created. Will show info about ones that would, here in the summary.\n\n'
+  '> [!NOTE]\n> This is a **dry run**. No pull requests will be created and no reviewers will be requested. Will show info about ones that would, here in the summary.\n\n'
 
 function readInputs() {
   const { context } = actionsGithub

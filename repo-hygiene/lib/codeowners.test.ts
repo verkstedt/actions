@@ -6,6 +6,8 @@ import {
   findCoveringLine,
   findOwningLine,
   buildCodeownersAddition,
+  codeownersFor,
+  codeownersForFiles,
 } from './codeowners.ts'
 
 describe('parseCodeowners', () => {
@@ -78,6 +80,86 @@ describe('findOwningLine', () => {
     const lines = parseCodeowners('* @everyone\npackage-lock.json')
     assert.equal(findOwningLine('package-lock.json', lines), null)
     assert.deepEqual(findOwningLine('Dockerfile', lines)?.owners, ['@everyone'])
+  })
+})
+
+describe('codeownersFor', () => {
+  const lines = parseCodeowners(`
+# Fallback
+*                 @global
+
+*.js              @js-owner
+**/logs           @octocat
+/build/logs/      @doctocat
+/docs/            @doctocat
+docs/*            docs@example.com
+apps/             @octocat
+/scripts/         @doctocat @octocat
+/apps/            @octocat
+/apps/github      # no owner
+package-lock.json @marek-saji
+/.github/workflows/ @marek-saji
+`)
+  const owners = (file: string) => codeownersFor(file, lines)
+
+  it('falls back to the wildcard rule', () => {
+    assert.deepEqual(owners('README.md'), ['@global'])
+    assert.deepEqual(owners('deep/ly/nested/file.txt'), ['@global'])
+  })
+
+  it('matches unanchored patterns at any depth', () => {
+    assert.deepEqual(owners('foo.js'), ['@js-owner'])
+    assert.deepEqual(owners('src/lib/foo.js'), ['@js-owner'])
+    assert.deepEqual(owners('package-lock.json'), ['@marek-saji'])
+    assert.deepEqual(owners('packages/a/package-lock.json'), ['@marek-saji'])
+  })
+
+  it('anchors patterns with a leading slash', () => {
+    assert.deepEqual(owners('build/logs/a.log'), ['@doctocat'])
+    assert.deepEqual(owners('foo/build/a.log'), ['@global'])
+    assert.deepEqual(owners('.github/workflows/ci.yaml'), ['@marek-saji'])
+  })
+
+  it('only covers direct children for `dir/*`', () => {
+    assert.deepEqual(owners('docs/getting-started.md'), ['docs@example.com'])
+    // Nested files fall through to the earlier `/docs/` rule.
+    assert.deepEqual(owners('docs/build-app/troubleshooting.md'), ['@doctocat'])
+  })
+
+  it('matches directory patterns anywhere when unanchored', () => {
+    assert.deepEqual(owners('foo/apps/x.txt'), ['@octocat'])
+    assert.deepEqual(owners('a/b/logs/x.log'), ['@octocat'])
+  })
+
+  it('treats a bare path as the path and its subtree', () => {
+    assert.deepEqual(owners('apps/github'), [])
+    assert.deepEqual(owners('apps/github/x.txt'), [])
+    assert.deepEqual(owners('apps/other/x.txt'), ['@octocat'])
+  })
+
+  it('accepts a leading slash on the file', () => {
+    assert.deepEqual(owners('/scripts/run.sh'), ['@doctocat', '@octocat'])
+  })
+
+  it('returns null when nothing matches', () => {
+    assert.equal(codeownersFor('x', parseCodeowners('/y @a')), null)
+  })
+
+  it('skips character-range rules, which GitHub does not support', () => {
+    const bracketLines = parseCodeowners(`
+*.js         @js-owner
+file[12].js  @range-owner
+`)
+    assert.deepEqual(codeownersFor('file1.js', bracketLines), ['@js-owner'])
+    assert.deepEqual(codeownersFor('file[12].js', bracketLines), ['@js-owner'])
+  })
+
+  it('unions owners of several files in first-seen order', () => {
+    assert.deepEqual(
+      codeownersForFiles(['scripts/a.sh', 'foo.js', 'apps/github'], lines),
+      ['@doctocat', '@octocat', '@js-owner']
+    )
+    assert.deepEqual(codeownersForFiles(['apps/github'], lines), [])
   })
 })
 
