@@ -1,3 +1,5 @@
+import { takeSnapshot, type RepoSnapshot } from '../snapshot.ts'
+import { fakeLog } from './log.ts'
 import {
   createFileResponse,
   createHttpError,
@@ -5,6 +7,7 @@ import {
   type FakeOctokit,
   type Handler,
 } from './octokit.ts'
+import type { Logger } from '../types.ts'
 
 export interface FakeRepoOptions {
   /** Tree paths without a leading `/`. */
@@ -59,4 +62,16 @@ export function fakeRepo({
     'pulls.listFiles': () => [],
     ...handlers,
   })
+}
+
+/** A real snapshot over a `fakeRepo`, for check and runner tests. */
+export function fakeSnapshot(
+  options: FakeRepoOptions & { log?: Logger; octokit?: FakeOctokit } = {}
+): Promise<RepoSnapshot> {
+  const octokit = options.octokit ?? fakeRepo(options)
+  return takeSnapshot(
+    octokit,
+    { name: 'r', default_branch: 'main' },
+    { org: 'org', log: options.log ?? fakeLog() }
+  )
 }
