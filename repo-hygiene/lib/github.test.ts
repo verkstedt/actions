@@ -3,13 +3,12 @@ import assert from 'node:assert/strict'
 
 import {
   tryGetContent,
-  fetchBranchTree,
   commitChange,
   createLineComment,
   assertAppSeesAllRepos,
   listTargetRepos,
 } from './github.ts'
-import { fakeOctokit, fileResponse, httpError, fakeLog } from './fixtures.ts'
+import { fakeOctokit, fileResponse, httpError } from './fixtures.ts'
 
 describe('tryGetContent', () => {
   it('returns the first path that exists, decoded', async () => {
@@ -77,37 +76,6 @@ describe('tryGetContent', () => {
         status: 500,
       }
     )
-  })
-})
-
-describe('fetchBranchTree', () => {
-  it('walks ref → commit → tree and prefixes paths with /', async () => {
-    const octokit = fakeOctokit({
-      'git.getRef': () => ({ object: { sha: 'head' } }),
-      'git.getCommit': () => ({ tree: { sha: 'tree' } }),
-      'git.getTree': () => ({
-        truncated: false,
-        tree: [{ path: 'package.json' }, { path: '.github/workflows/ci.yaml' }],
-      }),
-    })
-    const result = await fetchBranchTree(octokit, {
-      org: 'org',
-      repo: 'r',
-      branch: 'main',
-      log: fakeLog(),
-    })
-    assert.deepEqual(result, {
-      headSha: 'head',
-      paths: ['/package.json', '/.github/workflows/ci.yaml'],
-    })
-    assert.equal(octokit.calls[0].params.ref, 'heads/main')
-    assert.equal(octokit.calls[1].params.commit_sha, 'head')
-    assert.deepEqual(octokit.calls[2].params, {
-      owner: 'org',
-      repo: 'r',
-      tree_sha: 'tree',
-      recursive: '1',
-    })
   })
 })
 
