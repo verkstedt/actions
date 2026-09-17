@@ -61,6 +61,16 @@ export function parseDependabotTemplate(text) {
   return { doc, entryByEcosystem }
 }
 
+// Sorted unique basenames of `paths` whose basename matches `re`.
+// CODEOWNERS matches a bare name at any depth, so one line per
+// distinct name covers every copy of it.
+function basenamesMatching(paths, re) {
+  const names = new Set(
+    paths.map((p) => p.split('/').pop()).filter((name) => re.test(name))
+  )
+  return [...names].sort()
+}
+
 /**
  * Fetch and parse the org-wide dependabot template, once per run. The
  * template missing is fatal: nothing sensible can be added without it.
@@ -100,19 +110,21 @@ export function detectEcosystems(paths) {
       requiredCodeowners.push('pnpm-lock.yaml')
     }
   }
-  if (hasFile((p) => /\/Dockerfile$/.test(p) || /\.Dockerfile$/.test(p))) {
-    detected.add('docker')
-    requiredCodeowners.push('Dockerfile')
-  }
-  const composePaths = paths.filter((p) =>
-    /\/docker-compose[^/]*\.ya?ml$/.test(p)
+  // Dependabot matches “dockerfile” or “containerfile” anywhere in the
+  // file name, case-insensitively. Cover the names people actually use:
+  // `Dockerfile`, `Dockerfile.worker`, `base.Dockerfile`, `Containerfile`.
+  const dockerfileNames = basenamesMatching(
+    paths,
+    /^(dockerfile|containerfile)(\.|$)|\.(dockerfile|containerfile)$/i
   )
-  if (composePaths.length > 0) {
+  if (dockerfileNames.length > 0) {
+    detected.add('docker')
+    requiredCodeowners.push(...dockerfileNames)
+  }
+  const composeNames = basenamesMatching(paths, /^docker-compose.*\.ya?ml$/)
+  if (composeNames.length > 0) {
     detected.add('docker-compose')
-    const names = new Set(composePaths.map((p) => p.split('/').pop()))
-    for (const n of [...names].sort()) {
-      requiredCodeowners.push(n)
-    }
+    requiredCodeowners.push(...composeNames)
   }
   if (paths.includes('/.devcontainer/devcontainer.json')) {
     detected.add('devcontainers')
@@ -208,22 +220,28 @@ function addMissingEcosystems(updates, template, detected) {
   return added
 }
 
-// Add missing ecosystems from the template and enforce a cooldown on
-// every entry. Returns null when the file is fine or unparseable.
+// Add missing ecosystems from the template, set a missing `version`
+// and enforce a cooldown on every entry. Returns null when the file is
+// fine, unparseable, or has an `updates` that is not a list.
 function updateExisting(existing, template, detected, log) {
   const parsed = parseExisting(existing, log)
   if (!parsed) return null
 
+  const fixes = []
   if (parsed.get('version') == null) {
     parsed.set('version', 2)
+    fixes.push('set `version: 2`')
   }
   let updates = parsed.get('updates')
-  if (!yaml.isSeq(updates)) {
+  if (updates == null) {
     updates = parsed.createNode([])
     parsed.set('updates', updates)
+  } else if (!yaml.isSeq(updates)) {
+    log.warning('existing dependabot file has a non-list `updates`, skipping')
+    return null
   }
 
-  const fixes = ensureCooldowns(parsed, updates)
+  fixes.push(...ensureCooldowns(parsed, updates))
   const added = addMissingEcosystems(updates, template, detected)
   if (fixes.length === 0 && added.length === 0) return null
 

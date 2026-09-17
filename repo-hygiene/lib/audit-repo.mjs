@@ -1,6 +1,6 @@
 import {
   parseCodeowners,
-  findCoveringLine,
+  findOwningLine,
   buildCodeownersAddition,
 } from './codeowners.mjs'
 import { detectEcosystems, planDependabotChange } from './dependabot-config.mjs'
@@ -94,10 +94,10 @@ function renderDryRun(repoSlug, plan) {
 async function openPullRequest(ctx, headSha, plan) {
   const { octokit, org, repo, defaultBranch, log } = ctx
 
-  // Always include run ID so each run gets a fresh branch — never
-  // reuse a stale one from an earlier run whose PR was closed without
-  // merging.
-  const branchName = `${BRANCH_PREFIX}${ctx.runId}`
+  // Always include run ID and attempt so each run gets a fresh branch —
+  // never reuse a stale one from an earlier run whose PR was closed
+  // without merging, or from a failed attempt of this run.
+  const branchName = `${BRANCH_PREFIX}${ctx.runId}-${ctx.runAttempt}`
   await octokit.rest.git.createRef({
     owner: org,
     repo,
@@ -176,9 +176,9 @@ function skippedResult(pr, { org, repoSlug, log }) {
  * (otherwise `null`).
  *
  * `runCtx` carries what is shared across repos — `octokit`, `org`,
- * `dryRun`, `runId` and the parsed dependabot `template` — plus a
- * `log` already prefixed for this repo. The per-repo facts are added
- * to it once here, and the helpers get that one object.
+ * `dryRun`, `runId`, `runAttempt` and the parsed dependabot `template` —
+ * plus a `log` already prefixed for this repo. The per-repo facts are
+ * added to it once here, and the helpers get that one object.
  */
 export async function auditRepo(runCtx, repoMeta) {
   const ctx = {
@@ -240,7 +240,7 @@ export async function auditRepo(runCtx, repoMeta) {
     existingCodeowners ? existingCodeowners.content : ''
   )
   const missingCodeowners = requiredCodeowners.filter(
-    (r) => !findCoveringLine(r, parsedLines)
+    (r) => !findOwningLine(r, parsedLines)
   )
 
   if (!dependabotChange && missingCodeowners.length === 0) {
