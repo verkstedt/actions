@@ -3,63 +3,10 @@ import assert from 'node:assert/strict'
 
 import { auditRepo } from './audit-repo.ts'
 import { parseDependabotTemplate } from './dependabot-config.ts'
-import {
-  fakeOctokit,
-  fileResponse,
-  httpError,
-  fakeLog,
-  DEPENDABOT_TEMPLATE,
-} from './fixtures.ts'
+import { fakeLog, fakeRepo, callsTo, DEPENDABOT_TEMPLATE } from './fixtures.ts'
 import type { FakeOctokit } from './fixtures.ts'
 
 const repoMeta = { name: 'r', default_branch: 'main' }
-
-/**
- * A repo with the given tree paths and files (path → content), no open
- * PRs and one human contributor, unless overridden.
- */
-interface FakeRepoOptions {
-  paths?: Array<string>
-  files?: Record<string, string>
-  openPrs?: Array<unknown>
-  contributors?: Array<unknown>
-}
-
-function fakeRepo({
-  paths = [],
-  files = {},
-  openPrs = [],
-  contributors,
-}: FakeRepoOptions = {}) {
-  return fakeOctokit({
-    'pulls.list': () => openPrs,
-    'git.getRef': () => ({ object: { sha: 'head' } }),
-    'git.getCommit': () => ({ tree: { sha: 'tree' } }),
-    'git.getTree': () => ({
-      truncated: false,
-      tree: paths.map((p) => ({ path: p })),
-    }),
-    'repos.getContent': ({ path }) => {
-      if (path in files) return fileResponse(path, files[path])
-      throw httpError(404)
-    },
-    'repos.listContributors': () =>
-      contributors ?? [{ type: 'User', login: 'alice' }],
-    'git.createRef': () => ({}),
-    'repos.createOrUpdateFileContents': () => ({}),
-    'pulls.create': ({ body, head }) => ({
-      number: 42,
-      html_url: 'https://p/42',
-      head: { sha: 'prhead', ref: head },
-      body,
-    }),
-    'pulls.requestReviewers': () => ({}),
-    'pulls.createReview': () => ({}),
-  })
-}
-
-const callsTo = (octokit: FakeOctokit, name: string) =>
-  octokit.calls.filter((c) => c.name === name).map((c) => c.params)
 
 describe('auditRepo', () => {
   const template = parseDependabotTemplate(DEPENDABOT_TEMPLATE)
