@@ -29,5 +29,14 @@ module.exports = {
         '@typescript-eslint/no-floating-promises': 'off',
       },
     },
+    {
+      files: ['repo-hygiene/lib/checks/**/*.ts'],
+      rules: {
+        // Checks import the lib modules one level up. The shared config
+        // wants absolute paths for that, but this package has no import
+        // alias, so relative parent imports are the honest option here.
+        'no-restricted-imports': 'off',
+      },
+    },
   ],
 }

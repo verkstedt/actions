@@ -1,4 +1,6 @@
-import type { Result, ResultOf } from './types.ts'
+import * as core from '@actions/core'
+
+import type { Finding } from './types.ts'
 
 /**
  * Slack renders the whole summary inside a single Block Kit `section`
@@ -77,7 +79,7 @@ export function renderSlackText<K extends string>({
   showOrder,
   runUrl,
 }: SlackTextParams<K>): string {
-  const footerLines = ['', `<${runUrl}|Full list in the run summary>`]
+  const footerLines = ['', `<${runUrl}|See full list with more details>`]
   const listed = (Object.values(sections) as Array<Section>).filter(
     ({ items }) => items.length > 0
   )
@@ -103,14 +105,6 @@ export function renderSlackText<K extends string>({
   return [...showOrder.flatMap((key) => filled[key]), ...footerLines].join('\n')
 }
 
-// The results of one kind, narrowed to that kind’s shape.
-function ofAction<A extends Result['action']>(
-  results: Array<Result>,
-  action: A
-): Array<ResultOf<A>> {
-  return results.filter((r): r is ResultOf<A> => r.action === action)
-}
-
 export interface Outputs {
   results_json: string
   slack_text: string
@@ -118,90 +112,213 @@ export interface Outputs {
   slack_status: 'warning' | 'failure'
 }
 
-/**
- * The action outputs and job summary for `results`, as `{ outputs,
- * summary }`. `outputs` maps output names to their string values.
- */
-export function report(results: Array<Result>): {
-  outputs: Outputs
-  summary: string
-} {
-  const opened = ofAction(results, 'opened-pr')
-  const failed = ofAction(results, 'failed')
-  const dryRuns = ofAction(results, 'dry-run')
-  const preexisting = ofAction(results, 'skipped-existing-pr')
+export interface ReportOptions {
+  repoCount: number
+  dryRun: boolean
+  /** Rendered dry-run PRs, one per repo. */
+  previews: Array<string>
+  runUrl: string
+}
 
-  const reviewerSummary = (r: { reviewers: Array<string> }) =>
-    r.reviewers.length > 0
-      ? `reviewer(s): ${r.reviewers.join(', ')}`
-      : 'no reviewer assigned'
+type GroupKey = 'failed' | 'attention' | 'opened' | 'fixed' | 'previous'
 
-  const prItem = (r: { prUrl: string; reviewers: Array<string> }) =>
-    `<${r.prUrl}> — ${reviewerSummary(r)}`
-  const openedItems = opened.map(prItem)
-  const preexistingItems = preexisting.map(prItem)
-  const dryRunItems = dryRuns.map((r) => `${r.repo} — ${reviewerSummary(r)}`)
-  const failedItems = failed.map((r) => `${r.repo} — ${r.error}`)
+const GROUP_ORDER: ReadonlyArray<GroupKey> = [
+  'failed',
+  'attention',
+  'opened',
+  'fixed',
+  'previous',
+]
 
-  const HEADINGS = {
-    opened: '*Opened PRs:*',
-    preexisting: '*Pre-existing PRs:*',
-    dryRun: '*Would open PRs (dry run):*',
-    failed: '*Failed repos:*',
+const HEADINGS: Record<GroupKey, string> = {
+  failed: '*💥 Failed:*',
+  attention: '*⚠️ Needs attention:*',
+  opened: '*🆕 Opened PRs:*',
+  fixed: '*🔧 Fixed:*',
+  previous: '*🥶 Previously opened PRs:*',
+}
+
+const DRY_RUN_HEADINGS: Partial<Record<GroupKey, string>> = {
+  opened: '*🆕 Would open PRs (dry run):*',
+  fixed: '*🔧 Would fix (dry run):*',
+}
+
+/** Sections that list half their items when short of room; the rest collapse to a count. */
+const PARTIAL: Record<GroupKey, boolean> = {
+  failed: true,
+  attention: true,
+  opened: true,
+  fixed: true,
+  previous: false,
+}
+
+const MAX_DETAILS = 5
+
+function groupOf(finding: Finding): GroupKey | null {
+  const status = finding.outcome?.status ?? 'none'
+  if (status === 'failed' || finding.level === 'error') return 'failed'
+  if (status === 'skipped') return 'previous'
+  if (status === 'fixed' || status === 'would-fix') {
+    return finding.fix?.kind === 'file' ? 'opened' : 'fixed'
+  }
+  if (finding.level === 'warning' || finding.fix) return 'attention'
+  return null
+}
+
+/** `repo` or `repo: <url>`. */
+function where(finding: Finding): string {
+  const url = finding.outcome?.url ?? finding.url
+  return url ? `${finding.repo}: <${url}>` : finding.repo
+}
+
+/** At most `MAX_DETAILS` items, then a count of the rest. */
+function detailsText(details: Array<string>): string {
+  const shown = details.slice(0, MAX_DETAILS)
+  const rest = details.length - shown.length
+  return rest > 0 ? `${shown.join(', ')} and ${rest} more` : shown.join(', ')
+}
+
+function findingLine(
+  finding: Finding,
+  { summary, details }: { summary: boolean; details: boolean }
+): string {
+  const parts = [where(finding)]
+  if (summary) parts.push(finding.summary)
+  if (finding.outcome?.detail) parts.push(finding.outcome.detail)
+  if (details && finding.details && finding.details.length > 0) {
+    parts.push(detailsText(finding.details))
+  }
+  return parts.join(' — ')
+}
+
+/** One item per finding, except Opened PRs, which is one per repo. */
+function groupItems(
+  group: GroupKey,
+  findings: Array<Finding>,
+  { details }: { details: boolean }
+): Array<string> {
+  if (group === 'opened' || group === 'previous') {
+    const seen = new Set<string>()
+    return findings.flatMap((f) => {
+      const key = group === 'opened' ? f.repo : where(f)
+      if (seen.has(key)) return []
+      seen.add(key)
+      return [findingLine(f, { summary: false, details: false })]
+    })
+  }
+  return findings.map((f) => findingLine(f, { summary: true, details }))
+}
+
+function groupHeading(group: GroupKey, findings: Array<Finding>): string {
+  const dry = findings.some((f) => f.outcome?.status === 'would-fix')
+  return (dry && DRY_RUN_HEADINGS[group]) || HEADINGS[group]
+}
+
+/** `results_json`’s shape: every field but the fix, per the design spec. */
+function forOutput({
+  repo,
+  level,
+  summary,
+  url,
+  details,
+  reviewers,
+  outcome,
+}: Finding): Omit<Finding, 'fix'> {
+  return { repo, level, summary, url, details, reviewers, outcome }
+}
+
+/** The action outputs and job summary for `findings`. */
+export function report(
+  findings: Array<Finding>,
+  { repoCount, dryRun, previews, runUrl }: ReportOptions
+): { outputs: Outputs; summary: string } {
+  const groups = Object.fromEntries(
+    GROUP_ORDER.map((key) => [key, [] as Array<Finding>])
+  ) as Record<GroupKey, Array<Finding>>
+  for (const finding of findings) {
+    const group = groupOf(finding)
+    if (group) groups[group].push(finding)
   }
 
-  // The job summary lists everything.
-  const listIfAny = (heading: string, items: Array<string>) =>
-    items.length > 0 ? renderList(heading, items) : []
-  const lines = [
-    ...listIfAny(HEADINGS.opened, openedItems),
-    ...listIfAny(HEADINGS.preexisting, preexistingItems),
-    ...listIfAny(HEADINGS.dryRun, dryRunItems),
-    ...listIfAny(HEADINGS.failed, failedItems),
-  ]
+  const summaryLines = GROUP_ORDER.flatMap((key) =>
+    groups[key].length > 0
+      ? renderList(
+          groupHeading(key, groups[key]),
+          groupItems(key, groups[key], { details: true })
+        )
+      : []
+  )
 
-  // Slack gets the same lists, fitted into one section block. Sections
-  // are filled in order of importance — failures, then opened, then
-  // pre-existing — and shown in a different order, with the failures
-  // first and the longest list last. Dry runs are left out: the workflow
-  // does not notify on a dry run.
-  const runUrl = [
-    process.env.GITHUB_SERVER_URL,
-    process.env.GITHUB_REPOSITORY,
-    'actions/runs',
-    process.env.GITHUB_RUN_ID,
-  ].join('/')
   const slackText = renderSlackText({
-    sections: {
-      failed: { heading: HEADINGS.failed, items: failedItems },
-      opened: { heading: HEADINGS.opened, items: openedItems },
-      preexisting: { heading: HEADINGS.preexisting, items: preexistingItems },
-    },
-    fillOrder: [
-      { key: 'failed', partial: true },
-      { key: 'opened', partial: true },
-      // A partial list of the least important PRs would be noise.
-      { key: 'preexisting', partial: false },
-    ],
-    showOrder: ['failed', 'preexisting', 'opened'],
+    sections: Object.fromEntries(
+      GROUP_ORDER.map((key) => [
+        key,
+        {
+          heading: groupHeading(key, groups[key]),
+          // Failed lines carry the error itself as `details`, so Slack
+          // keeps it; other groups’ `details` are the extra context
+          // that only the job summary has room for.
+          items: groupItems(key, groups[key], { details: key === 'failed' }),
+        },
+      ])
+    ) as Record<GroupKey, { heading: string; items: Array<string> }>,
+    fillOrder: GROUP_ORDER.map((key) => ({ key, partial: PARTIAL[key] })),
+    showOrder: GROUP_ORDER,
     runUrl,
   })
+
+  const notify =
+    groups.failed.length + groups.opened.length + groups.fixed.length > 0
   const outputs: Outputs = {
-    results_json: JSON.stringify(results),
+    results_json: JSON.stringify(findings.map(forOutput)),
     slack_text: slackText,
-    should_notify: opened.length + failed.length > 0 ? 'true' : 'false',
-    slack_status: failed.length > 0 ? 'failure' : 'warning',
+    should_notify: notify ? 'true' : 'false',
+    slack_status: groups.failed.length > 0 ? 'failure' : 'warning',
   }
 
   const summary = [
     '',
     '## Summary',
     '',
-    `\`repo-hygiene\` run complete (${results.length} repo(s) checked)`,
+    `\`repo-hygiene\` run complete, ${repoCount} repo(s) checked.`,
+    ...summaryLines,
     '',
-    ...lines,
-    '',
+    ...previews.flatMap((preview) => ['', preview]),
+    ...(dryRun || !notify
+      ? [
+          '',
+          '## Slack message',
+          '',
+          '<details>',
+          `<summary>Not sent: ${dryRun ? 'dry run' : 'nothing to notify about'}</summary>`,
+          '',
+          '```',
+          slackText,
+          '```',
+          '',
+          '</details>',
+          '',
+        ]
+      : []),
   ].join('\n')
 
   return { outputs, summary }
+}
+
+/** Write the outputs and the job summary for the run. */
+export async function publish(
+  findings: Array<Finding>,
+  options: Omit<ReportOptions, 'runUrl'>
+): Promise<void> {
+  const runUrl = [
+    process.env.GITHUB_SERVER_URL,
+    process.env.GITHUB_REPOSITORY,
+    'actions/runs',
+    process.env.GITHUB_RUN_ID,
+  ].join('/')
+  const { outputs, summary } = report(findings, { ...options, runUrl })
+  for (const [name, value] of Object.entries(outputs)) {
+    core.setOutput(name, value)
+  }
+  await core.summary.addRaw(summary).write()
 }

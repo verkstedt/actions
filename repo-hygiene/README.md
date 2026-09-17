@@ -13,6 +13,19 @@ Usual approach is to create a dedicated repository in your organisation
 (e.g. `repo-hygiene-runner`) with `on: schedule:` trigger that calls
 this workflow.
 
+## Adding a check
+
+A check is one module in `lib/checks/` exporting a `Check`: a `name`,
+`opensPr: true` when it may change files or needs the hygiene PR, an
+optional `setup` for org-wide input, and `run(snapshot)` returning
+findings. A finding is a
+`level`, a `summary` and optionally a `url`, `details`, suggested
+`reviewers` for the hygiene PR and a `fix`: either a whole file for
+the PR or an action to perform. Add the export to the `checks` list in
+`index.ts`; order matters when checks build on each other’s files.
+Reporting, dry runs and Slack need no changes. See the design in
+`docs/superpowers/specs/2026-09-17-repo-hygiene-findings-design.md`.
+
 ## Inputs and Outputs
 
 See [`action.yaml`](./action.yaml).

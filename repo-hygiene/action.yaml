@@ -32,7 +32,11 @@ inputs:
 
 outputs:
   results_json:
-    description: JSON-encoded list of per-repo result objects.
+    description: >
+      JSON-encoded list of findings, one per thing a check found in a
+      repo: `repo`, `level` (info/warning/error), `summary`, optional
+      `url`, `details` and `reviewers`, and `outcome` with `status`
+      (fixed/would-fix/skipped/failed/none), optional `url` and `detail`.
   slack_text:
     description: >
       Pre-formatted run summary suitable for Slack `text:`, sized to fit

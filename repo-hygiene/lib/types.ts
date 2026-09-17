@@ -10,9 +10,9 @@ export interface Logger {
   error: (message: string) => void
 }
 
-/** A text file fetched through the contents API. */
+/** A text file: as fetched, or the working copy of one not yet committed. */
 export interface FileContent {
-  sha: string
+  sha?: string
   path: string
   content: string
 }
@@ -82,47 +82,93 @@ export interface PullRequest {
   requested_teams?: Array<GitHubTeam> | null
 }
 
-/** What is shared across all repos of one run. */
-export interface RunContext {
+export type Level = 'info' | 'warning' | 'error'
+
+export type OutcomeStatus =
+  'fixed' | 'would-fix' | 'skipped' | 'failed' | 'none'
+
+/** What the runner did about a finding; see the spec’s Outcome table. */
+export interface Outcome {
+  status: OutcomeStatus
+  url?: string
+  detail?: string
+}
+
+/** A whole new file for the repo’s hygiene PR. */
+export interface FileFix {
+  kind: 'file'
+  path: string
+  content: string
+  /** Code fence language for the dry-run rendering. */
+  lang: string
+  describe: string
+}
+
+export interface ActionContext {
   octokit: Octokit
   org: string
-  dryRun: boolean
-  template: DependabotTemplate
-  runId: number
-  runAttempt: number
-}
-
-/** `RunContext` plus what is known about the repo being audited. */
-export interface RepoContext extends RunContext {
-  log: Logger
   repo: string
-  repoSlug: string
-  defaultBranch: string
+  /** The hygiene PR opened this run, or `null`. */
+  pr: PullRequest | null
+  /** Final content of every path the PR committed. */
+  files: Record<string, string>
+  log: Logger
 }
 
-export type Result =
-  | { repo: string; action: 'ok' }
-  | { repo: string; action: 'failed'; error: string }
-  | {
-      repo: string
-      action: 'skipped-existing-pr'
-      prUrl: string
-      reviewers: Array<string>
-    }
-  | {
-      repo: string
-      action: 'dry-run'
-      reviewers: Array<string>
-      unresolvedOwner: boolean
-    }
-  | {
-      repo: string
-      action: 'opened-pr'
-      prUrl: string
-      reviewers: Array<string>
-    }
+/**
+ * `undefined` or a string means the fix was applied, the string being the
+ * detail. `{ fixed: false }` means nothing broke but the fix could
+ * not be applied.
+ */
+export type ActionResult = string | { fixed: false; detail: string } | undefined
 
-export type ResultOf<A extends Result['action']> = Extract<
-  Result,
-  { action: A }
->
+/** Something performed directly against GitHub. */
+export interface ActionFix {
+  kind: 'action'
+  /** Needs the hygiene PR; runs after it is opened and receives it. */
+  afterPr?: boolean
+  describe: string
+  run: (ctx: ActionContext) => Promise<ActionResult>
+}
+
+export type Fix = FileFix | ActionFix
+
+/** One thing a check found; see the spec’s Finding section. */
+export interface Finding {
+  repo: string
+  level: Level
+  summary: string
+  url?: string
+  details?: Array<string>
+  /** Suggested reviewers for the hygiene PR. */
+  reviewers?: Array<string>
+  fix?: Fix
+  outcome?: Outcome
+}
+
+/** What a check returns: a finding before the runner stamps `repo`. */
+export type CheckFinding = Omit<Finding, 'repo' | 'outcome'>
+
+/** The only thing a check receives; see `takeSnapshot`. */
+export interface Snapshot {
+  org: string
+  repo: string
+  defaultBranch: string
+  headSha: string
+  listPaths: () => Promise<Array<string>>
+  readFile: (path: string) => Promise<FileContent | null>
+  readFirstFile: (paths: Array<string>) => Promise<FileContent | null>
+  readFileOnDefaultBranch: (path: string) => Promise<FileContent | null>
+  listOpenPrs: () => Promise<Array<PullRequest>>
+  octokit: Octokit
+  log: Logger
+}
+
+export interface Check {
+  name: string
+  /** May produce file fixes or `afterPr` actions. */
+  opensPr?: boolean
+  /** Runs once per run before any repo; a throw fails the run. */
+  setup?: (octokit: Octokit) => Promise<void>
+  run: (snapshot: Snapshot) => Promise<Array<CheckFinding>>
+}

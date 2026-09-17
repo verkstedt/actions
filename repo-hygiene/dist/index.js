@@ -47515,9 +47515,8 @@ function buildCodeownersAddition({ existing, parsedLines, requiredPatterns, miss
     };
 }
 
-// EXTERNAL MODULE: ../node_modules/yaml/dist/index.js
-var dist = __nccwpck_require__(6637);
 ;// CONCATENATED MODULE: ./lib/github.ts
+
 /** The HTTP status of a failed Octokit request, or `undefined`. */
 function httpStatus(e) {
     if (typeof e === 'object' && e !== null && 'status' in e) {
@@ -47555,56 +47554,20 @@ async function tryGetContent(octokit, { paths, ...params }) {
     }
     return null;
 }
-/**
- * Head commit SHA of `branch` and every path in its tree, each
- * prefixed with `/`. Warns through `log` when the tree was truncated.
- */
-async function fetchBranchTree(octokit, { org, repo, branch, log, }) {
-    const refData = await octokit.rest.git.getRef({
-        owner: org,
-        repo,
-        ref: `heads/${branch}`,
-    });
-    const headSha = refData.data.object.sha;
-    const commitData = await octokit.rest.git.getCommit({
-        owner: org,
-        repo,
-        commit_sha: headSha,
-    });
-    const treeData = await octokit.rest.git.getTree({
-        owner: org,
-        repo,
-        tree_sha: commitData.data.tree.sha,
-        recursive: '1',
-    });
-    if (treeData.data.truncated) {
-        log.warning('tree response truncated; detection may be incomplete');
-    }
-    const paths = (treeData.data.tree || []).map((e) => `/${e.path}`);
-    return { headSha, paths };
-}
-/**
- * Commit a `{ path, newContent, sha? }` change onto `branch`. `sha`
- * present means the file is being updated rather than added.
- */
-async function commitChange(octokit, { org, repo, branch, change, }) {
+/** Commit `content` to `path` on `branch`; `sha` set means an update. */
+async function commitChange(octokit, { org, repo, branch, path, content, sha, }) {
     await octokit.rest.repos.createOrUpdateFileContents({
         owner: org,
         repo,
         branch,
-        path: change.path,
-        message: change.sha
-            ? `chore: Update ${change.path}`
-            : `chore: Add ${change.path}`,
-        content: Buffer.from(change.newContent, 'utf8').toString('base64'),
-        sha: change.sha,
+        path,
+        message: sha ? `chore: Update ${path}` : `chore: Add ${path}`,
+        content: Buffer.from(content, 'utf8').toString('base64'),
+        sha,
     });
 }
-/**
- * Leave a single review comment spanning `lineNumbers` of `path` on
- * the PR. Failure to comment is logged through `log`, not thrown.
- */
-async function createLineComment(octokit, { org, repo, pr, path, lineNumbers, body, log }) {
+/** Leave one review comment spanning `lineNumbers` of `path` on the PR. */
+async function createLineComment(octokit, { org, repo, pr, path, lineNumbers, body }) {
     const startLine = Math.min(...lineNumbers);
     const endLine = Math.max(...lineNumbers);
     const comment = { path, body, side: 'RIGHT', line: endLine };
@@ -47612,21 +47575,673 @@ async function createLineComment(octokit, { org, repo, pr, path, lineNumbers, bo
         comment.start_line = startLine;
         comment.start_side = 'RIGHT';
     }
-    try {
-        await octokit.rest.pulls.createReview({
-            owner: org,
-            repo,
-            pull_number: pr.number,
-            commit_id: pr.head.sha,
-            event: 'COMMENT',
-            comments: [comment],
-        });
-    }
-    catch (e) {
-        log.warning(`could not create review comment: ${errorMessage(e)}`);
+    await octokit.rest.pulls.createReview({
+        owner: org,
+        repo,
+        pull_number: pr.number,
+        commit_id: pr.head.sha,
+        event: 'COMMENT',
+        comments: [comment],
+    });
+}
+/** The App must be installed on every org repo, or the audit is partial. */
+async function assertAppSeesAllRepos(octokit) {
+    const inst = await octokit.request('GET /installation/repositories', {
+        per_page: 1,
+    });
+    if (inst.data.repository_selection !== 'all') {
+        throw new Error(`App has repository_selection='${inst.data.repository_selection}'; expected 'all'. Reconfigure the App’s repository access to “All repositories”.`);
     }
 }
+/**
+ * Org repos to audit: sources only, skipping archived, disabled and
+ * empty ones, narrowed by `reposFilter` picomatch globs when given.
+ * Every pattern must match at least one repo.
+ */
+async function listTargetRepos(octokit, { org, reposFilter }) {
+    const allRepos = await octokit.paginate(octokit.rest.repos.listForOrg, {
+        org,
+        type: 'sources',
+        per_page: 100,
+    });
+    const targets = allRepos.filter((r) => !r.archived &&
+        !r.disabled &&
+        (r.size || 0) > 0 &&
+        typeof r.default_branch === 'string');
+    if (reposFilter.length === 0)
+        return targets;
+    const matchers = reposFilter.map((pattern) => ({
+        pattern,
+        isMatch: picomatch_default()(pattern, { dot: true }),
+    }));
+    const hitPatterns = new Set();
+    const matched = targets.filter((r) => {
+        const hits = matchers.filter((m) => m.isMatch(r.name));
+        hits.forEach((m) => hitPatterns.add(m.pattern));
+        return hits.length > 0;
+    });
+    const missing = reposFilter.filter((p) => !hitPatterns.has(p));
+    if (missing.length > 0) {
+        throw new Error(missing
+            .map((p) => `Requested repo pattern "${p}" matched no repos in ${org} (after filtering archived/disabled/fork/empty).`)
+            .join('\n'));
+    }
+    return matched;
+}
 
+;// CONCATENATED MODULE: ./lib/reviewers.ts
+
+const KNOWN_BOTS = new Set(['dependabot', 'github-actions', 'renovate']);
+/** GitHub allows at most this many requested reviewers on a PR. */
+const MAX_REVIEWERS = 15;
+/**
+ * Split CODEOWNERS owner tokens into unique user logins and team
+ * slugs, without the `@` and org prefixes.
+ */
+function splitReviewers(ownerTokens) {
+    const users = new Set();
+    const teams = new Set();
+    for (const tok of ownerTokens) {
+        const login = tok.replace(/^@/, '');
+        if (login) {
+            if (login.includes('/')) {
+                const [, team] = login.split('/');
+                if (team)
+                    teams.add(team);
+            }
+            else {
+                users.add(login);
+            }
+        }
+    }
+    return { users: [...users], teams: [...teams] };
+}
+async function listHumanContributors(octokit, { org, repo }) {
+    let contribs = [];
+    try {
+        const { data } = await octokit.rest.repos.listContributors({
+            owner: org,
+            repo,
+            per_page: 100,
+        });
+        contribs = Array.isArray(data) ? data : [];
+    }
+    catch (e) {
+        const status = httpStatus(e);
+        if (status !== 404 && status !== 204) {
+            throw e;
+        }
+    }
+    return contribs.filter((c) => c.type === 'User' &&
+        typeof c.login === 'string' &&
+        !/\[bot\]$/.test(c.login) &&
+        !KNOWN_BOTS.has(c.login));
+}
+/** Where GitHub looks for CODEOWNERS, in order of precedence. */
+const CODEOWNERS_PATHS = [
+    '.github/CODEOWNERS',
+    'CODEOWNERS',
+    'docs/CODEOWNERS',
+];
+/** `reviewer: @a`, `reviewers: @a, @b`, or `no reviewer assigned`. */
+function describeReviewers(reviewers) {
+    if (reviewers.length === 0)
+        return 'no reviewer assigned';
+    const label = reviewers.length === 1 ? 'reviewer' : 'reviewers';
+    return `${label}: ${reviewers.join(', ')}`;
+}
+/** `@user` and `@org/team` handles for the split reviewers. */
+function reviewerHandles(org, { users, teams }) {
+    return [...users.map((u) => `@${u}`), ...teams.map((t) => `@${org}/${t}`)];
+}
+/**
+ * Who should review the hygiene PR. Tries, in order: the suggested
+ * owners, any owner in CODEOWNERS, then human contributors.
+ */
+async function chooseReviewers(octokit, { org, repo, suggested, parsedLines }) {
+    if (suggested.length > 0) {
+        return {
+            reviewerTokens: [...new Set(suggested)],
+            reviewerSource: 'codeowners-match',
+        };
+    }
+    const allOwners = new Set();
+    for (const line of parsedLines) {
+        line.owners.forEach((o) => allOwners.add(o));
+    }
+    if (allOwners.size > 0) {
+        return {
+            reviewerTokens: [...allOwners],
+            reviewerSource: 'codeowners-fallback',
+        };
+    }
+    const humans = await listHumanContributors(octokit, { org, repo });
+    if (humans.length > 0) {
+        return {
+            reviewerTokens: humans.map((h) => `@${h.login}`),
+            reviewerSource: 'contributors',
+        };
+    }
+    return { reviewerTokens: [], reviewerSource: 'none' };
+}
+/**
+ * Request reviewers one at a time. requestReviewers is all-or-nothing:
+ * a single invalid entry (e.g. a past contributor who is no longer
+ * a collaborator, or a team without repo access) 422s the whole call.
+ * Requesting each reviewer separately — calls are additive — means
+ * a bad entry only drops itself while the valid reviewers still get
+ * assigned. Any other failure (auth, rate limit, server error) is
+ * rethrown so the audit reports it instead of a partial success.
+ * Stops once MAX_REVIEWERS have been accepted, so an invalid candidate
+ * does not use up a slot. Returns the reviewers that were requested,
+ * as `@` handles.
+ */
+async function requestReviewersOneByOne(octokit, { org, repo, pullNumber, users, teams, log }) {
+    const requested = [];
+    for (const user of users) {
+        if (requested.length >= MAX_REVIEWERS)
+            break;
+        try {
+            await octokit.rest.pulls.requestReviewers({
+                owner: org,
+                repo,
+                pull_number: pullNumber,
+                reviewers: [user],
+            });
+            requested.push(`@${user}`);
+        }
+        catch (e) {
+            if (httpStatus(e) !== 422)
+                throw e;
+            log.warning(`could not request reviewer @${user}: ${errorMessage(e)}`);
+        }
+    }
+    for (const team of teams) {
+        if (requested.length >= MAX_REVIEWERS)
+            break;
+        try {
+            await octokit.rest.pulls.requestReviewers({
+                owner: org,
+                repo,
+                pull_number: pullNumber,
+                team_reviewers: [team],
+            });
+            requested.push(`@${org}/${team}`);
+        }
+        catch (e) {
+            if (httpStatus(e) !== 422)
+                throw e;
+            log.warning(`could not request team reviewer @${org}/${team}: ${errorMessage(e)}`);
+        }
+    }
+    return requested;
+}
+
+;// CONCATENATED MODULE: ./lib/apply-fixes.ts
+
+
+
+const WORKFLOW_LINK = 'https://github.com/verkstedt/actions/blob/HEAD/repo-hygiene/';
+/** Also how PRs from earlier runs are recognised. */
+const BRANCH_PREFIX = 'chore/repo-hygiene/';
+const PR_TITLE = 'chore: Repo hygiene';
+const isPending = (f) => f.outcome === undefined;
+const hasFileFix = (f) => f.fix?.kind === 'file';
+const hasActionFix = (f) => f.fix?.kind === 'action';
+function normalise(path) {
+    return path.replace(/^\//, '');
+}
+/** One entry per path, the last fix’s content winning. */
+function finalFiles(findings) {
+    const files = new Map();
+    for (const { fix } of findings)
+        files.set(normalise(fix.path), fix.content);
+    return files;
+}
+const REVIEWER_PARAGRAPHS = {
+    'codeowners-fallback': 'Assigned people from CODEOWNERS as reviewers of this PR.',
+    'contributors': 'Assigned repo contributors as reviewers of this PR.',
+    'none': 'Could not determine who to assign as reviewers of this PR.',
+};
+function composePrBody(reviewerSource, describes) {
+    const parts = [
+        `🤖 Opened automatically by [repo-hygiene action from verkstedt/actions](${WORKFLOW_LINK}).`,
+    ];
+    const paragraph = REVIEWER_PARAGRAPHS[reviewerSource];
+    if (paragraph)
+        parts.push(paragraph);
+    parts.push(`## What?\n\n${describes.map((d) => `- ${d}`).join('\n')}`);
+    return parts.join('\n\n');
+}
+async function committedCodeowners(snapshot) {
+    for (const path of CODEOWNERS_PATHS) {
+        const file = await snapshot.readFileOnDefaultBranch(path);
+        if (file)
+            return parseCodeowners(file.content);
+    }
+    return [];
+}
+function suggestedReviewers(fileFindings, findings) {
+    return findings
+        .filter((f) => f.reviewers && (fileFindings.includes(f) || !f.fix))
+        .flatMap((f) => f.reviewers ?? []);
+}
+async function planPr(fileFindings, findings, snapshot) {
+    const { reviewerTokens, reviewerSource } = await chooseReviewers(snapshot.octokit, {
+        org: snapshot.org,
+        repo: snapshot.repo,
+        suggested: suggestedReviewers(fileFindings, findings),
+        parsedLines: await committedCodeowners(snapshot),
+    });
+    const reviewers = splitReviewers(reviewerTokens);
+    const describes = fileFindings.map((f) => f.fix.describe);
+    return {
+        files: finalFiles(fileFindings),
+        langs: new Map(fileFindings.map((f) => [normalise(f.fix.path), f.fix.lang])),
+        describes,
+        reviewers,
+        reviewerHandles: reviewerHandles(snapshot.org, reviewers),
+        body: composePrBody(reviewerSource, describes),
+    };
+}
+async function renderFilePreview(path, content, plan, snapshot) {
+    const existing = await snapshot.readFileOnDefaultBranch(path);
+    return [
+        '',
+        `**${path}** (${existing ? 'update' : 'create'}):`,
+        '',
+        `\`\`\`${plan.langs.get(path) ?? ''}`,
+        content,
+        '```',
+    ];
+}
+async function renderPreview(plan, snapshot) {
+    const lines = [
+        `### \`${snapshot.org}/${snapshot.repo}\`: ${PR_TITLE}`,
+        '',
+        'Reviewers:',
+        '',
+        plan.reviewerHandles.map((r) => `- ${r}`).join('\n') || '- (none)',
+        '',
+        '<details>',
+        '<summary>Body and files</summary>',
+        '',
+        '<blockquote>',
+        '',
+        plan.body,
+        '',
+        '</blockquote>',
+        '',
+        '---',
+    ];
+    for (const [path, content] of plan.files) {
+        lines.push(...(await renderFilePreview(path, content, plan, snapshot)));
+    }
+    lines.push('', '</details>', '');
+    return lines.join('\n');
+}
+async function commitPlanFiles(plan, snapshot, branch) {
+    const { octokit, org, repo } = snapshot;
+    for (const [path, content] of plan.files) {
+        const existing = await snapshot.readFileOnDefaultBranch(path);
+        await commitChange(octokit, {
+            org,
+            repo,
+            branch,
+            path,
+            content,
+            sha: existing?.sha,
+        });
+    }
+}
+async function openPr(plan, snapshot, run) {
+    const { octokit, org, repo, defaultBranch, headSha, log } = snapshot;
+    // Run ID and attempt make every run use a fresh branch.
+    const branch = `${BRANCH_PREFIX}${run.runId}-${run.runAttempt}`;
+    await octokit.rest.git.createRef({
+        owner: org,
+        repo,
+        ref: `refs/heads/${branch}`,
+        sha: headSha,
+    });
+    await commitPlanFiles(plan, snapshot, branch);
+    const pr = await octokit.rest.pulls.create({
+        owner: org,
+        repo,
+        title: PR_TITLE,
+        head: branch,
+        base: defaultBranch,
+        body: plan.body,
+    });
+    const requested = await requestReviewersOneByOne(octokit, {
+        org,
+        repo,
+        pullNumber: pr.data.number,
+        users: plan.reviewers.users,
+        teams: plan.reviewers.teams,
+        log,
+    });
+    log.info(`opened ${pr.data.html_url}`);
+    return { pr: pr.data, requested };
+}
+function outcomeForActionResult(fix, result) {
+    if (typeof result === 'object' && result !== null) {
+        return { status: 'none', detail: result.detail };
+    }
+    return { status: 'fixed', detail: result || fix.describe };
+}
+async function runAction(finding, snapshot, pr, files) {
+    const { fix } = finding;
+    if (fix.afterPr && !pr) {
+        return { status: 'failed', detail: 'hygiene PR was not opened' };
+    }
+    try {
+        const result = await fix.run({
+            octokit: snapshot.octokit,
+            org: snapshot.org,
+            repo: snapshot.repo,
+            pr,
+            files,
+            log: snapshot.log,
+        });
+        return outcomeForActionResult(fix, result);
+    }
+    catch (e) {
+        return { status: 'failed', detail: errorMessage(e) };
+    }
+}
+async function applyFileFixes(fileFindings, findings, snapshot, run) {
+    if (fileFindings.length === 0) {
+        return { pr: null, files: {}, preview: null };
+    }
+    const plan = await planPr(fileFindings, findings, snapshot);
+    const files = Object.fromEntries(plan.files);
+    if (run.dryRun) {
+        snapshot.log.info('Dry run, skipping PR creation');
+        const preview = await renderPreview(plan, snapshot);
+        for (const f of fileFindings) {
+            f.outcome = { status: 'would-fix', detail: f.fix.describe };
+        }
+        return { pr: null, files, preview };
+    }
+    try {
+        const { pr, requested } = await openPr(plan, snapshot, run);
+        for (const f of fileFindings) {
+            f.outcome = {
+                status: 'fixed',
+                url: pr.html_url,
+                detail: describeReviewers(requested),
+            };
+        }
+        return { pr, files, preview: null };
+    }
+    catch (e) {
+        const detail = errorMessage(e);
+        for (const f of fileFindings) {
+            f.outcome = { status: 'failed', detail };
+        }
+        return { pr: null, files, preview: null };
+    }
+}
+async function applyActionFixes(findings, { snapshot, run, pr, files }) {
+    for (const finding of findings.filter(isPending).filter(hasActionFix)) {
+        if (run.dryRun) {
+            finding.outcome = { status: 'would-fix', detail: finding.fix.describe };
+        }
+        else {
+            finding.outcome = await runAction(finding, snapshot, pr, files);
+        }
+    }
+}
+/**
+ * Give every finding an outcome: compose one PR from the file fixes
+ * (or render it in a dry run), then run the action fixes, `afterPr`
+ * ones with the PR. Findings that already carry an outcome are left
+ * as they are.
+ */
+async function applyFixes(findings, snapshot, run) {
+    const fileFindings = findings.filter(isPending).filter(hasFileFix);
+    const { pr, files, preview } = await applyFileFixes(fileFindings, findings, snapshot, run);
+    await applyActionFixes(findings, { snapshot, run, pr, files });
+    for (const finding of findings.filter(isPending)) {
+        finding.outcome = { status: 'none' };
+        snapshot.log.info(finding.summary);
+    }
+    return { findings, preview };
+}
+
+;// CONCATENATED MODULE: ./lib/run-checks.ts
+
+function run_checks_normalise(path) {
+    return path.replace(/^\//, '');
+}
+/**
+ * Attach the finding’s file fix to the working copy, or mark the
+ * finding failed when it would blindly overwrite a pending fix:
+ * either the check never read the path, or it already fixed it.
+ */
+function acceptFileFix(finding, check, snapshot, fixedByThisCheck) {
+    if (finding.fix?.kind !== 'file')
+        return;
+    const path = run_checks_normalise(finding.fix.path);
+    const { pending, reads } = snapshot.workingCopy;
+    const blind = pending.has(path) && !reads.has(path);
+    if (blind || fixedByThisCheck.has(path)) {
+        // eslint-disable-next-line no-param-reassign -- stamping the outcome onto the finding is the point
+        finding.outcome = {
+            status: 'failed',
+            detail: `${check.name} check changed ${path} without reading the pending fix for it`,
+        };
+        return;
+    }
+    snapshot.workingCopy.attach(path, finding.fix.content);
+    fixedByThisCheck.add(path);
+}
+function errorFinding(check, e, snapshot) {
+    const message = errorMessage(e);
+    snapshot.log.error(`${check.name} check failed: ${message}`);
+    return {
+        repo: `${snapshot.org}/${snapshot.repo}`,
+        level: 'error',
+        summary: `${check.name} check failed`,
+        details: [message],
+    };
+}
+/**
+ * Run `checks` in order against `snapshot`. Each finding gets its
+ * `repo`; file fixes become the working copy later checks read. A
+ * check that throws yields one error finding and the rest still run.
+ */
+async function runChecks(checks, snapshot) {
+    const repo = `${snapshot.org}/${snapshot.repo}`;
+    const findings = [];
+    for (const check of checks) {
+        snapshot.workingCopy.startCheck();
+        let found;
+        try {
+            found = await check.run(snapshot);
+        }
+        catch (e) {
+            findings.push(errorFinding(check, e, snapshot));
+        }
+        if (found !== undefined) {
+            const fixedByThisCheck = new Set();
+            for (const checkFinding of found) {
+                const finding = { repo, ...checkFinding };
+                acceptFileFix(finding, check, snapshot, fixedByThisCheck);
+                findings.push(finding);
+            }
+        }
+    }
+    return findings;
+}
+
+;// CONCATENATED MODULE: ./lib/snapshot.ts
+
+/** `fn` called at most once; later calls share the first promise. */
+function memoise(fn) {
+    let result;
+    return () => {
+        result ??= fn();
+        return result;
+    };
+}
+function stripLeadingSlash(path) {
+    return path.replace(/^\//, '');
+}
+/**
+ * The repo as one run sees it: head SHA fetched now, everything else
+ * fetched once on first use and pinned to that SHA. `readFile` and
+ * `readFirstFile` see file fixes attached by earlier checks and
+ * record what they read; `readFileOnDefaultBranch` does neither.
+ */
+async function takeSnapshot(octokit, repoMeta, { org, log }) {
+    const repo = repoMeta.name;
+    const defaultBranch = repoMeta.default_branch;
+    const ref = await octokit.rest.git.getRef({
+        owner: org,
+        repo,
+        ref: `heads/${defaultBranch}`,
+    });
+    const headSha = ref.data.object.sha;
+    const committed = new Map();
+    const readFileOnDefaultBranch = (rawPath) => {
+        const path = stripLeadingSlash(rawPath);
+        let file = committed.get(path);
+        if (!file) {
+            file = tryGetContent(octokit, {
+                owner: org,
+                repo,
+                paths: [path],
+                ref: headSha,
+            });
+            committed.set(path, file);
+        }
+        return file;
+    };
+    const workingCopy = {
+        pending: new Map(),
+        reads: new Set(),
+        attach: (path, content) => {
+            workingCopy.pending.set(stripLeadingSlash(path), content);
+        },
+        startCheck: () => {
+            workingCopy.reads.clear();
+        },
+    };
+    const readFile = async (rawPath) => {
+        const path = stripLeadingSlash(rawPath);
+        workingCopy.reads.add(path);
+        const file = await readFileOnDefaultBranch(path);
+        const content = workingCopy.pending.get(path);
+        if (content === undefined)
+            return file;
+        return { path, sha: file?.sha, content };
+    };
+    const readFirstFile = async (paths) => {
+        for (const path of paths) {
+            const file = await readFile(path);
+            if (file)
+                return file;
+        }
+        return null;
+    };
+    const treePaths = memoise(async () => {
+        const commit = await octokit.rest.git.getCommit({
+            owner: org,
+            repo,
+            commit_sha: headSha,
+        });
+        const tree = await octokit.rest.git.getTree({
+            owner: org,
+            repo,
+            tree_sha: commit.data.tree.sha,
+            recursive: '1',
+        });
+        if (tree.data.truncated) {
+            log.warning('tree response truncated; detection may be incomplete');
+        }
+        return (tree.data.tree || []).map((entry) => `/${entry.path}`);
+    });
+    const listPaths = async () => {
+        const paths = await treePaths();
+        const created = [...workingCopy.pending.keys()]
+            .map((path) => `/${path}`)
+            .filter((path) => !paths.includes(path));
+        return [...paths, ...created];
+    };
+    const listOpenPrs = memoise(() => octokit.paginate(octokit.rest.pulls.list, {
+        owner: org,
+        repo,
+        state: 'open',
+        per_page: 100,
+    }));
+    return {
+        org,
+        repo,
+        defaultBranch,
+        headSha,
+        listPaths,
+        readFile,
+        readFirstFile,
+        readFileOnDefaultBranch,
+        listOpenPrs,
+        octokit,
+        log,
+        workingCopy,
+    };
+}
+
+;// CONCATENATED MODULE: ./lib/audit-repo.ts
+
+
+
+
+/** Hygiene PRs from earlier runs still open on this very repo, not a fork. */
+function findHygienePrs(openPrs, repoSlug) {
+    return openPrs.filter((pr) => pr.head.ref.startsWith(BRANCH_PREFIX) &&
+        pr.head.repo?.full_name?.toLowerCase() === repoSlug.toLowerCase());
+}
+function skippedFinding(pr, org, repoSlug) {
+    const reviewers = [
+        ...(pr.requested_reviewers || []).map((u) => `@${u.login}`),
+        ...(pr.requested_teams || []).map((t) => `@${org}/${t.slug}`),
+    ];
+    return {
+        repo: repoSlug,
+        level: 'info',
+        summary: 'hygiene PR already open',
+        url: pr.html_url,
+        outcome: {
+            status: 'skipped',
+            url: pr.html_url,
+            detail: describeReviewers(reviewers),
+        },
+    };
+}
+/**
+ * Audit one repo: snapshot it, skip PR-opening checks when a hygiene
+ * PR is already open, run the checks and apply their fixes. Throws
+ * when the snapshot cannot be taken or the open PRs cannot be listed.
+ */
+async function auditRepo(octokit, repoMeta, { org, checks, log, ...run }) {
+    const snapshot = await takeSnapshot(octokit, repoMeta, { org, log });
+    const repoSlug = `${org}/${repoMeta.name}`;
+    const existing = findHygienePrs(await snapshot.listOpenPrs(), repoSlug);
+    for (const pr of existing)
+        log.info(`existing hygiene PR open (${pr.html_url})`);
+    const skipped = existing.map((pr) => skippedFinding(pr, org, repoSlug));
+    const toRun = existing.length > 0 ? checks.filter((c) => !c.opensPr) : checks;
+    const findings = await runChecks(toRun, snapshot);
+    const applied = await applyFixes(findings, snapshot, run);
+    return {
+        findings: [...skipped, ...applied.findings],
+        preview: applied.preview,
+    };
+}
+
+// EXTERNAL MODULE: ../node_modules/yaml/dist/index.js
+var dist = __nccwpck_require__(6637);
 ;// CONCATENATED MODULE: ./lib/dependabot-config.ts
 
 
@@ -47893,415 +48508,156 @@ function planDependabotChange({ detected, existing, template, log, }) {
     return updateExisting(existing, template, detected, log);
 }
 
-;// CONCATENATED MODULE: ./lib/reviewers.ts
-
-
-const KNOWN_BOTS = new Set(['dependabot', 'github-actions', 'renovate']);
-/** GitHub allows at most this many requested reviewers on a PR. */
-const MAX_REVIEWERS = 15;
-/**
- * Split CODEOWNERS owner tokens into unique user logins and team
- * slugs, without the `@` and org prefixes.
- */
-function splitReviewers(ownerTokens) {
-    const users = new Set();
-    const teams = new Set();
-    for (const tok of ownerTokens) {
-        const login = tok.replace(/^@/, '');
-        if (login) {
-            if (login.includes('/')) {
-                const [, team] = login.split('/');
-                if (team)
-                    teams.add(team);
-            }
-            else {
-                users.add(login);
-            }
-        }
-    }
-    return { users: [...users], teams: [...teams] };
-}
-async function listHumanContributors(octokit, { org, repo }) {
-    let contribs = [];
-    try {
-        const { data } = await octokit.rest.repos.listContributors({
-            owner: org,
-            repo,
-            per_page: 100,
-        });
-        contribs = Array.isArray(data) ? data : [];
-    }
-    catch (e) {
-        const status = httpStatus(e);
-        if (status !== 404 && status !== 204) {
-            throw e;
-        }
-    }
-    return contribs.filter((c) => c.type === 'User' &&
-        typeof c.login === 'string' &&
-        !/\[bot\]$/.test(c.login) &&
-        !KNOWN_BOTS.has(c.login));
-}
-/**
- * Who should review the hygiene PR and own the CODEOWNERS lines it
- * adds. Tries, in order: owners of existing lines that already cover
- * a required pattern, any owner in CODEOWNERS, then human
- * contributors. Returns `{ reviewerTokens, reviewerSource,
- * ownerSubstitute }`; `ownerSubstitute` is only set in the first case,
- * as those owners are the right ones for the new lines too.
- */
-async function chooseReviewers(octokit, { org, repo, requiredCodeowners, parsedLines }) {
-    const matchedOwners = new Set();
-    for (const req of requiredCodeowners) {
-        const match = findCoveringLine(req, parsedLines);
-        if (match) {
-            match.owners.forEach((o) => matchedOwners.add(o));
-        }
-    }
-    if (matchedOwners.size > 0) {
-        return {
-            reviewerTokens: [...matchedOwners],
-            reviewerSource: 'codeowners-match',
-            // Space-join when there are several, matching CODEOWNERS
-            // multi-owner syntax.
-            ownerSubstitute: [...matchedOwners].join(' '),
-        };
-    }
-    const allOwners = new Set();
-    for (const line of parsedLines) {
-        line.owners.forEach((o) => allOwners.add(o));
-    }
-    if (allOwners.size > 0) {
-        return {
-            reviewerTokens: [...allOwners],
-            reviewerSource: 'codeowners-fallback',
-            ownerSubstitute: null,
-        };
-    }
-    const humans = await listHumanContributors(octokit, { org, repo });
-    if (humans.length > 0) {
-        return {
-            reviewerTokens: humans.map((h) => `@${h.login}`),
-            reviewerSource: 'contributors',
-            ownerSubstitute: null,
-        };
-    }
-    return { reviewerTokens: [], reviewerSource: 'none', ownerSubstitute: null };
-}
-/**
- * Request reviewers one at a time. requestReviewers is all-or-nothing:
- * a single invalid entry (e.g. a past contributor who is no longer
- * a collaborator, or a team without repo access) 422s the whole call.
- * Requesting each reviewer separately — calls are additive — means
- * a bad entry only drops itself while the valid reviewers still get
- * assigned. Any other failure (auth, rate limit, server error) is
- * rethrown so the audit reports it instead of a partial success.
- * Stops once MAX_REVIEWERS have been accepted, so an invalid candidate
- * does not use up a slot. Returns the reviewers that were requested,
- * as `@` handles.
- */
-async function requestReviewersOneByOne(octokit, { org, repo, pullNumber, users, teams, log }) {
-    const requested = [];
-    for (const user of users) {
-        if (requested.length >= MAX_REVIEWERS)
-            break;
-        try {
-            await octokit.rest.pulls.requestReviewers({
-                owner: org,
-                repo,
-                pull_number: pullNumber,
-                reviewers: [user],
-            });
-            requested.push(`@${user}`);
-        }
-        catch (e) {
-            if (httpStatus(e) !== 422)
-                throw e;
-            log.warning(`could not request reviewer @${user}: ${errorMessage(e)}`);
-        }
-    }
-    for (const team of teams) {
-        if (requested.length >= MAX_REVIEWERS)
-            break;
-        try {
-            await octokit.rest.pulls.requestReviewers({
-                owner: org,
-                repo,
-                pull_number: pullNumber,
-                team_reviewers: [team],
-            });
-            requested.push(`@${org}/${team}`);
-        }
-        catch (e) {
-            if (httpStatus(e) !== 422)
-                throw e;
-            log.warning(`could not request team reviewer @${org}/${team}: ${errorMessage(e)}`);
-        }
-    }
-    return requested;
-}
-
-;// CONCATENATED MODULE: ./lib/audit-repo.ts
+;// CONCATENATED MODULE: ./lib/checks/codeowners.ts
 
 
 
 
-const WORKFLOW_LINK = 'https://github.com/verkstedt/actions/blob/HEAD/repo-hygiene/';
-// Also how PRs from earlier runs are recognised, so renaming it makes
-// the action reopen PRs on every repo that already has one.
-const BRANCH_PREFIX = 'chore/repo-hygiene/';
 const OWNER_PLACEHOLDER = '@OWNER';
-const PR_TITLE = 'chore: Repo hygiene';
-// `[change, existingFile, codeFenceLang]` triples → the files the PR
-// commits, skipping changes that are null.
-function planFiles(candidates) {
-    return candidates.flatMap(([change, existing, lang]) => change ? [{ change, exists: Boolean(existing), lang }] : []);
-}
-function composePrBody({ reviewerSource, files, }) {
-    const changes = files.map((f) => f.change);
-    const bodyParts = [
-        `🤖 Opened automatically by [repo-hygiene action from verkstedt/actions](${WORKFLOW_LINK}).`,
-    ];
-    const reviewerParagraph = {
-        'codeowners-fallback': 'Assigned people from CODEOWNERS as reviewers of this PR.',
-        'contributors': 'Assigned repo contributors as reviewers of this PR.',
-        'none': 'Could not determine who to assign as reviewers of this PR.',
-    };
-    const paragraph = reviewerParagraph[reviewerSource];
-    if (paragraph) {
-        bodyParts.push(paragraph);
-    }
-    const whatBullets = changes.map((change) => `- ${change.summary}`);
-    bodyParts.push(`## What?\n\n${whatBullets.join('\n')}`);
-    return bodyParts.join('\n\n');
-}
-// Everything the PR would contain, rendered into the job summary.
-function renderDryRun(repoSlug, plan) {
-    const lines = [
-        `### ${repoSlug}`,
-        '',
-        '#### Title',
-        '',
-        PR_TITLE,
-        '',
-        '#### Reviewers',
-        '',
-        plan.reviewers.map((r) => `- ${r}`).join('\n') || '(none)',
-        '',
-        '#### Body',
-        '',
-        '<blockquote>',
-        '',
-        plan.prBody,
-        '',
-        '</blockquote>',
-    ];
-    for (const { change, exists, lang } of plan.files) {
-        lines.push('', `**${change.path}** (${exists ? 'update' : 'create'}):`, '', `\`\`\`${lang}`, change.newContent, '```');
-    }
-    return `${lines.join('\n')}\n`;
-}
-// Create the branch off `headSha`, commit the planned files, open the
-// PR and request reviewers.
-async function openPullRequest(ctx, headSha, plan) {
-    const { octokit, org, repo, defaultBranch, log } = ctx;
-    // Always include run ID and attempt so each run gets a fresh branch —
-    // never reuse a stale one from an earlier run whose PR was closed
-    // without merging, or from a failed attempt of this run.
-    const branchName = `${BRANCH_PREFIX}${ctx.runId}-${ctx.runAttempt}`;
-    await octokit.rest.git.createRef({
-        owner: org,
-        repo,
-        ref: `refs/heads/${branchName}`,
-        sha: headSha,
-    });
-    for (const { change } of plan.files) {
-        await commitChange(octokit, { org, repo, branch: branchName, change });
-    }
-    const pr = await octokit.rest.pulls.create({
-        owner: org,
-        repo,
-        title: PR_TITLE,
-        head: branchName,
-        base: defaultBranch,
-        body: plan.prBody,
-    });
-    const reviewerList = await requestReviewersOneByOne(octokit, {
-        org,
-        repo,
-        pullNumber: pr.data.number,
-        users: plan.reviewerUsers,
-        teams: plan.reviewerTeams,
-        log,
-    });
-    // Inline review comment on the @OWNER lines. The added lines are
-    // always a contiguous block, so post a single comment spanning them
-    // rather than one per line.
-    if (plan.hasUnresolvedOwner && plan.codeownersChange) {
-        await createLineComment(octokit, {
-            org,
-            repo,
-            pr: pr.data,
-            path: plan.codeownersChange.path,
-            lineNumbers: plan.codeownersChange.missingLines.map((ml) => ml.lineNumber),
-            body: 'Failed to guess who the owner should be — please replace the `@OWNER` placeholder with one or more people.',
-            log,
-        });
-    }
-    return { pr: pr.data, reviewerList };
-}
-// Hygiene PRs from earlier runs that are still open on the repo.
-function findExistingHygienePrs(openPrs, repoSlug) {
-    return openPrs.filter((pr) => pr.head.ref.startsWith(BRANCH_PREFIX) &&
-        pr.head.repo?.full_name?.toLowerCase() === repoSlug.toLowerCase());
-}
-function skippedResult(pr, { org, repoSlug, log }) {
-    log.info(`existing hygiene PR open (${pr.html_url}), skipping`);
-    return {
-        repo: repoSlug,
-        action: 'skipped-existing-pr',
-        prUrl: pr.html_url,
-        reviewers: [
-            ...(pr.requested_reviewers || []).map((u) => `@${u.login}`),
-            ...(pr.requested_teams || []).map((t) => `@${org}/${t.slug}`),
-        ],
-    };
+const PLACEHOLDER_COMMENT = 'Failed to guess who the owner should be — please replace the `@OWNER` placeholder with one or more people.';
+/** 1-indexed numbers of the lines that end in the placeholder. */
+function placeholderLines(content) {
+    return content
+        .split('\n')
+        .flatMap((line, index) => line.trimEnd().endsWith(`  ${OWNER_PLACEHOLDER}`) ? [index + 1] : []);
 }
 /**
- * Audit one repo and, unless dry-running, open a PR fixing what it
- * finds. Returns `{ results, summary }`: the result objects for the run
- * report and, in a dry run, the markdown to append to the job summary
- * (otherwise `null`).
- *
- * `runCtx` carries what is shared across repos — `octokit`, `org`,
- * `dryRun`, `runId`, `runAttempt` and the parsed dependabot `template` —
- * plus a `log` already prefixed for this repo. The per-repo facts are
- * added to it once here, and the helpers get that one object.
+ * Every file dependabot will touch has an owner in CODEOWNERS, so its
+ * PRs get reviewers. Owners come from lines that already cover a
+ * required pattern; failing that the lines get `@OWNER` and a review
+ * comment asks for a real one.
  */
-async function auditRepo(runCtx, repoMeta) {
-    const ctx = {
-        ...runCtx,
-        repo: repoMeta.name,
-        repoSlug: `${runCtx.org}/${repoMeta.name}`,
-        defaultBranch: repoMeta.default_branch,
-    };
-    const { octokit, org, repo, repoSlug, defaultBranch, dryRun, template, log } = ctx;
-    // 1. Short-circuit if hygiene PR already open
-    const openPrs = await octokit.paginate(octokit.rest.pulls.list, {
-        owner: org,
-        repo,
-        state: 'open',
-        per_page: 100,
-    });
-    const existingHygienePrs = findExistingHygienePrs(openPrs, repoSlug);
-    if (existingHygienePrs.length > 0) {
-        return {
-            results: existingHygienePrs.map((pr) => skippedResult(pr, ctx)),
-            summary: null,
-        };
-    }
-    // 2. Detect ecosystems & required CODEOWNERS patterns
-    const { headSha, paths } = await fetchBranchTree(octokit, {
-        org,
-        repo,
-        branch: defaultBranch,
-        log,
-    });
-    const { detected, requiredCodeowners } = detectEcosystems(paths);
-    // 3. Check existing dependabot config
-    const existingDependabot = await tryGetContent(octokit, {
-        owner: org,
-        repo,
-        paths: ['.github/dependabot.yaml', '.github/dependabot.yml'],
-        ref: defaultBranch,
-    });
-    const dependabotChange = planDependabotChange({
-        detected,
-        existing: existingDependabot,
-        template,
-        log,
-    });
-    // 4. Check CODEOWNERS
-    const existingCodeowners = await tryGetContent(octokit, {
-        owner: org,
-        repo,
-        // https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners#codeowners-file-location
-        paths: ['.github/CODEOWNERS', 'CODEOWNERS', 'docs/CODEOWNERS'],
-        ref: defaultBranch,
-    });
-    const parsedLines = parseCodeowners(existingCodeowners ? existingCodeowners.content : '');
-    const missingCodeowners = requiredCodeowners.filter((r) => !findOwningLine(r, parsedLines));
-    if (!dependabotChange && missingCodeowners.length === 0) {
-        log.info('nothing to do');
-        return { results: [{ repo: repoSlug, action: 'ok' }], summary: null };
-    }
-    // 5. Decide reviewers / OWNER substitution
-    const { reviewerTokens, reviewerSource, ownerSubstitute } = await chooseReviewers(octokit, {
-        org,
-        repo,
-        requiredCodeowners,
-        parsedLines,
-    });
-    const { users: reviewerUsers, teams: reviewerTeams } = splitReviewers(reviewerTokens);
-    const reviewers = [
-        ...reviewerUsers.map((u) => `@${u}`),
-        ...reviewerTeams.map((t) => `@${org}/${t}`),
-    ];
-    // 6. Build CODEOWNERS addition
-    const codeownersChange = missingCodeowners.length > 0
-        ? buildCodeownersAddition({
-            existing: existingCodeowners,
+const codeowners = {
+    name: 'CODEOWNERS',
+    opensPr: true,
+    run: async (snapshot) => {
+        const { requiredCodeowners } = detectEcosystems(await snapshot.listPaths());
+        const existing = await snapshot.readFirstFile(CODEOWNERS_PATHS);
+        const parsedLines = parseCodeowners(existing ? existing.content : '');
+        const matchedOwners = new Set();
+        for (const required of requiredCodeowners) {
+            findCoveringLine(required, parsedLines)?.owners.forEach((owner) => matchedOwners.add(owner));
+        }
+        const reviewers = matchedOwners.size > 0 ? [...matchedOwners] : undefined;
+        const missing = requiredCodeowners.filter((required) => !findOwningLine(required, parsedLines));
+        if (missing.length === 0) {
+            return [
+                {
+                    level: 'info',
+                    summary: 'CODEOWNERS covers every dependabot file',
+                    reviewers,
+                },
+            ];
+        }
+        // Space-joined when there are several, matching the multi-owner syntax.
+        const ownerToken = reviewers ? reviewers.join(' ') : OWNER_PLACEHOLDER;
+        const addition = buildCodeownersAddition({
+            existing,
             parsedLines,
             requiredPatterns: requiredCodeowners,
-            missingPatterns: missingCodeowners,
-            ownerToken: ownerSubstitute || OWNER_PLACEHOLDER,
-        })
-        : null;
-    const hasUnresolvedOwner = Boolean(codeownersChange) && !ownerSubstitute;
-    // 7. Compose the PR
-    const files = planFiles([
-        [dependabotChange, existingDependabot, 'yaml'],
-        [codeownersChange, existingCodeowners, ''],
-    ]);
-    const plan = {
-        files,
-        reviewers,
-        reviewerUsers,
-        reviewerTeams,
-        reviewerSource,
-        codeownersChange,
-        hasUnresolvedOwner,
-        prBody: composePrBody({ reviewerSource, files }),
-    };
-    // 8. Dry run → summary; otherwise create branch + commits + PR
-    if (dryRun) {
-        log.info('Dry run, skipping PR creation');
-        return {
-            results: [
-                {
-                    repo: repoSlug,
-                    action: 'dry-run',
-                    reviewers,
-                    unresolvedOwner: hasUnresolvedOwner,
-                },
-            ],
-            summary: renderDryRun(repoSlug, plan),
-        };
-    }
-    const { pr, reviewerList } = await openPullRequest(ctx, headSha, plan);
-    log.info(`opened ${pr.html_url}`);
-    return {
-        results: [
+            missingPatterns: missing,
+            ownerToken,
+        });
+        const findings = [
             {
-                repo: repoSlug,
-                action: 'opened-pr',
-                prUrl: pr.html_url,
-                reviewers: reviewerList,
+                level: 'info',
+                summary: `CODEOWNERS lacks owners for ${missing.map((p) => `\`${p}\``).join(', ')}`,
+                reviewers,
+                fix: {
+                    kind: 'file',
+                    path: addition.path,
+                    content: addition.newContent,
+                    lang: '',
+                    describe: addition.summary,
+                },
             },
-        ],
-        summary: null,
-    };
+        ];
+        if (!reviewers) {
+            findings.push({
+                level: 'warning',
+                summary: 'added CODEOWNERS lines use the `@OWNER` placeholder',
+                fix: {
+                    kind: 'action',
+                    afterPr: true,
+                    describe: 'comment on the `@OWNER` lines asking for a real owner',
+                    run: async ({ octokit, org, repo, pr, files }) => {
+                        if (!pr)
+                            throw new Error('hygiene PR was not opened');
+                        const lineNumbers = placeholderLines(files[addition.path] ?? '');
+                        if (lineNumbers.length === 0) {
+                            return {
+                                fixed: false,
+                                detail: 'no `@OWNER` line left to comment on',
+                            };
+                        }
+                        await createLineComment(octokit, {
+                            org,
+                            repo,
+                            pr,
+                            path: addition.path,
+                            lineNumbers,
+                            body: PLACEHOLDER_COMMENT,
+                        });
+                        return 'commented on the `@OWNER` lines';
+                    },
+                },
+            });
+        }
+        return findings;
+    },
+};
+
+;// CONCATENATED MODULE: ./lib/checks/dependabot-config.ts
+
+/** Where dependabot looks for its config, in order of precedence. */
+const DEPENDABOT_PATHS = ['.github/dependabot.yaml', '.github/dependabot.yml'];
+let template = null;
+function loadedTemplate() {
+    if (!template) {
+        throw new Error('dependabot config check used before setup');
+    }
+    return template;
 }
+/**
+ * Every repo with a detected ecosystem has a dependabot config with an
+ * entry for each, a `version` and a cooldown, built from the org-wide
+ * template in `verkstedt/.github`.
+ */
+const dependabotConfig = {
+    name: 'dependabot config',
+    opensPr: true,
+    setup: async (octokit) => {
+        template = await loadDependabotTemplate(octokit);
+    },
+    run: async (snapshot) => {
+        const { detected } = detectEcosystems(await snapshot.listPaths());
+        const existing = await snapshot.readFirstFile(DEPENDABOT_PATHS);
+        const change = planDependabotChange({
+            detected,
+            existing,
+            template: loadedTemplate(),
+            log: snapshot.log,
+        });
+        if (!change) {
+            return [{ level: 'info', summary: 'dependabot config is complete' }];
+        }
+        return [
+            {
+                level: 'info',
+                summary: existing
+                    ? 'dependabot config incomplete'
+                    : 'dependabot config missing',
+                fix: {
+                    kind: 'file',
+                    path: change.path,
+                    content: change.newContent,
+                    lang: 'yaml',
+                    describe: change.summary,
+                },
+            },
+        ];
+    },
+};
 
 ;// CONCATENATED MODULE: ./lib/log.ts
 
@@ -48320,6 +48676,7 @@ function log_createLogger(prefix) {
 }
 
 ;// CONCATENATED MODULE: ./lib/report.ts
+
 /**
  * Slack renders the whole summary inside a single Block Kit `section`
  * block, whose text is capped at 3000 characters, per
@@ -48374,7 +48731,7 @@ function fillSection(section, budget, { partial }) {
  * pointing at the run summary.
  */
 function renderSlackText({ sections, fillOrder, showOrder, runUrl, }) {
-    const footerLines = ['', `<${runUrl}|Full list in the run summary>`];
+    const footerLines = ['', `<${runUrl}|See full list with more details>`];
     const listed = Object.values(sections).filter(({ items }) => items.length > 0);
     // Reserve the footer and every section’s count label up front, so
     // each section is guaranteed at least its count. A section gets its
@@ -48397,83 +48754,163 @@ function renderSlackText({ sections, fillOrder, showOrder, runUrl, }) {
     }
     return [...showOrder.flatMap((key) => filled[key]), ...footerLines].join('\n');
 }
-// The results of one kind, narrowed to that kind’s shape.
-function ofAction(results, action) {
-    return results.filter((r) => r.action === action);
+const GROUP_ORDER = [
+    'failed',
+    'attention',
+    'opened',
+    'fixed',
+    'previous',
+];
+const HEADINGS = {
+    failed: '*💥 Failed:*',
+    attention: '*⚠️ Needs attention:*',
+    opened: '*🆕 Opened PRs:*',
+    fixed: '*🔧 Fixed:*',
+    previous: '*🥶 Previously opened PRs:*',
+};
+const DRY_RUN_HEADINGS = {
+    opened: '*🆕 Would open PRs (dry run):*',
+    fixed: '*🔧 Would fix (dry run):*',
+};
+/** Sections that list half their items when short of room; the rest collapse to a count. */
+const PARTIAL = {
+    failed: true,
+    attention: true,
+    opened: true,
+    fixed: true,
+    previous: false,
+};
+const MAX_DETAILS = 5;
+function groupOf(finding) {
+    const status = finding.outcome?.status ?? 'none';
+    if (status === 'failed' || finding.level === 'error')
+        return 'failed';
+    if (status === 'skipped')
+        return 'previous';
+    if (status === 'fixed' || status === 'would-fix') {
+        return finding.fix?.kind === 'file' ? 'opened' : 'fixed';
+    }
+    if (finding.level === 'warning' || finding.fix)
+        return 'attention';
+    return null;
 }
-/**
- * The action outputs and job summary for `results`, as `{ outputs,
- * summary }`. `outputs` maps output names to their string values.
- */
-function report(results) {
-    const opened = ofAction(results, 'opened-pr');
-    const failed = ofAction(results, 'failed');
-    const dryRuns = ofAction(results, 'dry-run');
-    const preexisting = ofAction(results, 'skipped-existing-pr');
-    const reviewerSummary = (r) => r.reviewers.length > 0
-        ? `reviewer(s): ${r.reviewers.join(', ')}`
-        : 'no reviewer assigned';
-    const prItem = (r) => `<${r.prUrl}> — ${reviewerSummary(r)}`;
-    const openedItems = opened.map(prItem);
-    const preexistingItems = preexisting.map(prItem);
-    const dryRunItems = dryRuns.map((r) => `${r.repo} — ${reviewerSummary(r)}`);
-    const failedItems = failed.map((r) => `${r.repo} — ${r.error}`);
-    const HEADINGS = {
-        opened: '*Opened PRs:*',
-        preexisting: '*Pre-existing PRs:*',
-        dryRun: '*Would open PRs (dry run):*',
-        failed: '*Failed repos:*',
+/** `repo` or `repo: <url>`. */
+function where(finding) {
+    const url = finding.outcome?.url ?? finding.url;
+    return url ? `${finding.repo}: <${url}>` : finding.repo;
+}
+/** At most `MAX_DETAILS` items, then a count of the rest. */
+function detailsText(details) {
+    const shown = details.slice(0, MAX_DETAILS);
+    const rest = details.length - shown.length;
+    return rest > 0 ? `${shown.join(', ')} and ${rest} more` : shown.join(', ');
+}
+function findingLine(finding, { summary, details }) {
+    const parts = [where(finding)];
+    if (summary)
+        parts.push(finding.summary);
+    if (finding.outcome?.detail)
+        parts.push(finding.outcome.detail);
+    if (details && finding.details && finding.details.length > 0) {
+        parts.push(detailsText(finding.details));
+    }
+    return parts.join(' — ');
+}
+/** One item per finding, except Opened PRs, which is one per repo. */
+function groupItems(group, findings, { details }) {
+    if (group === 'opened' || group === 'previous') {
+        const seen = new Set();
+        return findings.flatMap((f) => {
+            const key = group === 'opened' ? f.repo : where(f);
+            if (seen.has(key))
+                return [];
+            seen.add(key);
+            return [findingLine(f, { summary: false, details: false })];
+        });
+    }
+    return findings.map((f) => findingLine(f, { summary: true, details }));
+}
+function groupHeading(group, findings) {
+    const dry = findings.some((f) => f.outcome?.status === 'would-fix');
+    return (dry && DRY_RUN_HEADINGS[group]) || HEADINGS[group];
+}
+/** `results_json`’s shape: every field but the fix, per the design spec. */
+function forOutput({ repo, level, summary, url, details, reviewers, outcome, }) {
+    return { repo, level, summary, url, details, reviewers, outcome };
+}
+/** The action outputs and job summary for `findings`. */
+function report(findings, { repoCount, dryRun, previews, runUrl }) {
+    const groups = Object.fromEntries(GROUP_ORDER.map((key) => [key, []]));
+    for (const finding of findings) {
+        const group = groupOf(finding);
+        if (group)
+            groups[group].push(finding);
+    }
+    const summaryLines = GROUP_ORDER.flatMap((key) => groups[key].length > 0
+        ? renderList(groupHeading(key, groups[key]), groupItems(key, groups[key], { details: true }))
+        : []);
+    const slackText = renderSlackText({
+        sections: Object.fromEntries(GROUP_ORDER.map((key) => [
+            key,
+            {
+                heading: groupHeading(key, groups[key]),
+                // Failed lines carry the error itself as `details`, so Slack
+                // keeps it; other groups’ `details` are the extra context
+                // that only the job summary has room for.
+                items: groupItems(key, groups[key], { details: key === 'failed' }),
+            },
+        ])),
+        fillOrder: GROUP_ORDER.map((key) => ({ key, partial: PARTIAL[key] })),
+        showOrder: GROUP_ORDER,
+        runUrl,
+    });
+    const notify = groups.failed.length + groups.opened.length + groups.fixed.length > 0;
+    const outputs = {
+        results_json: JSON.stringify(findings.map(forOutput)),
+        slack_text: slackText,
+        should_notify: notify ? 'true' : 'false',
+        slack_status: groups.failed.length > 0 ? 'failure' : 'warning',
     };
-    // The job summary lists everything.
-    const listIfAny = (heading, items) => items.length > 0 ? renderList(heading, items) : [];
-    const lines = [
-        ...listIfAny(HEADINGS.opened, openedItems),
-        ...listIfAny(HEADINGS.preexisting, preexistingItems),
-        ...listIfAny(HEADINGS.dryRun, dryRunItems),
-        ...listIfAny(HEADINGS.failed, failedItems),
-    ];
-    // Slack gets the same lists, fitted into one section block. Sections
-    // are filled in order of importance — failures, then opened, then
-    // pre-existing — and shown in a different order, with the failures
-    // first and the longest list last. Dry runs are left out: the workflow
-    // does not notify on a dry run.
+    const summary = [
+        '',
+        '## Summary',
+        '',
+        `\`repo-hygiene\` run complete, ${repoCount} repo(s) checked.`,
+        ...summaryLines,
+        '',
+        ...previews.flatMap((preview) => ['', preview]),
+        ...(dryRun || !notify
+            ? [
+                '',
+                '## Slack message',
+                '',
+                '<details>',
+                `<summary>Not sent: ${dryRun ? 'dry run' : 'nothing to notify about'}</summary>`,
+                '',
+                '```',
+                slackText,
+                '```',
+                '',
+                '</details>',
+                '',
+            ]
+            : []),
+    ].join('\n');
+    return { outputs, summary };
+}
+/** Write the outputs and the job summary for the run. */
+async function publish(findings, options) {
     const runUrl = [
         process.env.GITHUB_SERVER_URL,
         process.env.GITHUB_REPOSITORY,
         'actions/runs',
         process.env.GITHUB_RUN_ID,
     ].join('/');
-    const slackText = renderSlackText({
-        sections: {
-            failed: { heading: HEADINGS.failed, items: failedItems },
-            opened: { heading: HEADINGS.opened, items: openedItems },
-            preexisting: { heading: HEADINGS.preexisting, items: preexistingItems },
-        },
-        fillOrder: [
-            { key: 'failed', partial: true },
-            { key: 'opened', partial: true },
-            // A partial list of the least important PRs would be noise.
-            { key: 'preexisting', partial: false },
-        ],
-        showOrder: ['failed', 'preexisting', 'opened'],
-        runUrl,
-    });
-    const outputs = {
-        results_json: JSON.stringify(results),
-        slack_text: slackText,
-        should_notify: opened.length + failed.length > 0 ? 'true' : 'false',
-        slack_status: failed.length > 0 ? 'failure' : 'warning',
-    };
-    const summary = [
-        '',
-        '## Summary',
-        '',
-        `\`repo-hygiene\` run complete (${results.length} repo(s) checked)`,
-        '',
-        ...lines,
-        '',
-    ].join('\n');
-    return { outputs, summary };
+    const { outputs, summary } = report(findings, { ...options, runUrl });
+    for (const [name, value] of Object.entries(outputs)) {
+        setOutput(name, value);
+    }
+    await summary_summary.addRaw(summary).write();
 }
 
 ;// CONCATENATED MODULE: ./index.ts
@@ -48485,126 +48922,78 @@ function report(results) {
 
 
 
-/**
- * Org repos to audit: sources only, skipping archived, disabled and
- * empty ones, narrowed by `reposFilter` globs when given. Returns
- * `null` after failing the run if a filter matched nothing.
- */
-async function listTargetRepos(octokit, { org, reposFilter }) {
-    const allRepos = await octokit.paginate(octokit.rest.repos.listForOrg, {
-        org,
-        type: 'sources',
-        per_page: 100,
-    });
-    let targets = allRepos.filter((r) => !r.archived &&
-        !r.disabled &&
-        (r.size || 0) > 0 &&
-        typeof r.default_branch === 'string');
-    if (reposFilter.length === 0)
-        return targets;
-    await summary_summary
-        .addRaw([
-        'Running only for:',
-        '',
-        ...reposFilter.map((f) => `- \`${f}\``),
-        '',
-    ].join('\n'))
-        .write();
-    // Each entry is a picomatch glob; literal names match exactly (no
-    // wildcards). Lets you pass e.g. `demo-*`. Walk every target once so
-    // we discover all unmatched patterns before failing — surface them
-    // all at once.
-    const matchers = reposFilter.map((pat) => ({
-        pattern: pat,
-        isMatch: picomatch_default()(pat, { dot: true }),
-    }));
-    const hitPatterns = new Set();
-    targets = targets.filter((r) => {
-        const matched = matchers.filter((m) => m.isMatch(r.name));
-        matched.forEach((m) => hitPatterns.add(m.pattern));
-        return matched.length > 0;
-    });
-    const missing = reposFilter.filter((p) => !hitPatterns.has(p));
-    for (const pat of missing) {
-        error(`Requested repo pattern "${pat}" matched no repos in ${org} (after filtering archived/disabled/fork/empty).`);
-    }
-    if (missing.length > 0) {
-        setFailed(`Aborting: ${missing.length} requested repo pattern(s) matched nothing.`);
-        return null;
-    }
-    return targets;
+const checks = [dependabotConfig, codeowners];
+const DRY_RUN_NOTE = '> [!NOTE]\n> This is a **dry run**. No pull requests will be created. Will show info about ones that would, here in the summary.\n\n';
+function readInputs() {
+    const { /* context */ "_": context } = github_namespaceObject;
+    return {
+        token: getInput('github-token', { required: true }),
+        org: getInput('org') || context.repo.owner,
+        dryRun: getBooleanInput('dry-run'),
+        reposFilter: (getInput('repos') || '').split(/[,;\s]/).filter(Boolean),
+        runId: context.runId,
+        runAttempt: Number(process.env.GITHUB_RUN_ATTEMPT) || 1,
+    };
 }
-/**
- * Audit every repo in `targets`, one after the other. A repo whose
- * audit throws becomes a `failed` result instead of ending the run.
- * Dry-run summaries are appended to the job summary as they come.
- */
-async function auditRepos(ctx, targets) {
-    const results = [];
-    let number = 0;
-    for (const repoMeta of targets) {
-        number += 1;
-        const repoSlug = `${ctx.org}/${repoMeta.name}`;
-        const log = log_createLogger(`${number}/${targets.length}. ${repoSlug}:`);
+function failedRepo(org, repoMeta, e) {
+    return {
+        repo: `${org}/${repoMeta.name}`,
+        level: 'error',
+        summary: 'could not audit repo',
+        details: [errorMessage(e)],
+        outcome: { status: 'none' },
+    };
+}
+async function main() {
+    const inputs = readInputs();
+    const octokit = getOctokit(inputs.token);
+    if (inputs.dryRun)
+        await summary_summary.addRaw(DRY_RUN_NOTE).write();
+    if (inputs.reposFilter.length > 0) {
+        await summary_summary
+            .addRaw([
+            'Running only for:',
+            '',
+            ...inputs.reposFilter.map((f) => `- \`${f}\``),
+            '',
+        ].join('\n'))
+            .write();
+    }
+    await assertAppSeesAllRepos(octokit);
+    const repos = await listTargetRepos(octokit, {
+        org: inputs.org,
+        reposFilter: inputs.reposFilter,
+    });
+    for (const check of checks)
+        await check.setup?.(octokit);
+    info(`Auditing ${repos.length} repo(s) in ${inputs.org}${inputs.dryRun ? ' (dry run)' : ''}`);
+    const findings = [];
+    const previews = [];
+    for (const [index, repoMeta] of repos.entries()) {
+        const log = log_createLogger(`${index + 1}/${repos.length}. ${inputs.org}/${repoMeta.name}:`);
         try {
-            const audit = await auditRepo({ ...ctx, log }, repoMeta);
-            results.push(...audit.results);
-            if (audit.summary) {
-                await summary_summary.addRaw(audit.summary).write();
-            }
+            const audited = await auditRepo(octokit, repoMeta, {
+                org: inputs.org,
+                dryRun: inputs.dryRun,
+                runId: inputs.runId,
+                runAttempt: inputs.runAttempt,
+                checks,
+                log,
+            });
+            findings.push(...audited.findings);
+            if (audited.preview)
+                previews.push(audited.preview);
         }
         catch (e) {
             log.error(errorMessage(e));
-            results.push({ repo: repoSlug, action: 'failed', error: errorMessage(e) });
+            findings.push(failedRepo(inputs.org, repoMeta, e));
         }
     }
-    return results;
-}
-async function main() {
-    const token = getInput('github-token', { required: true });
-    const octokit = getOctokit(token);
-    const { /* context */ "_": context } = github_namespaceObject;
-    const org = getInput('org') || context.repo.owner;
-    const dryRun = getBooleanInput('dry-run');
-    const reposFilter = (getInput('repos') || '')
-        .split(/[,;\s]/)
-        .map((s) => s.trim())
-        .filter(Boolean);
-    if (dryRun) {
-        await summary_summary
-            .addRaw('> [!NOTE]\n> This is a **dry run**. No pull requests will be created. Will show info about ones that would, here in the summary.\n\n')
-            .write();
-    }
-    // Verify App has access to all org repos
-    const inst = await octokit.request('GET /installation/repositories', {
-        per_page: 1,
+    await publish(findings, {
+        repoCount: repos.length,
+        dryRun: inputs.dryRun,
+        previews,
     });
-    if (inst.data.repository_selection !== 'all') {
-        setFailed(`App has repository_selection='${inst.data.repository_selection}'; expected 'all'. Reconfigure the App's repository access to "All repositories".`);
-        return;
-    }
-    const template = await loadDependabotTemplate(octokit);
-    const targets = await listTargetRepos(octokit, { org, reposFilter });
-    if (!targets)
-        return;
-    info(`Auditing ${targets.length} repo(s) in ${org}${dryRun ? ' (dry run)' : ''}`);
-    const ctx = {
-        octokit,
-        org,
-        dryRun,
-        template,
-        runId: context.runId,
-        // Not on `context`; re-runs keep the run ID but bump the attempt.
-        runAttempt: Number(process.env.GITHUB_RUN_ATTEMPT) || 1,
-    };
-    const results = await auditRepos(ctx, targets);
-    const { outputs, summary } = report(results);
-    for (const [name, value] of Object.entries(outputs)) {
-        setOutput(name, value);
-    }
-    await summary_summary.addRaw(summary).write();
 }
-main().catch((err) => {
-    setFailed(errorMessage(err));
-});
+main().catch((e) => setFailed(errorMessage(e)));
 
