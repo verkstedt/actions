@@ -1,6 +1,7 @@
 // Shared helpers for the tests in this directory. Not a test file
 // itself, so its name must not match node’s default test patterns.
 
+import { takeSnapshot, type RepoSnapshot } from './snapshot.ts'
 import type { Logger, Octokit } from './types.ts'
 
 export interface FakeLog extends Logger {
@@ -137,6 +138,18 @@ export function fakeRepo({
 /** The params of every recorded call to `name`, in order. */
 export function callsTo(octokit: FakeOctokit, name: string): Array<Params> {
   return octokit.calls.filter((c) => c.name === name).map((c) => c.params)
+}
+
+/** A real snapshot over a `fakeRepo`, for check and runner tests. */
+export function fakeSnapshot(
+  options: FakeRepoOptions & { log?: Logger; octokit?: FakeOctokit } = {}
+): Promise<RepoSnapshot> {
+  const octokit = options.octokit ?? fakeRepo(options)
+  return takeSnapshot(
+    octokit,
+    { name: 'r', default_branch: 'main' },
+    { org: 'org', log: options.log ?? fakeLog() }
+  )
 }
 
 export const DEPENDABOT_TEMPLATE = `# Org template
