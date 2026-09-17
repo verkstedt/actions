@@ -1,17 +1,18 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 
-import { renderSlackText, report } from './report.mjs'
+import { renderSlackText, report } from './report.ts'
+import type { Result } from './types.ts'
 
 const fillOrder = [
   { key: 'failed', partial: true },
   { key: 'opened', partial: true },
   { key: 'preexisting', partial: false },
-]
-const showOrder = ['failed', 'preexisting', 'opened']
+] as const
+const showOrder = ['failed', 'preexisting', 'opened'] as const
 const runUrl = 'https://example.test/run/1'
 
-const prItems = (prefix, count) =>
+const prItems = (prefix: string, count: number) =>
   Array.from(
     { length: count },
     (_, i) =>
@@ -89,7 +90,7 @@ describe('renderSlackText', () => {
 })
 
 describe('report', () => {
-  const results = [
+  const results: Array<Result> = [
     { repo: 'org/a', action: 'ok' },
     {
       repo: 'org/b',
@@ -104,7 +105,12 @@ describe('report', () => {
       reviewers: [],
     },
     { repo: 'org/d', action: 'failed', error: 'boom' },
-    { repo: 'org/e', action: 'dry-run', reviewers: ['@y'] },
+    {
+      repo: 'org/e',
+      action: 'dry-run',
+      reviewers: ['@y'],
+      unresolvedOwner: false,
+    },
   ]
 
   it('renders the outputs and the job summary', () => {

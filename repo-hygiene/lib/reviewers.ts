@@ -1,4 +1,11 @@
-import { findCoveringLine } from './codeowners.mjs'
+import { findCoveringLine } from './codeowners.ts'
+import { errorMessage, httpStatus } from './github.ts'
+import type {
+  CodeownersLine,
+  Logger,
+  Octokit,
+  ReviewerSource,
+} from './types.ts'
 
 const KNOWN_BOTS = new Set(['dependabot', 'github-actions', 'renovate'])
 
@@ -9,11 +16,14 @@ const MAX_REVIEWERS = 15
  * Split CODEOWNERS owner tokens into unique user logins and team
  * slugs, without the `@` and org prefixes.
  */
-export function splitReviewers(ownerTokens) {
-  const users = new Set()
-  const teams = new Set()
+export function splitReviewers(ownerTokens: Array<string>): {
+  users: Array<string>
+  teams: Array<string>
+} {
+  const users = new Set<string>()
+  const teams = new Set<string>()
   for (const tok of ownerTokens) {
-    const login = String(tok).replace(/^@/, '')
+    const login = tok.replace(/^@/, '')
     if (login) {
       if (login.includes('/')) {
         const [, team] = login.split('/')
@@ -26,8 +36,16 @@ export function splitReviewers(ownerTokens) {
   return { users: [...users], teams: [...teams] }
 }
 
-async function listHumanContributors(octokit, { org, repo }) {
-  let contribs = []
+interface Contributor {
+  login?: string
+  type?: string
+}
+
+async function listHumanContributors(
+  octokit: Octokit,
+  { org, repo }: { org: string; repo: string }
+): Promise<Array<Contributor & { login: string }>> {
+  let contribs: Array<Contributor> = []
   try {
     const { data } = await octokit.rest.repos.listContributors({
       owner: org,
@@ -36,14 +54,31 @@ async function listHumanContributors(octokit, { org, repo }) {
     })
     contribs = Array.isArray(data) ? data : []
   } catch (e) {
-    if (e.status !== 404 && e.status !== 204) {
+    const status = httpStatus(e)
+    if (status !== 404 && status !== 204) {
       throw e
     }
   }
   return contribs.filter(
-    (c) =>
-      c.type === 'User' && !/\[bot\]$/.test(c.login) && !KNOWN_BOTS.has(c.login)
+    (c): c is Contributor & { login: string } =>
+      c.type === 'User' &&
+      typeof c.login === 'string' &&
+      !/\[bot\]$/.test(c.login) &&
+      !KNOWN_BOTS.has(c.login)
   )
+}
+
+interface ChooseReviewersParams {
+  org: string
+  repo: string
+  requiredCodeowners: Array<string>
+  parsedLines: Array<CodeownersLine>
+}
+
+interface ChosenReviewers {
+  reviewerTokens: Array<string>
+  reviewerSource: ReviewerSource
+  ownerSubstitute: string | null
 }
 
 /**
@@ -55,10 +90,10 @@ async function listHumanContributors(octokit, { org, repo }) {
  * as those owners are the right ones for the new lines too.
  */
 export async function chooseReviewers(
-  octokit,
-  { org, repo, requiredCodeowners, parsedLines }
-) {
-  const matchedOwners = new Set()
+  octokit: Octokit,
+  { org, repo, requiredCodeowners, parsedLines }: ChooseReviewersParams
+): Promise<ChosenReviewers> {
+  const matchedOwners = new Set<string>()
   for (const req of requiredCodeowners) {
     const match = findCoveringLine(req, parsedLines)
     if (match) {
@@ -75,7 +110,7 @@ export async function chooseReviewers(
     }
   }
 
-  const allOwners = new Set()
+  const allOwners = new Set<string>()
   for (const line of parsedLines) {
     line.owners.forEach((o) => allOwners.add(o))
   }
@@ -99,6 +134,15 @@ export async function chooseReviewers(
   return { reviewerTokens: [], reviewerSource: 'none', ownerSubstitute: null }
 }
 
+interface RequestReviewersParams {
+  org: string
+  repo: string
+  pullNumber: number
+  users: Array<string>
+  teams: Array<string>
+  log: Logger
+}
+
 /**
  * Request reviewers one at a time. requestReviewers is all-or-nothing:
  * a single invalid entry (e.g. a past contributor who is no longer
@@ -112,10 +156,10 @@ export async function chooseReviewers(
  * as `@` handles.
  */
 export async function requestReviewersOneByOne(
-  octokit,
-  { org, repo, pullNumber, users, teams, log }
-) {
-  const requested = []
+  octokit: Octokit,
+  { org, repo, pullNumber, users, teams, log }: RequestReviewersParams
+): Promise<Array<string>> {
+  const requested: Array<string> = []
   for (const user of users) {
     if (requested.length >= MAX_REVIEWERS) break
     try {
@@ -127,8 +171,8 @@ export async function requestReviewersOneByOne(
       })
       requested.push(`@${user}`)
     } catch (e) {
-      if (e.status !== 422) throw e
-      log.warning(`could not request reviewer @${user}: ${e.message}`)
+      if (httpStatus(e) !== 422) throw e
+      log.warning(`could not request reviewer @${user}: ${errorMessage(e)}`)
     }
   }
   for (const team of teams) {
@@ -142,9 +186,9 @@ export async function requestReviewersOneByOne(
       })
       requested.push(`@${org}/${team}`)
     } catch (e) {
-      if (e.status !== 422) throw e
+      if (httpStatus(e) !== 422) throw e
       log.warning(
-        `could not request team reviewer @${org}/${team}: ${e.message}`
+        `could not request team reviewer @${org}/${team}: ${errorMessage(e)}`
       )
     }
   }

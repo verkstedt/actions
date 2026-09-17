@@ -2,19 +2,30 @@ import {
   parseCodeowners,
   findOwningLine,
   buildCodeownersAddition,
-} from './codeowners.mjs'
-import { detectEcosystems, planDependabotChange } from './dependabot-config.mjs'
+} from './codeowners.ts'
+import { detectEcosystems, planDependabotChange } from './dependabot-config.ts'
 import {
   tryGetContent,
   fetchBranchTree,
   commitChange,
   createLineComment,
-} from './github.mjs'
+} from './github.ts'
 import {
   chooseReviewers,
   splitReviewers,
   requestReviewersOneByOne,
-} from './reviewers.mjs'
+} from './reviewers.ts'
+import type {
+  Change,
+  CodeownersChange,
+  FileContent,
+  PullRequest,
+  RepoContext,
+  RepoMeta,
+  Result,
+  ReviewerSource,
+  RunContext,
+} from './types.ts'
 
 const WORKFLOW_LINK =
   'https://github.com/verkstedt/actions/blob/HEAD/repo-hygiene/'
@@ -24,31 +35,51 @@ const BRANCH_PREFIX = 'chore/repo-hygiene/'
 const OWNER_PLACEHOLDER = '@OWNER'
 const PR_TITLE = 'chore: Repo hygiene'
 
-// `[change, existingFile, codeFenceLang]` triples → the files the PR
-// commits, skipping changes that are null.
-function planFiles(candidates) {
-  return candidates
-    .filter(([change]) => change)
-    .map(([change, existing, lang]) => ({
-      change,
-      exists: Boolean(existing),
-      lang,
-    }))
+interface PlannedFile {
+  change: Change
+  exists: boolean
+  lang: string
 }
 
-function composePrBody({ reviewerSource, files }) {
+/** Everything the hygiene PR for one repo would contain. */
+interface PrPlan {
+  files: Array<PlannedFile>
+  reviewers: Array<string>
+  reviewerUsers: Array<string>
+  reviewerTeams: Array<string>
+  reviewerSource: ReviewerSource
+  codeownersChange: CodeownersChange | null
+  hasUnresolvedOwner: boolean
+  prBody: string
+}
+
+type FileCandidate = [Change | null, FileContent | null, string]
+
+// `[change, existingFile, codeFenceLang]` triples → the files the PR
+// commits, skipping changes that are null.
+function planFiles(candidates: Array<FileCandidate>): Array<PlannedFile> {
+  return candidates.flatMap(([change, existing, lang]) =>
+    change ? [{ change, exists: Boolean(existing), lang }] : []
+  )
+}
+
+function composePrBody({
+  reviewerSource,
+  files,
+}: Pick<PrPlan, 'reviewerSource' | 'files'>): string {
   const changes = files.map((f) => f.change)
   const bodyParts = [
     `🤖 Opened automatically by [repo-hygiene action from verkstedt/actions](${WORKFLOW_LINK}).`,
   ]
-  const reviewerParagraph = {
+  const reviewerParagraph: Partial<Record<ReviewerSource, string>> = {
     'codeowners-fallback':
       'Assigned people from CODEOWNERS as reviewers of this PR.',
     'contributors': 'Assigned repo contributors as reviewers of this PR.',
     'none': 'Could not determine who to assign as reviewers of this PR.',
-  }[reviewerSource]
-  if (reviewerParagraph) {
-    bodyParts.push(reviewerParagraph)
+  }
+  const paragraph = reviewerParagraph[reviewerSource]
+  if (paragraph) {
+    bodyParts.push(paragraph)
   }
   const whatBullets = changes.map((change) => `- ${change.summary}`)
   bodyParts.push(`## What?\n\n${whatBullets.join('\n')}`)
@@ -56,7 +87,7 @@ function composePrBody({ reviewerSource, files }) {
 }
 
 // Everything the PR would contain, rendered into the job summary.
-function renderDryRun(repoSlug, plan) {
+function renderDryRun(repoSlug: string, plan: PrPlan): string {
   const lines = [
     `### ${repoSlug}`,
     '',
@@ -91,7 +122,11 @@ function renderDryRun(repoSlug, plan) {
 
 // Create the branch off `headSha`, commit the planned files, open the
 // PR and request reviewers.
-async function openPullRequest(ctx, headSha, plan) {
+async function openPullRequest(
+  ctx: RepoContext,
+  headSha: string,
+  plan: PrPlan
+): Promise<{ pr: PullRequest; reviewerList: Array<string> }> {
   const { octokit, org, repo, defaultBranch, log } = ctx
 
   // Always include run ID and attempt so each run gets a fresh branch —
@@ -130,7 +165,7 @@ async function openPullRequest(ctx, headSha, plan) {
   // Inline review comment on the @OWNER lines. The added lines are
   // always a contiguous block, so post a single comment spanning them
   // rather than one per line.
-  if (plan.hasUnresolvedOwner) {
+  if (plan.hasUnresolvedOwner && plan.codeownersChange) {
     await createLineComment(octokit, {
       org,
       repo,
@@ -148,7 +183,10 @@ async function openPullRequest(ctx, headSha, plan) {
 }
 
 // Hygiene PRs from earlier runs that are still open on the repo.
-function findExistingHygienePrs(openPrs, repoSlug) {
+function findExistingHygienePrs(
+  openPrs: Array<PullRequest>,
+  repoSlug: string
+): Array<PullRequest> {
   return openPrs.filter(
     (pr) =>
       pr.head.ref.startsWith(BRANCH_PREFIX) &&
@@ -156,7 +194,10 @@ function findExistingHygienePrs(openPrs, repoSlug) {
   )
 }
 
-function skippedResult(pr, { org, repoSlug, log }) {
+function skippedResult(
+  pr: PullRequest,
+  { org, repoSlug, log }: RepoContext
+): Result {
   log.info(`existing hygiene PR open (${pr.html_url}), skipping`)
   return {
     repo: repoSlug,
@@ -167,6 +208,12 @@ function skippedResult(pr, { org, repoSlug, log }) {
       ...(pr.requested_teams || []).map((t) => `@${org}/${t.slug}`),
     ],
   }
+}
+
+/** What `auditRepo` returns for one repo. */
+export interface RepoAudit {
+  results: Array<Result>
+  summary: string | null
 }
 
 /**
@@ -180,8 +227,11 @@ function skippedResult(pr, { org, repoSlug, log }) {
  * plus a `log` already prefixed for this repo. The per-repo facts are
  * added to it once here, and the helpers get that one object.
  */
-export async function auditRepo(runCtx, repoMeta) {
-  const ctx = {
+export async function auditRepo(
+  runCtx: RunContext & Pick<RepoContext, 'log'>,
+  repoMeta: RepoMeta
+): Promise<RepoAudit> {
+  const ctx: RepoContext = {
     ...runCtx,
     repo: repoMeta.name,
     repoSlug: `${runCtx.org}/${repoMeta.name}`,
@@ -191,12 +241,15 @@ export async function auditRepo(runCtx, repoMeta) {
     ctx
 
   // 1. Short-circuit if hygiene PR already open
-  const openPrs = await octokit.paginate(octokit.rest.pulls.list, {
-    owner: org,
-    repo,
-    state: 'open',
-    per_page: 100,
-  })
+  const openPrs: Array<PullRequest> = await octokit.paginate(
+    octokit.rest.pulls.list,
+    {
+      owner: org,
+      repo,
+      state: 'open',
+      per_page: 100,
+    }
+  )
   const existingHygienePrs = findExistingHygienePrs(openPrs, repoSlug)
   if (existingHygienePrs.length > 0) {
     return {
@@ -277,19 +330,20 @@ export async function auditRepo(runCtx, repoMeta) {
   const hasUnresolvedOwner = Boolean(codeownersChange) && !ownerSubstitute
 
   // 7. Compose the PR
-  const plan = {
-    files: planFiles([
-      [dependabotChange, existingDependabot, 'yaml'],
-      [codeownersChange, existingCodeowners, ''],
-    ]),
+  const files = planFiles([
+    [dependabotChange, existingDependabot, 'yaml'],
+    [codeownersChange, existingCodeowners, ''],
+  ])
+  const plan: PrPlan = {
+    files,
     reviewers,
     reviewerUsers,
     reviewerTeams,
     reviewerSource,
     codeownersChange,
     hasUnresolvedOwner,
+    prBody: composePrBody({ reviewerSource, files }),
   }
-  plan.prBody = composePrBody(plan)
 
   // 8. Dry run → summary; otherwise create branch + commits + PR
   if (dryRun) {

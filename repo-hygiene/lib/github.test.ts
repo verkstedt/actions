@@ -6,8 +6,8 @@ import {
   fetchBranchTree,
   commitChange,
   createLineComment,
-} from './github.mjs'
-import { fakeOctokit, fileResponse, httpError, fakeLog } from './fixtures.mjs'
+} from './github.ts'
+import { fakeOctokit, fileResponse, httpError, fakeLog } from './fixtures.ts'
 
 describe('tryGetContent', () => {
   it('returns the first path that exists, decoded', async () => {
@@ -41,12 +41,26 @@ describe('tryGetContent', () => {
         throw httpError(404)
       },
     })
-    assert.equal(await tryGetContent(octokit, { paths: ['a', 'b'] }), null)
+    assert.equal(
+      await tryGetContent(octokit, {
+        owner: 'org',
+        repo: 'r',
+        paths: ['a', 'b'],
+      }),
+      null
+    )
   })
 
   it('skips directories', async () => {
     const octokit = fakeOctokit({ 'repos.getContent': () => [] })
-    assert.equal(await tryGetContent(octokit, { paths: ['docs'] }), null)
+    assert.equal(
+      await tryGetContent(octokit, {
+        owner: 'org',
+        repo: 'r',
+        paths: ['docs'],
+      }),
+      null
+    )
   })
 
   it('rethrows other errors', async () => {
@@ -55,9 +69,12 @@ describe('tryGetContent', () => {
         throw httpError(500)
       },
     })
-    await assert.rejects(tryGetContent(octokit, { paths: ['a'] }), {
-      status: 500,
-    })
+    await assert.rejects(
+      tryGetContent(octokit, { owner: 'org', repo: 'r', paths: ['a'] }),
+      {
+        status: 500,
+      }
+    )
   })
 })
 
@@ -101,7 +118,7 @@ describe('commitChange', () => {
       org: 'org',
       repo: 'r',
       branch: 'b',
-      change: { path: 'CODEOWNERS', newContent: 'x @a\n' },
+      change: { path: 'CODEOWNERS', newContent: 'x @a\n', summary: '' },
     })
     const { params } = octokit.calls[0]
     assert.equal(params.message, 'chore: Add CODEOWNERS')
@@ -118,7 +135,12 @@ describe('commitChange', () => {
       org: 'org',
       repo: 'r',
       branch: 'b',
-      change: { path: '.github/dependabot.yaml', newContent: '', sha: 'old' },
+      change: {
+        path: '.github/dependabot.yaml',
+        newContent: '',
+        sha: 'old',
+        summary: '',
+      },
     })
     const { params } = octokit.calls[0]
     assert.equal(params.message, 'chore: Update .github/dependabot.yaml')

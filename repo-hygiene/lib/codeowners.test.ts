@@ -6,7 +6,7 @@ import {
   findCoveringLine,
   findOwningLine,
   buildCodeownersAddition,
-} from './codeowners.mjs'
+} from './codeowners.ts'
 
 describe('parseCodeowners', () => {
   it('keeps pattern, owners and the original line index', () => {
@@ -36,7 +36,8 @@ package-lock.json    @npm
 /.github/workflows/* @ci
 docker-compose.*     @ops
 `)
-  const covering = (required) => findCoveringLine(required, lines)?.owners
+  const covering = (required: string) =>
+    findCoveringLine(required, lines)?.owners
 
   it('prefers the last matching line', () => {
     assert.deepEqual(covering('package-lock.json'), ['@npm'])
@@ -54,10 +55,10 @@ docker-compose.*     @ops
 
   it('ignores leading slashes and `**/` when comparing', () => {
     const anchored = parseCodeowners('/package-lock.json @a\n**/yarn.lock @b')
-    assert.deepEqual(findCoveringLine('package-lock.json', anchored).owners, [
+    assert.deepEqual(findCoveringLine('package-lock.json', anchored)?.owners, [
       '@a',
     ])
-    assert.deepEqual(findCoveringLine('yarn.lock', anchored).owners, ['@b'])
+    assert.deepEqual(findCoveringLine('yarn.lock', anchored)?.owners, ['@b'])
   })
 
   it('returns null when nothing covers the pattern', () => {
@@ -68,7 +69,7 @@ docker-compose.*     @ops
 describe('findOwningLine', () => {
   it('returns the covering line when it has owners', () => {
     const lines = parseCodeowners('package-lock.json @npm')
-    assert.deepEqual(findOwningLine('package-lock.json', lines).owners, [
+    assert.deepEqual(findOwningLine('package-lock.json', lines)?.owners, [
       '@npm',
     ])
   })
@@ -76,7 +77,7 @@ describe('findOwningLine', () => {
   it('treats an ownerless covering line as no coverage', () => {
     const lines = parseCodeowners('* @everyone\npackage-lock.json')
     assert.equal(findOwningLine('package-lock.json', lines), null)
-    assert.deepEqual(findOwningLine('Dockerfile', lines).owners, ['@everyone'])
+    assert.deepEqual(findOwningLine('Dockerfile', lines)?.owners, ['@everyone'])
   })
 })
 

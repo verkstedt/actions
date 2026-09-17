@@ -1,13 +1,17 @@
 import picomatch from 'picomatch'
 
+import type { CodeownersChange, CodeownersLine, FileContent } from './types.ts'
+
 /**
  * Parse a CODEOWNERS file into `{ pattern, owners, rawIndex }` lines.
  * Comments and blank lines are dropped. `rawIndex` is the zero-based
  * line number in the original text.
  */
-export function parseCodeowners(text) {
-  const out = []
-  const lines = String(text || '').split('\n')
+export function parseCodeowners(
+  text: string | null | undefined
+): Array<CodeownersLine> {
+  const out: Array<CodeownersLine> = []
+  const lines = (text ?? '').split('\n')
   for (let i = 0; i < lines.length; i += 1) {
     const stripped = lines[i].replace(/#.*$/, '').trim()
     if (stripped) {
@@ -18,15 +22,19 @@ export function parseCodeowners(text) {
   return out
 }
 
-function normalisePattern(p) {
-  let s = String(p || '')
+function normalisePattern(p: string): string {
+  let s = p
   if (s.startsWith('**/')) s = s.slice(3)
   if (s.startsWith('/')) s = s.slice(1)
   if (s.endsWith('/')) s = s.slice(0, -1)
   return s
 }
 
-function codeownersPatternCovers(pat, reqNorm, reqIsDir) {
+function codeownersPatternCovers(
+  pat: string,
+  reqNorm: string,
+  reqIsDir: boolean
+): boolean {
   if (pat === reqNorm) return true
   if (pat === '*' || pat === '.' || pat === '') return true
   if (reqNorm.startsWith(`${pat}/`)) return true
@@ -48,9 +56,12 @@ function codeownersPatternCovers(pat, reqNorm, reqIsDir) {
  * CODEOWNERS uses the LAST matching pattern, per
  * https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners#codeowners-syntax
  */
-export function findCoveringLine(required, existingLines) {
+export function findCoveringLine(
+  required: string,
+  existingLines: Array<CodeownersLine>
+): CodeownersLine | null {
   const reqNorm = normalisePattern(required)
-  const reqIsDir = String(required || '').endsWith('/')
+  const reqIsDir = required.endsWith('/')
   for (const line of existingLines.toReversed()) {
     if (
       codeownersPatternCovers(normalisePattern(line.pattern), reqNorm, reqIsDir)
@@ -67,7 +78,10 @@ export function findCoveringLine(required, existingLines) {
  * ownership) counts as no coverage, since nobody would get requested
  * as a reviewer.
  */
-export function findOwningLine(required, existingLines) {
+export function findOwningLine(
+  required: string,
+  existingLines: Array<CodeownersLine>
+): CodeownersLine | null {
   const line = findCoveringLine(required, existingLines)
   return line && line.owners.length > 0 ? line : null
 }
@@ -75,7 +89,10 @@ export function findOwningLine(required, existingLines) {
 // The last existing line that already covers any required pattern, or
 // -1. New lines get inserted right after it (no blank-line separator,
 // no header comment) so they sit next to their relatives.
-function findInsertAfterIdx(requiredPatterns, parsedLines) {
+function findInsertAfterIdx(
+  requiredPatterns: Array<string>,
+  parsedLines: Array<CodeownersLine>
+): number {
   let insertAfterIdx = -1
   for (const req of requiredPatterns) {
     const match = findCoveringLine(req, parsedLines)
@@ -89,7 +106,12 @@ function findInsertAfterIdx(requiredPatterns, parsedLines) {
 // Splice `addedLines` into `text` after line `insertAfterIdx`, or
 // append them after a blank line when there is no such line. Also
 // returns the 1-indexed line of the first added pattern.
-function spliceLines(text, addedLines, insertAfterIdx, includeHeader) {
+function spliceLines(
+  text: string,
+  addedLines: Array<string>,
+  insertAfterIdx: number,
+  includeHeader: boolean
+): { combinedLines: Array<string>; patternStartLine: number } {
   const baseLines = text.split('\n')
   // split on a string ending with \n leaves a trailing empty element;
   // drop it for clean splicing.
@@ -118,6 +140,14 @@ function spliceLines(text, addedLines, insertAfterIdx, includeHeader) {
   return { combinedLines: [...addedLines], patternStartLine: headerLines + 1 }
 }
 
+interface CodeownersAdditionParams {
+  existing: FileContent | null
+  parsedLines: Array<CodeownersLine>
+  requiredPatterns: Array<string>
+  missingPatterns: Array<string>
+  ownerToken: string
+}
+
 /**
  * New CODEOWNERS content with lines for `missingPatterns` added, each
  * owned by `ownerToken`. Returns the change object the audit commits,
@@ -130,7 +160,7 @@ export function buildCodeownersAddition({
   requiredPatterns,
   missingPatterns,
   ownerToken,
-}) {
+}: CodeownersAdditionParams): CodeownersChange {
   const insertAfterIdx = findInsertAfterIdx(requiredPatterns, parsedLines)
   const includeHeader = insertAfterIdx === -1
 
