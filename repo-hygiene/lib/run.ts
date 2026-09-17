@@ -1,6 +1,7 @@
 import { auditRepo } from './audit-repo.ts'
 import { codeowners } from './checks/codeowners.ts'
 import { dependabotConfig } from './checks/dependabot-config.ts'
+import { dependabotReviewers } from './checks/dependabot-reviewers.ts'
 import {
   assertAppSeesAllRepos,
   getErrorMessage,
@@ -10,7 +11,11 @@ import { createLogger } from './log.ts'
 import type { Check, Finding, GitHub, LogSink, Octokit } from './types.ts'
 
 /** Every check the action runs, in order. */
-export const allChecks: Array<Check> = [dependabotConfig, codeowners]
+export const allChecks: Array<Check> = [
+  dependabotReviewers,
+  dependabotConfig,
+  codeowners,
+]
 
 export interface RunAuditOptions {
   org: string

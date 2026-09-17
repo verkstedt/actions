@@ -47916,6 +47916,74 @@ function codeownersPatternCovers(pattern, normalisedRequired, requiredIsDirector
     return (/[*?[\]]/.test(pattern) &&
         picomatch_default().isMatch(normalisedRequired, pattern, { dot: true }));
 }
+const GLOB_CHARS = /[*?]/;
+/**
+ * Translate a CODEOWNERS pattern into the picomatch globs it stands
+ * for, following the gitignore-like rules documented at
+ * https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners#codeowners-syntax
+ *
+ * - A leading `/` anchors the pattern to the repository root.
+ * - A pattern with a slash anywhere but the end is anchored as well.
+ * - A pattern without one matches at any depth.
+ * - A trailing `/` names a directory and covers everything inside.
+ * - A pattern whose last segment has no glob characters covers the
+ *   path itself and, when it is a directory, everything inside it.
+ *   `docs/*` on the other hand only covers files directly in `docs`.
+ * - Character ranges (`[…]`) are not supported by GitHub, which skips
+ *   such a rule. It translates to no globs at all, so it matches
+ *   nothing rather than what picomatch would make of the brackets.
+ */
+function convertCodeownersPatternToGlobs(pattern) {
+    let p = pattern;
+    if (/[[\]]/.test(p)) {
+        return [];
+    }
+    const withoutTrailingSlash = p.endsWith('/') ? p.slice(0, -1) : p;
+    const anchored = p.startsWith('/') || withoutTrailingSlash.includes('/');
+    if (p.startsWith('/')) {
+        p = p.slice(1);
+    }
+    if (!anchored) {
+        p = `**/${p}`;
+    }
+    if (p.endsWith('/')) {
+        return [`${p}**`];
+    }
+    const lastSegment = p.slice(p.lastIndexOf('/') + 1);
+    if (GLOB_CHARS.test(lastSegment)) {
+        return [p];
+    }
+    return [p, `${p}/**`];
+}
+/**
+ * Owners of a single file, or `null` when no rule matches. The last
+ * matching rule wins; a matching rule with no owners yields `[]`.
+ */
+function findCodeownersFor(file, parsedLines) {
+    const path = file.replace(/^\//, '');
+    for (const line of parsedLines.toReversed()) {
+        const globs = convertCodeownersPatternToGlobs(line.pattern);
+        // `dot: true` so `*` matches dot-prefixed names (CODEOWNERS does
+        // not treat them specially).
+        if (picomatch_default().isMatch(path, globs, { dot: true })) {
+            return line.owners;
+        }
+    }
+    return null;
+}
+/**
+ * Union of the owners of all `files`, in the order they are first
+ * encountered.
+ */
+function collectCodeownersForFiles(files, parsedLines) {
+    const owners = new Set();
+    for (const file of files) {
+        for (const owner of findCodeownersFor(file, parsedLines) || []) {
+            owners.add(owner);
+        }
+    }
+    return [...owners];
+}
 /**
  * The existing line that covers a `required` pattern, or `null`.
  * CODEOWNERS uses the LAST matching pattern, per
@@ -49089,14 +49157,152 @@ const dependabotConfig = {
     },
 };
 
+;// CONCATENATED MODULE: ./lib/checks/dependabot-reviewers.ts
+/**
+ * Requests reviewers on open Dependabot PRs that have none, using the
+ * owners the committed `CODEOWNERS` names for the files they touch.
+ *
+ * GitHub only applies `CODEOWNERS` when a PR is opened or pushed to, so
+ * PRs opened before the file covered them stay reviewer-less otherwise.
+ *
+ * - PRs with owners for their files get those owners requested
+ * - PRs whose files have no owner are only reported as a warning
+ */
+
+
+
+/**
+ * Reviewers drop off `requested_reviewers` once they review, so an
+ * empty list alone does not mean nobody was ever asked; see
+ * `hasReviews`.
+ */
+function isReviewerless(pr) {
+    return (pr.user?.login === 'dependabot[bot]' &&
+        (pr.requested_reviewers || []).length === 0 &&
+        (pr.requested_teams || []).length === 0);
+}
+async function hasReviews(octokit, { org, repo, pr }) {
+    const reviews = await octokit.paginate(octokit.rest.pulls.listReviews, {
+        owner: org,
+        repo,
+        pull_number: pr.number,
+        per_page: 100,
+    });
+    return reviews.length > 0;
+}
+/** Files a PR touches, including the old names of renamed files. */
+async function listPrFiles(octokit, { org, repo, pr }) {
+    const changed = await octokit.paginate(octokit.rest.pulls.listFiles, {
+        owner: org,
+        repo,
+        pull_number: pr.number,
+        per_page: 100,
+    });
+    return changed.flatMap((f) => [f.filename, f.previous_filename].filter((name) => typeof name === 'string' && name !== ''));
+}
+async function dependabot_reviewers_readCommittedCodeowners(snapshot) {
+    for (const path of CODEOWNERS_PATHS) {
+        const file = await snapshot.readFileOnDefaultBranch(path);
+        if (file) {
+            return parseCodeowners(file.content);
+        }
+    }
+    return [];
+}
+async function checkPr(snapshot, pr, codeowners) {
+    const { octokit, org, repo } = snapshot;
+    if (await hasReviews(octokit, { org, repo, pr })) {
+        return null;
+    }
+    const files = await listPrFiles(octokit, { org, repo, pr });
+    const ownerTokens = collectCodeownersForFiles(files, codeowners).filter(
+    // Emails are valid owners but cannot be requested as reviewers.
+    (token) => token.startsWith('@'));
+    const split = splitReviewers(ownerTokens);
+    const wanted = formatReviewerHandles(org, split);
+    if (wanted.length === 0) {
+        return {
+            level: 'warning',
+            summary: 'Dependabot PR has no reviewers and CODEOWNERS names nobody',
+            url: pr.html_url,
+            details: files,
+        };
+    }
+    return {
+        level: 'info',
+        summary: 'Dependabot PR has no reviewers',
+        url: pr.html_url,
+        fix: {
+            kind: 'action',
+            describe: `request ${wanted.join(', ')} as reviewers`,
+            run: async (ctx) => {
+                const requested = await requestReviewersOneByOne(ctx.octokit, {
+                    org: ctx.org,
+                    repo: ctx.repo,
+                    pullNumber: pr.number,
+                    users: split.users,
+                    teams: split.teams,
+                    log: ctx.log,
+                });
+                if (requested.length === 0) {
+                    return {
+                        fixed: false,
+                        detail: `none of ${wanted.join(', ')} could be requested`,
+                    };
+                }
+                return `requested ${requested.join(', ')}`;
+            },
+        },
+    };
+}
+/**
+ * Dependabot PRs opened before CODEOWNERS covered their files never
+ * get reviewers, because GitHub applies CODEOWNERS only when a PR is
+ * opened or pushed to. Propose the owners the committed CODEOWNERS
+ * names for the files each such PR touches.
+ */
+const dependabotReviewers = {
+    name: 'dependabot-reviewers',
+    run: async (snapshot) => {
+        const prs = (await snapshot.listOpenPrs()).filter(isReviewerless);
+        if (prs.length === 0) {
+            return [];
+        }
+        const codeowners = await dependabot_reviewers_readCommittedCodeowners(snapshot);
+        const findings = [];
+        for (const pr of prs) {
+            try {
+                const finding = await checkPr(snapshot, pr, codeowners);
+                if (finding) {
+                    findings.push(finding);
+                }
+            }
+            catch (e) {
+                findings.push({
+                    level: 'error',
+                    summary: 'could not check reviewers of Dependabot PR',
+                    url: pr.html_url,
+                    details: [getErrorMessage(e)],
+                });
+            }
+        }
+        return findings;
+    },
+};
+
 ;// CONCATENATED MODULE: ./lib/run.ts
 
 
 
 
 
+
 /** Every check the action runs, in order. */
-const allChecks = [dependabotConfig, codeowners];
+const allChecks = [
+    dependabotReviewers,
+    dependabotConfig,
+    codeowners,
+];
 function createFailedRepoFinding(org, repoMeta, error) {
     return {
         repo: `${org}/${repoMeta.name}`,
@@ -49156,7 +49362,7 @@ async function runAudit(octokit, { org, dryRun, reposFilter, runId, runAttempt, 
 
 /** Logs through the workflow commands GitHub Actions renders. */
 const actionsLog = (entry) => core_namespaceObject[entry.level](formatLogLine(entry));
-const DRY_RUN_NOTE = '> [!NOTE]\n> This is a **dry run**. No pull requests will be created. Will show info about ones that would, here in the summary.\n\n';
+const DRY_RUN_NOTE = '> [!NOTE]\n> This is a **dry run**. No pull requests will be created and no reviewers will be requested. Will show info about ones that would, here in the summary.\n\n';
 function readInputs() {
     const { /* context */ "_": context } = github_namespaceObject;
     return {

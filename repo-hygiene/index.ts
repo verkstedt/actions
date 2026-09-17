@@ -11,7 +11,7 @@ import type { LogSink } from './lib/types.ts'
 const actionsLog: LogSink = (entry) => core[entry.level](formatLogLine(entry))
 
 const DRY_RUN_NOTE =
-  '> [!NOTE]\n> This is a **dry run**. No pull requests will be created. Will show info about ones that would, here in the summary.\n\n'
+  '> [!NOTE]\n> This is a **dry run**. No pull requests will be created and no reviewers will be requested. Will show info about ones that would, here in the summary.\n\n'
 
 function readInputs() {
   const { context } = actionsGithub

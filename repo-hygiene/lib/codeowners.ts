@@ -70,6 +70,86 @@ function codeownersPatternCovers(
   )
 }
 
+const GLOB_CHARS = /[*?]/
+
+/**
+ * Translate a CODEOWNERS pattern into the picomatch globs it stands
+ * for, following the gitignore-like rules documented at
+ * https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners#codeowners-syntax
+ *
+ * - A leading `/` anchors the pattern to the repository root.
+ * - A pattern with a slash anywhere but the end is anchored as well.
+ * - A pattern without one matches at any depth.
+ * - A trailing `/` names a directory and covers everything inside.
+ * - A pattern whose last segment has no glob characters covers the
+ *   path itself and, when it is a directory, everything inside it.
+ *   `docs/*` on the other hand only covers files directly in `docs`.
+ * - Character ranges (`[…]`) are not supported by GitHub, which skips
+ *   such a rule. It translates to no globs at all, so it matches
+ *   nothing rather than what picomatch would make of the brackets.
+ */
+export function convertCodeownersPatternToGlobs(
+  pattern: string
+): Array<string> {
+  let p = pattern
+  if (/[[\]]/.test(p)) {
+    return []
+  }
+  const withoutTrailingSlash = p.endsWith('/') ? p.slice(0, -1) : p
+  const anchored = p.startsWith('/') || withoutTrailingSlash.includes('/')
+  if (p.startsWith('/')) {
+    p = p.slice(1)
+  }
+  if (!anchored) {
+    p = `**/${p}`
+  }
+  if (p.endsWith('/')) {
+    return [`${p}**`]
+  }
+  const lastSegment = p.slice(p.lastIndexOf('/') + 1)
+  if (GLOB_CHARS.test(lastSegment)) {
+    return [p]
+  }
+  return [p, `${p}/**`]
+}
+
+/**
+ * Owners of a single file, or `null` when no rule matches. The last
+ * matching rule wins; a matching rule with no owners yields `[]`.
+ */
+export function findCodeownersFor(
+  file: string,
+  parsedLines: Array<CodeownersLine>
+): Array<string> | null {
+  const path = file.replace(/^\//, '')
+  for (const line of parsedLines.toReversed()) {
+    const globs = convertCodeownersPatternToGlobs(line.pattern)
+    // `dot: true` so `*` matches dot-prefixed names (CODEOWNERS does
+    // not treat them specially).
+    if (picomatch.isMatch(path, globs, { dot: true })) {
+      return line.owners
+    }
+  }
+  return null
+}
+
+/**
+ * Union of the owners of all `files`, in the order they are first
+ * encountered.
+ */
+export function collectCodeownersForFiles(
+  files: Array<string>,
+  parsedLines: Array<CodeownersLine>
+): Array<string> {
+  const owners = new Set<string>()
+  for (const file of files) {
+    for (const owner of findCodeownersFor(file, parsedLines) || []) {
+      owners.add(owner)
+    }
+  }
+  return [...owners]
+}
+
 /**
  * The existing line that covers a `required` pattern, or `null`.
  * CODEOWNERS uses the LAST matching pattern, per
