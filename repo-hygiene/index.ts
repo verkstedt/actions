@@ -1,166 +1,111 @@
 import * as core from '@actions/core'
 import * as actionsGithub from '@actions/github'
-import picomatch from 'picomatch'
 
 import { auditRepo } from './lib/audit-repo.ts'
-import { loadDependabotTemplate } from './lib/dependabot-config.ts'
-import { errorMessage } from './lib/github.ts'
+import { codeowners } from './lib/checks/codeowners.ts'
+import { dependabotConfig } from './lib/checks/dependabot-config.ts'
+import {
+  assertAppSeesAllRepos,
+  getErrorMessage,
+  listTargetRepos,
+} from './lib/github.ts'
 import { createLogger } from './lib/log.ts'
-import { report } from './lib/report.ts'
-import type { Octokit, RepoMeta, Result, RunContext } from './lib/types.ts'
+import { publish } from './lib/report.ts'
+import type { Check, Finding, GitHub } from './lib/types.ts'
 
-/**
- * Org repos to audit: sources only, skipping archived, disabled and
- * empty ones, narrowed by `reposFilter` globs when given. Returns
- * `null` after failing the run if a filter matched nothing.
- */
-async function listTargetRepos(
-  octokit: Octokit,
-  { org, reposFilter }: { org: string; reposFilter: Array<string> }
-): Promise<Array<RepoMeta> | null> {
-  const allRepos = await octokit.paginate(octokit.rest.repos.listForOrg, {
-    org,
-    type: 'sources',
-    per_page: 100,
-  })
+const checks: Array<Check> = [dependabotConfig, codeowners]
 
-  let targets = allRepos.filter(
-    (r): r is typeof r & RepoMeta =>
-      !r.archived &&
-      !r.disabled &&
-      (r.size || 0) > 0 &&
-      typeof r.default_branch === 'string'
-  )
+const DRY_RUN_NOTE =
+  '> [!NOTE]\n> This is a **dry run**. No pull requests will be created. Will show info about ones that would, here in the summary.\n\n'
 
-  if (reposFilter.length === 0) return targets
-
-  await core.summary
-    .addRaw(
-      [
-        'Running only for:',
-        '',
-        ...reposFilter.map((f) => `- \`${f}\``),
-        '',
-      ].join('\n')
-    )
-    .write()
-
-  // Each entry is a picomatch glob; literal names match exactly (no
-  // wildcards). Lets you pass e.g. `demo-*`. Walk every target once so
-  // we discover all unmatched patterns before failing — surface them
-  // all at once.
-  const matchers = reposFilter.map((pat) => ({
-    pattern: pat,
-    isMatch: picomatch(pat, { dot: true }),
-  }))
-  const hitPatterns = new Set<string>()
-  targets = targets.filter((r) => {
-    const matched = matchers.filter((m) => m.isMatch(r.name))
-    matched.forEach((m) => hitPatterns.add(m.pattern))
-    return matched.length > 0
-  })
-  const missing = reposFilter.filter((p) => !hitPatterns.has(p))
-  for (const pat of missing) {
-    core.error(
-      `Requested repo pattern "${pat}" matched no repos in ${org} (after filtering archived/disabled/fork/empty).`
-    )
+function readInputs() {
+  const { context } = actionsGithub
+  return {
+    token: core.getInput('github-token', { required: true }),
+    org: core.getInput('org') || context.repo.owner,
+    dryRun: core.getBooleanInput('dry-run'),
+    reposFilter: (core.getInput('repos') || '').split(/[,;\s]/).filter(Boolean),
+    runId: context.runId,
+    runAttempt: Number(process.env.GITHUB_RUN_ATTEMPT) || 1,
   }
-  if (missing.length > 0) {
-    core.setFailed(
-      `Aborting: ${missing.length} requested repo pattern(s) matched nothing.`
-    )
-    return null
-  }
-  return targets
 }
 
-/**
- * Audit every repo in `targets`, one after the other. A repo whose
- * audit throws becomes a `failed` result instead of ending the run.
- * Dry-run summaries are appended to the job summary as they come.
- */
-async function auditRepos(
-  ctx: RunContext,
-  targets: Array<RepoMeta>
-): Promise<Array<Result>> {
-  const results: Array<Result> = []
-  let number = 0
-  for (const repoMeta of targets) {
-    number += 1
-    const repoSlug = `${ctx.org}/${repoMeta.name}`
-    const log = createLogger(`${number}/${targets.length}. ${repoSlug}:`)
-    try {
-      const audit = await auditRepo({ ...ctx, log }, repoMeta)
-      results.push(...audit.results)
-      if (audit.summary) {
-        await core.summary.addRaw(audit.summary).write()
-      }
-    } catch (e) {
-      log.error(errorMessage(e))
-      results.push({ repo: repoSlug, action: 'failed', error: errorMessage(e) })
-    }
+function createFailedRepoFinding(
+  org: string,
+  repoMeta: GitHub.RepoMeta,
+  e: unknown
+): Finding {
+  return {
+    repo: `${org}/${repoMeta.name}`,
+    level: 'error',
+    summary: 'could not audit repo',
+    details: [getErrorMessage(e)],
+    outcome: { status: 'none' },
   }
-  return results
 }
 
 async function main(): Promise<void> {
-  const token = core.getInput('github-token', { required: true })
-  const octokit = actionsGithub.getOctokit(token)
-  const { context } = actionsGithub
+  const inputs = readInputs()
+  const octokit = actionsGithub.getOctokit(inputs.token)
 
-  const org = core.getInput('org') || context.repo.owner
-  const dryRun = core.getBooleanInput('dry-run')
-  const reposFilter = (core.getInput('repos') || '')
-    .split(/[,;\s]/)
-    .map((s) => s.trim())
-    .filter(Boolean)
-
-  if (dryRun) {
+  if (inputs.dryRun) {
+    await core.summary.addRaw(DRY_RUN_NOTE).write()
+  }
+  if (inputs.reposFilter.length > 0) {
     await core.summary
       .addRaw(
-        '> [!NOTE]\n> This is a **dry run**. No pull requests will be created. Will show info about ones that would, here in the summary.\n\n'
+        [
+          'Running only for:',
+          '',
+          ...inputs.reposFilter.map((f) => `- \`${f}\``),
+          '',
+        ].join('\n')
       )
       .write()
   }
 
-  // Verify App has access to all org repos
-  const inst = await octokit.request('GET /installation/repositories', {
-    per_page: 1,
+  await assertAppSeesAllRepos(octokit)
+  const repos = await listTargetRepos(octokit, {
+    org: inputs.org,
+    reposFilter: inputs.reposFilter,
   })
-  if (inst.data.repository_selection !== 'all') {
-    core.setFailed(
-      `App has repository_selection='${inst.data.repository_selection}'; expected 'all'. Reconfigure the App's repository access to "All repositories".`
-    )
-    return
+  for (const check of checks) {
+    await check.setup?.(octokit)
   }
-
-  const template = await loadDependabotTemplate(octokit)
-
-  const targets = await listTargetRepos(octokit, { org, reposFilter })
-  if (!targets) return
-
   core.info(
-    `Auditing ${targets.length} repo(s) in ${org}${dryRun ? ' (dry run)' : ''}`
+    `Auditing ${repos.length} repo(s) in ${inputs.org}${inputs.dryRun ? ' (dry run)' : ''}`
   )
 
-  const ctx: RunContext = {
-    octokit,
-    org,
-    dryRun,
-    template,
-    runId: context.runId,
-    // Not on `context`; re-runs keep the run ID but bump the attempt.
-    runAttempt: Number(process.env.GITHUB_RUN_ATTEMPT) || 1,
+  const findings: Array<Finding> = []
+  const previews: Array<string> = []
+  for (const [index, repoMeta] of repos.entries()) {
+    const log = createLogger(
+      `${index + 1}/${repos.length}. ${inputs.org}/${repoMeta.name}:`
+    )
+    try {
+      const audited = await auditRepo(octokit, repoMeta, {
+        org: inputs.org,
+        dryRun: inputs.dryRun,
+        runId: inputs.runId,
+        runAttempt: inputs.runAttempt,
+        checks,
+        log,
+      })
+      findings.push(...audited.findings)
+      if (audited.preview) {
+        previews.push(audited.preview)
+      }
+    } catch (e) {
+      log.error(getErrorMessage(e))
+      findings.push(createFailedRepoFinding(inputs.org, repoMeta, e))
+    }
   }
-  const results = await auditRepos(ctx, targets)
 
-  const { outputs, summary } = report(results)
-  for (const [name, value] of Object.entries(outputs)) {
-    core.setOutput(name, value)
-  }
-  await core.summary.addRaw(summary).write()
+  await publish(findings, {
+    repoCount: repos.length,
+    dryRun: inputs.dryRun,
+    previews,
+  })
 }
 
-main().catch((err: unknown) => {
-  core.setFailed(errorMessage(err))
-})
+main().catch((e: unknown) => core.setFailed(getErrorMessage(e)))
