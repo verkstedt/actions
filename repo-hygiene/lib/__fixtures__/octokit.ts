@@ -59,3 +59,8 @@ export function createFileResponse(
 ): { path: string; sha: string; content: string } {
   return { path, sha, content: Buffer.from(content, 'utf8').toString('base64') }
 }
+
+/** The params of every recorded call to `name`, in order. */
+export function listCallsTo(octokit: FakeOctokit, name: string): Array<Params> {
+  return octokit.calls.filter((c) => c.name === name).map((c) => c.params)
+}
