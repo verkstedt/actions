@@ -4,6 +4,8 @@ import assert from 'node:assert/strict'
 import { parseCodeowners } from './codeowners.ts'
 import {
   splitReviewers,
+  describeReviewers,
+  reviewerHandles,
   chooseReviewers,
   requestReviewersOneByOne,
 } from './reviewers.ts'
@@ -25,6 +27,23 @@ describe('splitReviewers', () => {
   })
 })
 
+describe('describeReviewers', () => {
+  it('uses the singular, plural or empty form', () => {
+    assert.equal(describeReviewers([]), 'no reviewer assigned')
+    assert.equal(describeReviewers(['@a']), 'reviewer: @a')
+    assert.equal(describeReviewers(['@a', '@org/t']), 'reviewers: @a, @org/t')
+  })
+})
+
+describe('reviewerHandles', () => {
+  it('prefixes users and teams', () => {
+    assert.deepEqual(
+      reviewerHandles('org', { users: ['a'], teams: ['devs'] }),
+      ['@a', '@org/devs']
+    )
+  })
+})
+
 describe('chooseReviewers', () => {
   const octokit = () =>
     fakeOctokit({
@@ -36,33 +55,29 @@ describe('chooseReviewers', () => {
       ],
     })
 
-  it('reuses owners of lines covering required patterns', async () => {
+  it('takes the suggestions when there are any', async () => {
     const result = await chooseReviewers(octokit(), {
       org: 'org',
       repo: 'r',
-      requiredCodeowners: ['package-lock.json', 'Dockerfile'],
-      parsedLines: parseCodeowners(
-        'package-lock.json @a @b\nDockerfile @b\n/docs/ @writer'
-      ),
+      suggested: ['@a', '@b'],
+      parsedLines: parseCodeowners('/docs/ @writer'),
     })
     assert.deepEqual(result, {
       reviewerTokens: ['@a', '@b'],
       reviewerSource: 'codeowners-match',
-      ownerSubstitute: '@a @b',
     })
   })
 
-  it('falls back to any CODEOWNERS owner without substituting', async () => {
+  it('falls back to any CODEOWNERS owner', async () => {
     const result = await chooseReviewers(octokit(), {
       org: 'org',
       repo: 'r',
-      requiredCodeowners: ['Dockerfile'],
+      suggested: [],
       parsedLines: parseCodeowners('/docs/ @writer @org/docs'),
     })
     assert.deepEqual(result, {
       reviewerTokens: ['@writer', '@org/docs'],
       reviewerSource: 'codeowners-fallback',
-      ownerSubstitute: null,
     })
   })
 
@@ -70,13 +85,12 @@ describe('chooseReviewers', () => {
     const result = await chooseReviewers(octokit(), {
       org: 'org',
       repo: 'r',
-      requiredCodeowners: ['Dockerfile'],
+      suggested: [],
       parsedLines: [],
     })
     assert.deepEqual(result, {
       reviewerTokens: ['@alice'],
       reviewerSource: 'contributors',
-      ownerSubstitute: null,
     })
   })
 
@@ -88,10 +102,9 @@ describe('chooseReviewers', () => {
             throw httpError(status)
           },
         }),
-        { org: 'org', repo: 'r', requiredCodeowners: [], parsedLines: [] }
+        { org: 'org', repo: 'r', suggested: [], parsedLines: [] }
       )
-      assert.equal(result.reviewerSource, 'none')
-      assert.deepEqual(result.reviewerTokens, [])
+      assert.deepEqual(result, { reviewerTokens: [], reviewerSource: 'none' })
     }
   })
 
@@ -103,7 +116,7 @@ describe('chooseReviewers', () => {
             throw httpError(500)
           },
         }),
-        { org: 'org', repo: 'r', requiredCodeowners: [], parsedLines: [] }
+        { org: 'org', repo: 'r', suggested: [], parsedLines: [] }
       ),
       { status: 500 }
     )

@@ -1,4 +1,3 @@
-import { findCoveringLine } from './codeowners.ts'
 import { errorMessage, httpStatus } from './github.ts'
 import type {
   CodeownersLine,
@@ -68,48 +67,56 @@ async function listHumanContributors(
   )
 }
 
+/** Where GitHub looks for CODEOWNERS, in order of precedence. */
+export const CODEOWNERS_PATHS = [
+  '.github/CODEOWNERS',
+  'CODEOWNERS',
+  'docs/CODEOWNERS',
+]
+
+/** `reviewer: @a`, `reviewers: @a, @b`, or `no reviewer assigned`. */
+export function describeReviewers(reviewers: Array<string>): string {
+  if (reviewers.length === 0) return 'no reviewer assigned'
+  const label = reviewers.length === 1 ? 'reviewer' : 'reviewers'
+  return `${label}: ${reviewers.join(', ')}`
+}
+
+/** `@user` and `@org/team` handles for the split reviewers. */
+export function reviewerHandles(
+  org: string,
+  { users, teams }: { users: Array<string>; teams: Array<string> }
+): Array<string> {
+  return [...users.map((u) => `@${u}`), ...teams.map((t) => `@${org}/${t}`)]
+}
+
 interface ChooseReviewersParams {
   org: string
   repo: string
-  requiredCodeowners: Array<string>
+  /** Owner tokens suggested by the findings going into the PR. */
+  suggested: Array<string>
+  /** The CODEOWNERS on the default branch. */
   parsedLines: Array<CodeownersLine>
 }
 
 interface ChosenReviewers {
   reviewerTokens: Array<string>
   reviewerSource: ReviewerSource
-  ownerSubstitute: string | null
 }
 
 /**
- * Who should review the hygiene PR and own the CODEOWNERS lines it
- * adds. Tries, in order: owners of existing lines that already cover
- * a required pattern, any owner in CODEOWNERS, then human
- * contributors. Returns `{ reviewerTokens, reviewerSource,
- * ownerSubstitute }`; `ownerSubstitute` is only set in the first case,
- * as those owners are the right ones for the new lines too.
+ * Who should review the hygiene PR. Tries, in order: the suggested
+ * owners, any owner in CODEOWNERS, then human contributors.
  */
 export async function chooseReviewers(
   octokit: Octokit,
-  { org, repo, requiredCodeowners, parsedLines }: ChooseReviewersParams
+  { org, repo, suggested, parsedLines }: ChooseReviewersParams
 ): Promise<ChosenReviewers> {
-  const matchedOwners = new Set<string>()
-  for (const req of requiredCodeowners) {
-    const match = findCoveringLine(req, parsedLines)
-    if (match) {
-      match.owners.forEach((o) => matchedOwners.add(o))
-    }
-  }
-  if (matchedOwners.size > 0) {
+  if (suggested.length > 0) {
     return {
-      reviewerTokens: [...matchedOwners],
+      reviewerTokens: [...new Set(suggested)],
       reviewerSource: 'codeowners-match',
-      // Space-join when there are several, matching CODEOWNERS
-      // multi-owner syntax.
-      ownerSubstitute: [...matchedOwners].join(' '),
     }
   }
-
   const allOwners = new Set<string>()
   for (const line of parsedLines) {
     line.owners.forEach((o) => allOwners.add(o))
@@ -118,20 +125,16 @@ export async function chooseReviewers(
     return {
       reviewerTokens: [...allOwners],
       reviewerSource: 'codeowners-fallback',
-      ownerSubstitute: null,
     }
   }
-
   const humans = await listHumanContributors(octokit, { org, repo })
   if (humans.length > 0) {
     return {
       reviewerTokens: humans.map((h) => `@${h.login}`),
       reviewerSource: 'contributors',
-      ownerSubstitute: null,
     }
   }
-
-  return { reviewerTokens: [], reviewerSource: 'none', ownerSubstitute: null }
+  return { reviewerTokens: [], reviewerSource: 'none' }
 }
 
 interface RequestReviewersParams {
