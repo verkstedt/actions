@@ -1,6 +1,6 @@
 import picomatch from 'picomatch'
 
-import type { CodeownersChange, CodeownersLine, FileContent } from './types.ts'
+import type { Change, CodeownersLine, FileContent } from './types.ts'
 
 /**
  * Parse a CODEOWNERS file into `{ pattern, owners, rawIndex }` lines.
@@ -109,9 +109,11 @@ export function findOwningLine(
   return line && line.owners.length > 0 ? line : null
 }
 
-// The last existing line that already covers any required pattern, or
-// -1. New lines get inserted right after it (no blank-line separator,
-// no header comment) so they sit next to their relatives.
+/**
+ * The last existing line that already covers any required pattern, or
+ * -1. New lines get inserted right after it (no blank-line separator,
+ * no header comment) so they sit next to their relatives.
+ */
 function findInsertAfterIdx(
   requiredPatterns: Array<string>,
   parsedLines: Array<CodeownersLine>
@@ -126,15 +128,15 @@ function findInsertAfterIdx(
   return insertAfterIdx
 }
 
-// Splice `addedLines` into `text` after line `insertAfterIdx`, or
-// append them after a blank line when there is no such line. Also
-// returns the 1-indexed line of the first added pattern.
+/**
+ * Splice `addedLines` into `text` after line `insertAfterIdx`, or
+ * append them after a blank line when there is no such line.
+ */
 function spliceLines(
   text: string,
   addedLines: Array<string>,
-  insertAfterIdx: number,
-  includeHeader: boolean
-): { combinedLines: Array<string>; patternStartLine: number } {
+  insertAfterIdx: number
+): Array<string> {
   const baseLines = text.split('\n')
   // split on a string ending with \n leaves a trailing empty element;
   // drop it for clean splicing.
@@ -143,24 +145,16 @@ function spliceLines(
   }
 
   if (insertAfterIdx >= 0) {
-    return {
-      combinedLines: [
-        ...baseLines.slice(0, insertAfterIdx + 1),
-        ...addedLines,
-        ...baseLines.slice(insertAfterIdx + 1),
-      ],
-      // No header in this branch; first added line is the first pattern.
-      patternStartLine: insertAfterIdx + 2,
-    }
+    return [
+      ...baseLines.slice(0, insertAfterIdx + 1),
+      ...addedLines,
+      ...baseLines.slice(insertAfterIdx + 1),
+    ]
   }
-  const headerLines = includeHeader ? 1 : 0
   if (baseLines.length > 0) {
-    return {
-      combinedLines: [...baseLines, '', ...addedLines],
-      patternStartLine: baseLines.length + 1 /* blank */ + headerLines + 1,
-    }
+    return [...baseLines, '', ...addedLines]
   }
-  return { combinedLines: [...addedLines], patternStartLine: headerLines + 1 }
+  return [...addedLines]
 }
 
 interface CodeownersAdditionParams {
@@ -173,9 +167,7 @@ interface CodeownersAdditionParams {
 
 /**
  * New CODEOWNERS content with lines for `missingPatterns` added, each
- * owned by `ownerToken`. Returns the change object the audit commits,
- * including the 1-indexed line number of every added pattern so a
- * review comment can point at them.
+ * owned by `ownerToken`. Returns the change object the audit commits.
  */
 export function buildCodeownersAddition({
   existing,
@@ -183,7 +175,7 @@ export function buildCodeownersAddition({
   requiredPatterns,
   missingPatterns,
   ownerToken,
-}: CodeownersAdditionParams): CodeownersChange {
+}: CodeownersAdditionParams): Change {
   const insertAfterIdx = findInsertAfterIdx(requiredPatterns, parsedLines)
   const includeHeader = insertAfterIdx === -1
 
@@ -194,11 +186,10 @@ export function buildCodeownersAddition({
     ...missingPatterns.map((pat) => `${pat}  ${ownerToken}`),
   ]
 
-  const { combinedLines, patternStartLine } = spliceLines(
+  const combinedLines = spliceLines(
     existing ? existing.content : '',
     addedLines,
-    insertAfterIdx,
-    includeHeader
+    insertAfterIdx
   )
 
   const listed = missingPatterns.map((p) => `\`${p}\``).join(', ')
@@ -207,12 +198,6 @@ export function buildCodeownersAddition({
     path: existing ? existing.path : 'CODEOWNERS',
     sha: existing ? existing.sha : undefined,
     newContent: `${combinedLines.join('\n')}\n`,
-    missingLines: missingPatterns.map((pat, i) => ({
-      pattern: pat,
-      lineNumber: patternStartLine + i,
-      ownerToken,
-    })),
-    addedLines,
     summary: existing
       ? `added ${missingPatterns.length} line(s) to \`${existing.path}\`: ${listed}`
       : `created \`CODEOWNERS\` with ${missingPatterns.length} line(s): ${listed}`,

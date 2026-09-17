@@ -25,17 +25,6 @@ export interface Change {
   summary: string
 }
 
-export interface MissingCodeownersLine {
-  pattern: string
-  lineNumber: number
-  ownerToken: string
-}
-
-export interface CodeownersChange extends Change {
-  missingLines: Array<MissingCodeownersLine>
-  addedLines: Array<string>
-}
-
 /** One rule of a CODEOWNERS file; see `parseCodeowners`. */
 export interface CodeownersLine {
   pattern: string

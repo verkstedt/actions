@@ -1,6 +1,6 @@
 import picomatch from 'picomatch'
 
-import type { FileContent, Logger, Octokit, RepoMeta } from './types.ts'
+import type { FileContent, GitHub, Octokit } from './types.ts'
 
 /** The HTTP status of a failed Octokit request, or `undefined`. */
 export function getHttpStatus(error: unknown): number | undefined {
@@ -46,43 +46,6 @@ export async function tryGetContent(
   }
 
   return null
-}
-
-/**
- * Head commit SHA of `branch` and every path in its tree, each
- * prefixed with `/`. Warns through `log` when the tree was truncated.
- */
-export async function fetchBranchTree(
-  octokit: Octokit,
-  {
-    org,
-    repo,
-    branch,
-    log,
-  }: { org: string; repo: string; branch: string; log: Logger }
-): Promise<{ headSha: string; paths: Array<string> }> {
-  const refData = await octokit.rest.git.getRef({
-    owner: org,
-    repo,
-    ref: `heads/${branch}`,
-  })
-  const headSha = refData.data.object.sha
-  const commitData = await octokit.rest.git.getCommit({
-    owner: org,
-    repo,
-    commit_sha: headSha,
-  })
-  const treeData = await octokit.rest.git.getTree({
-    owner: org,
-    repo,
-    tree_sha: commitData.data.tree.sha,
-    recursive: '1',
-  })
-  if (treeData.data.truncated) {
-    log.warning('tree response truncated; detection may be incomplete')
-  }
-  const paths = (treeData.data.tree || []).map((e) => `/${e.path}`)
-  return { headSha, paths }
 }
 
 /** Commit `content` to `path` on `branch`; `sha` set means an update. */

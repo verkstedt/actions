@@ -101,10 +101,6 @@ describe('buildCodeownersAddition', () => {
         '',
       ].join('\n')
     )
-    assert.deepEqual(
-      change.missingLines.map((l) => l.lineNumber),
-      [2, 3]
-    )
     assert.equal(
       change.summary,
       'created `CODEOWNERS` with 2 line(s): `package-lock.json`, `Dockerfile`'
@@ -131,10 +127,6 @@ describe('buildCodeownersAddition', () => {
         'Dockerfile  @OWNER',
         '',
       ].join('\n')
-    )
-    assert.deepEqual(
-      change.missingLines.map((l) => l.lineNumber),
-      [4]
     )
     assert.equal(
       change.summary,
@@ -167,13 +159,5 @@ describe('buildCodeownersAddition', () => {
         '',
       ].join('\n')
     )
-    assert.deepEqual(
-      change.missingLines.map((l) => l.lineNumber),
-      [3, 4]
-    )
-    assert.deepEqual(change.addedLines, [
-      'Dockerfile  @a',
-      '/.github/workflows/  @a',
-    ])
   })
 })
