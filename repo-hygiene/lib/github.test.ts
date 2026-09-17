@@ -6,6 +6,8 @@ import {
   fetchBranchTree,
   commitChange,
   createLineComment,
+  assertAppSeesAllRepos,
+  listTargetRepos,
 } from './github.ts'
 import { fakeOctokit, fileResponse, httpError, fakeLog } from './fixtures.ts'
 
@@ -118,7 +120,8 @@ describe('commitChange', () => {
       org: 'org',
       repo: 'r',
       branch: 'b',
-      change: { path: 'CODEOWNERS', newContent: 'x @a\n', summary: '' },
+      path: 'CODEOWNERS',
+      content: 'x @a\n',
     })
     const { params } = octokit.calls[0]
     assert.equal(params.message, 'chore: Add CODEOWNERS')
@@ -135,12 +138,9 @@ describe('commitChange', () => {
       org: 'org',
       repo: 'r',
       branch: 'b',
-      change: {
-        path: '.github/dependabot.yaml',
-        newContent: '',
-        sha: 'old',
-        summary: '',
-      },
+      path: '.github/dependabot.yaml',
+      content: '',
+      sha: 'old',
     })
     const { params } = octokit.calls[0]
     assert.equal(params.message, 'chore: Update .github/dependabot.yaml')
@@ -160,7 +160,6 @@ describe('createLineComment', () => {
       path: 'CODEOWNERS',
       lineNumbers: [4],
       body: 'fix me',
-      log: fakeLog(),
     })
     const { params } = octokit.calls[0]
     assert.equal(params.pull_number, 7)
@@ -180,7 +179,6 @@ describe('createLineComment', () => {
       path: 'CODEOWNERS',
       lineNumbers: [6, 4, 5],
       body: 'fix me',
-      log: fakeLog(),
     })
     const [comment] = octokit.calls[0].params.comments
     assert.equal(comment.start_line, 4)
@@ -188,24 +186,78 @@ describe('createLineComment', () => {
     assert.equal(comment.line, 6)
   })
 
-  it('warns instead of throwing on API errors', async () => {
+  it('throws when the review cannot be created', async () => {
     const octokit = fakeOctokit({
       'pulls.createReview': () => {
-        throw httpError(422)
+        throw httpError(422, 'Unprocessable')
       },
     })
-    const log = fakeLog()
-    await createLineComment(octokit, {
-      org: 'org',
-      repo: 'r',
-      pr,
-      path: 'CODEOWNERS',
-      lineNumbers: [1],
-      body: 'fix me',
-      log,
+    await assert.rejects(
+      createLineComment(octokit, {
+        org: 'org',
+        repo: 'r',
+        pr: { number: 1, head: { sha: 's' } },
+        path: 'CODEOWNERS',
+        lineNumbers: [2, 3],
+        body: 'x',
+      }),
+      { message: 'Unprocessable' }
+    )
+  })
+})
+
+describe('assertAppSeesAllRepos', () => {
+  it('passes for an App installed on all repos', async () => {
+    const octokit = fakeOctokit({
+      'GET /installation/repositories': () => ({ repository_selection: 'all' }),
     })
-    assert.deepEqual(log.calls.warning, [
-      'could not create review comment: HTTP 422',
-    ])
+    await assertAppSeesAllRepos(octokit)
+  })
+
+  it('throws otherwise', async () => {
+    const octokit = fakeOctokit({
+      'GET /installation/repositories': () => ({
+        repository_selection: 'selected',
+      }),
+    })
+    await assert.rejects(assertAppSeesAllRepos(octokit), {
+      message: /repository_selection='selected'/,
+    })
+  })
+})
+
+describe('listTargetRepos', () => {
+  const repos = [
+    { name: 'a', default_branch: 'main', size: 1 },
+    { name: 'b-old', default_branch: 'main', size: 1, archived: true },
+    { name: 'b-new', default_branch: 'main', size: 1 },
+    { name: 'empty', default_branch: 'main', size: 0 },
+  ]
+  const octokit = () => fakeOctokit({ 'repos.listForOrg': () => repos })
+
+  it('skips archived, disabled and empty repos', async () => {
+    const targets = await listTargetRepos(octokit(), {
+      org: 'org',
+      reposFilter: [],
+    })
+    assert.deepEqual(
+      targets.map((r) => r.name),
+      ['a', 'b-new']
+    )
+  })
+
+  it('narrows by glob and throws when a pattern matches nothing', async () => {
+    const targets = await listTargetRepos(octokit(), {
+      org: 'org',
+      reposFilter: ['b-*'],
+    })
+    assert.deepEqual(
+      targets.map((r) => r.name),
+      ['b-new']
+    )
+    await assert.rejects(
+      listTargetRepos(octokit(), { org: 'org', reposFilter: ['a', 'zzz'] }),
+      { message: /"zzz" matched no repos/ }
+    )
   })
 })
