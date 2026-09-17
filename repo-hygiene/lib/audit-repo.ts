@@ -1,6 +1,7 @@
 import {
   parseCodeowners,
   findOwningLine,
+  findCoveringLine,
   buildCodeownersAddition,
 } from './codeowners.ts'
 import { detectEcosystems, planDependabotChange } from './dependabot-config.ts'
@@ -19,6 +20,7 @@ import {
 import type {
   Change,
   CodeownersChange,
+  CodeownersLine,
   FileContent,
   PullRequest,
   RepoContext,
@@ -206,6 +208,20 @@ function findExistingHygienePrs(
   )
 }
 
+// Owners of existing CODEOWNERS lines that already cover a required
+// pattern — the right owners for the new lines too.
+function matchedCodeownersOwners(
+  requiredCodeowners: Array<string>,
+  parsedLines: Array<CodeownersLine>
+): Set<string> {
+  const matchedOwners = new Set<string>()
+  for (const req of requiredCodeowners) {
+    const match = findCoveringLine(req, parsedLines)
+    match?.owners.forEach((o) => matchedOwners.add(o))
+  }
+  return matchedOwners
+}
+
 function skippedResult(
   pr: GitHub.PullRequest,
   { org, repoSlug, log }: RepoContext
@@ -314,13 +330,15 @@ export async function auditRepo(
   }
 
   // 5. Decide reviewers / OWNER substitution
-  const { reviewerTokens, reviewerSource, ownerSubstitute } =
-    await chooseReviewers(octokit, {
-      org,
-      repo,
-      requiredCodeowners,
-      parsedLines,
-    })
+  const matchedOwners = matchedCodeownersOwners(requiredCodeowners, parsedLines)
+  const ownerSubstitute =
+    matchedOwners.size > 0 ? [...matchedOwners].join(' ') : null
+  const { reviewerTokens, reviewerSource } = await chooseReviewers(octokit, {
+    org,
+    repo,
+    suggested: [...matchedOwners],
+    parsedLines,
+  })
   const { users: reviewerUsers, teams: reviewerTeams } =
     splitReviewers(reviewerTokens)
   const reviewers = [
