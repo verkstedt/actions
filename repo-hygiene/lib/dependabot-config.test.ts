@@ -6,14 +6,14 @@ import {
   loadDependabotTemplate,
   detectEcosystems,
   planDependabotChange,
-} from './dependabot-config.mjs'
+} from './dependabot-config.ts'
+import { DEPENDABOT_TEMPLATE } from './__fixtures__/dependabot-template.ts'
+import { fakeLog } from './__fixtures__/log.ts'
 import {
-  fakeOctokit,
   createFileResponse,
   createHttpError,
-  fakeLog,
-  DEPENDABOT_TEMPLATE,
-} from './fixtures.mjs'
+  fakeOctokit,
+} from './__fixtures__/octokit.ts'
 
 describe('parseDependabotTemplate', () => {
   it('indexes the entries by ecosystem', () => {
@@ -123,6 +123,7 @@ describe('planDependabotChange', () => {
       template,
       log,
     })
+    assert.ok(change)
     assert.equal(change.path, '.github/dependabot.yaml')
     assert.equal(change.sha, undefined)
     assert.match(change.newContent, /^# Org template\n/)
@@ -169,6 +170,7 @@ describe('planDependabotChange', () => {
       template,
       log,
     })
+    assert.ok(change)
     assert.equal(change.path, '.github/dependabot.yml')
     assert.equal(change.sha, 'old')
     assert.match(change.newContent, /interval: "daily"/)
@@ -198,6 +200,7 @@ describe('planDependabotChange', () => {
       template,
       log,
     })
+    assert.ok(change)
     assert.match(change.newContent, /^version: 2\nupdates:\n/)
     assert.match(change.newContent, /package-ecosystem: 'npm'/)
     assert.equal(change.summary, 'updated `x`: added sections: `npm`')
@@ -214,6 +217,7 @@ describe('planDependabotChange', () => {
       template,
       log,
     })
+    assert.ok(change)
     assert.match(change.newContent, /^version: 2\n/m)
     assert.equal(change.summary, 'updated `x`: set `version: 2`')
   })
@@ -232,7 +236,7 @@ describe('planDependabotChange', () => {
     })
     assert.equal(change, null)
     assert.equal(warnings.length, warningsBefore + 1)
-    assert.match(warnings.at(-1), /non-list `updates`/)
+    assert.match(warnings.at(-1) ?? '', /non-list `updates`/)
   })
 
   it('warns and skips an unparseable file', () => {
@@ -245,6 +249,9 @@ describe('planDependabotChange', () => {
     })
     assert.equal(change, null)
     assert.equal(warnings.length, warningsBefore + 1)
-    assert.match(warnings.at(-1), /could not parse existing dependabot file/)
+    assert.match(
+      warnings.at(-1) ?? '',
+      /could not parse existing dependabot file/
+    )
   })
 })

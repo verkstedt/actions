@@ -1,15 +1,16 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 
-import { auditRepo } from './audit-repo.mjs'
-import { parseDependabotTemplate } from './dependabot-config.mjs'
+import { auditRepo } from './audit-repo.ts'
+import { parseDependabotTemplate } from './dependabot-config.ts'
 import {
   fakeOctokit,
   fileResponse,
   httpError,
   fakeLog,
   DEPENDABOT_TEMPLATE,
-} from './fixtures.mjs'
+} from './fixtures.ts'
+import type { FakeOctokit } from './fixtures.ts'
 
 const repoMeta = { name: 'r', default_branch: 'main' }
 
@@ -17,7 +18,19 @@ const repoMeta = { name: 'r', default_branch: 'main' }
  * A repo with the given tree paths and files (path → content), no open
  * PRs and one human contributor, unless overridden.
  */
-function fakeRepo({ paths = [], files = {}, openPrs = [], contributors } = {}) {
+interface FakeRepoOptions {
+  paths?: Array<string>
+  files?: Record<string, string>
+  openPrs?: Array<unknown>
+  contributors?: Array<unknown>
+}
+
+function fakeRepo({
+  paths = [],
+  files = {},
+  openPrs = [],
+  contributors,
+}: FakeRepoOptions = {}) {
   return fakeOctokit({
     'pulls.list': () => openPrs,
     'git.getRef': () => ({ object: { sha: 'head' } }),
@@ -45,12 +58,12 @@ function fakeRepo({ paths = [], files = {}, openPrs = [], contributors } = {}) {
   })
 }
 
-const callsTo = (octokit, name) =>
+const callsTo = (octokit: FakeOctokit, name: string) =>
   octokit.calls.filter((c) => c.name === name).map((c) => c.params)
 
 describe('auditRepo', () => {
   const template = parseDependabotTemplate(DEPENDABOT_TEMPLATE)
-  const ctx = (octokit, dryRun = false) => ({
+  const ctx = (octokit: FakeOctokit, dryRun = false) => ({
     octokit,
     org: 'org',
     dryRun,
@@ -241,13 +254,18 @@ describe('auditRepo', () => {
     assert.equal(callsTo(octokit, 'git.createRef').length, 0)
     assert.equal(callsTo(octokit, 'pulls.create').length, 0)
 
+    assert.ok(summary)
     assert.match(summary, /^### org\/r\n/)
+    assert.ok(summary)
     assert.match(summary, /#### Reviewers\n\n\(none\)/)
+    assert.ok(summary)
     assert.match(summary, /Could not determine who to assign as reviewers/)
+    assert.ok(summary)
     assert.match(
       summary,
       /\*\*\.github\/dependabot\.yaml\*\* \(create\):\n\n```yaml\n/
     )
+    assert.ok(summary)
     assert.match(
       summary,
       /\*\*CODEOWNERS\*\* \(create\):\n\n```\n# Make sure dependabot PRs get reviewers assigned\nyarn\.lock {2}@OWNER\n\n```/
@@ -260,6 +278,7 @@ describe('auditRepo', () => {
       files: { '.github/CODEOWNERS': 'package-lock.json @bob\n' },
     })
     const { results, summary } = await auditRepo(ctx(octokit, true), repoMeta)
+    assert.ok(summary)
     assert.match(summary, /^### org\/r\n/)
     assert.deepEqual(results, [
       {

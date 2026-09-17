@@ -1,13 +1,14 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 
-import { parseCodeowners } from './codeowners.mjs'
+import { parseCodeowners } from './codeowners.ts'
 import {
   splitReviewers,
   chooseReviewers,
   requestReviewersOneByOne,
-} from './reviewers.mjs'
-import { fakeOctokit, httpError, fakeLog } from './fixtures.mjs'
+} from './reviewers.ts'
+import { fakeLog } from './__fixtures__/log.ts'
+import { createHttpError, fakeOctokit } from './__fixtures__/octokit.ts'
 
 describe('splitReviewers', () => {
   it('separates users from teams and strips prefixes', () => {

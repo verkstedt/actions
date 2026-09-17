@@ -26,10 +26,10 @@ Slack notification) lives at
 ## Development
 
 ```sh
-cd repo-hygiene
 npm install
-npm test
-npm run build
+npm test -w repo-hygiene
+npm run lint
+npm run build -w repo-hygiene
 ```
 
 `dist/` is committed because GitHub Actions runs the action straight
