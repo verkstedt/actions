@@ -1,3 +1,5 @@
+import type { Result, ResultOf } from './types.ts'
+
 /**
  * Slack renders the whole summary inside a single Block Kit `section`
  * block, whose text is capped at 3000 characters, per
@@ -7,18 +9,23 @@
  */
 const SLACK_MAX_CHARS = 2600
 
+interface Section {
+  heading: string
+  items: Array<string>
+}
+
 // The newline is included, so section costs add up to the length of the
 // joined text.
-function linesCost(lines) {
+function linesCost(lines: Array<string>): number {
   return lines.reduce((sum, line) => sum + line.length + 1, 0)
 }
 
-function renderList(heading, items) {
+function renderList(heading: string, items: Array<string>): Array<string> {
   return ['', heading, ...items.map((item, idx) => `${idx + 1}. ${item}`)]
 }
 
 // One line standing in for a section we have no room to list.
-function countLabel({ heading, items }) {
+function countLabel({ heading, items }: Section): Array<string> {
   return ['', `${heading} ${items.length} — see the run summary`]
 }
 
@@ -28,10 +35,14 @@ function countLabel({ heading, items }) {
  * not to list `partial`ly, where half a list would be noise — collapses
  * to its count label instead.
  */
-function fillSection(section, budget, { partial }) {
+function fillSection(
+  section: Section,
+  budget: number,
+  { partial }: { partial: boolean }
+): Array<string> {
   const { heading, items } = section
-  const noteFor = (left) => `… and ${left} more`
-  let kept = []
+  const noteFor = (left: number) => `… and ${left} more`
+  let kept: Array<string> = []
   for (const item of items) {
     const next = [...kept, item]
     const left = items.length - next.length
@@ -47,15 +58,29 @@ function fillSection(section, budget, { partial }) {
   return [...renderList(heading, kept), noteFor(items.length - kept.length)]
 }
 
+interface SlackTextParams<K extends string> {
+  sections: Record<K, Section>
+  fillOrder: ReadonlyArray<{ key: K; partial: boolean }>
+  showOrder: ReadonlyArray<K>
+  runUrl: string
+}
+
 /**
  * Slack text for the run: `sections` (keyed, each `{ heading, items }`)
  * fitted into one section block. Sections are filled in `fillOrder`
  * and shown in `showOrder`; whatever does not fit collapses to a count
  * pointing at the run summary.
  */
-export function renderSlackText({ sections, fillOrder, showOrder, runUrl }) {
+export function renderSlackText<K extends string>({
+  sections,
+  fillOrder,
+  showOrder,
+  runUrl,
+}: SlackTextParams<K>): string {
   const footerLines = ['', `<${runUrl}|Full list in the run summary>`]
-  const listed = Object.values(sections).filter(({ items }) => items.length > 0)
+  const listed = (Object.values(sections) as Array<Section>).filter(
+    ({ items }) => items.length > 0
+  )
   // Reserve the footer and every section’s count label up front, so
   // each section is guaranteed at least its count. A section gets its
   // own reserve back when its turn comes; what the others leave unspent
@@ -64,7 +89,7 @@ export function renderSlackText({ sections, fillOrder, showOrder, runUrl }) {
     SLACK_MAX_CHARS -
     linesCost(footerLines) -
     listed.reduce((sum, section) => sum + linesCost(countLabel(section)), 0)
-  const filled = {}
+  const filled = {} as Record<K, Array<string>>
   for (const { key, partial } of fillOrder) {
     const section = sections[key]
     if (section.items.length === 0) {
@@ -78,24 +103,41 @@ export function renderSlackText({ sections, fillOrder, showOrder, runUrl }) {
   return [...showOrder.flatMap((key) => filled[key]), ...footerLines].join('\n')
 }
 
+// The results of one kind, narrowed to that kind’s shape.
+function ofAction<A extends Result['action']>(
+  results: Array<Result>,
+  action: A
+): Array<ResultOf<A>> {
+  return results.filter((r): r is ResultOf<A> => r.action === action)
+}
+
+export interface Outputs {
+  results_json: string
+  slack_text: string
+  should_notify: 'true' | 'false'
+  slack_status: 'warning' | 'failure'
+}
+
 /**
  * The action outputs and job summary for `results`, as `{ outputs,
  * summary }`. `outputs` maps output names to their string values.
  */
-export function report(results) {
-  const outputs = { results_json: JSON.stringify(results) }
+export function report(results: Array<Result>): {
+  outputs: Outputs
+  summary: string
+} {
+  const opened = ofAction(results, 'opened-pr')
+  const failed = ofAction(results, 'failed')
+  const dryRuns = ofAction(results, 'dry-run')
+  const preexisting = ofAction(results, 'skipped-existing-pr')
 
-  const opened = results.filter((r) => r.action === 'opened-pr')
-  const failed = results.filter((r) => r.action === 'failed')
-  const dryRuns = results.filter((r) => r.action === 'dry-run')
-  const preexisting = results.filter((r) => r.action === 'skipped-existing-pr')
-
-  const reviewerSummary = (r) =>
-    r.reviewers && r.reviewers.length > 0
+  const reviewerSummary = (r: { reviewers: Array<string> }) =>
+    r.reviewers.length > 0
       ? `reviewer(s): ${r.reviewers.join(', ')}`
       : 'no reviewer assigned'
 
-  const prItem = (r) => `<${r.prUrl}> — ${reviewerSummary(r)}`
+  const prItem = (r: { prUrl: string; reviewers: Array<string> }) =>
+    `<${r.prUrl}> — ${reviewerSummary(r)}`
   const openedItems = opened.map(prItem)
   const preexistingItems = preexisting.map(prItem)
   const dryRunItems = dryRuns.map((r) => `${r.repo} — ${reviewerSummary(r)}`)
@@ -109,7 +151,7 @@ export function report(results) {
   }
 
   // The job summary lists everything.
-  const listIfAny = (heading, items) =>
+  const listIfAny = (heading: string, items: Array<string>) =>
     items.length > 0 ? renderList(heading, items) : []
   const lines = [
     ...listIfAny(HEADINGS.opened, openedItems),
@@ -129,7 +171,7 @@ export function report(results) {
     'actions/runs',
     process.env.GITHUB_RUN_ID,
   ].join('/')
-  outputs.slack_text = renderSlackText({
+  const slackText = renderSlackText({
     sections: {
       failed: { heading: HEADINGS.failed, items: failedItems },
       opened: { heading: HEADINGS.opened, items: openedItems },
@@ -144,8 +186,12 @@ export function report(results) {
     showOrder: ['failed', 'preexisting', 'opened'],
     runUrl,
   })
-  outputs.should_notify = opened.length + failed.length > 0 ? 'true' : 'false'
-  outputs.slack_status = failed.length > 0 ? 'failure' : 'warning'
+  const outputs: Outputs = {
+    results_json: JSON.stringify(results),
+    slack_text: slackText,
+    should_notify: opened.length + failed.length > 0 ? 'true' : 'false',
+    slack_status: failed.length > 0 ? 'failure' : 'warning',
+  }
 
   const summary = [
     '',

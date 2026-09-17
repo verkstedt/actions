@@ -2,17 +2,22 @@ import * as core from '@actions/core'
 import * as actionsGithub from '@actions/github'
 import picomatch from 'picomatch'
 
-import { auditRepo } from './lib/audit-repo.mjs'
-import { loadDependabotTemplate } from './lib/dependabot-config.mjs'
-import { createLogger } from './lib/log.mjs'
-import { report } from './lib/report.mjs'
+import { auditRepo } from './lib/audit-repo.ts'
+import { loadDependabotTemplate } from './lib/dependabot-config.ts'
+import { errorMessage } from './lib/github.ts'
+import { createLogger } from './lib/log.ts'
+import { report } from './lib/report.ts'
+import type { Octokit, RepoMeta, Result, RunContext } from './lib/types.ts'
 
 /**
  * Org repos to audit: sources only, skipping archived, disabled and
  * empty ones, narrowed by `reposFilter` globs when given. Returns
  * `null` after failing the run if a filter matched nothing.
  */
-async function listTargetRepos(octokit, { org, reposFilter }) {
+async function listTargetRepos(
+  octokit: Octokit,
+  { org, reposFilter }: { org: string; reposFilter: Array<string> }
+): Promise<Array<RepoMeta> | null> {
   const allRepos = await octokit.paginate(octokit.rest.repos.listForOrg, {
     org,
     type: 'sources',
@@ -20,7 +25,11 @@ async function listTargetRepos(octokit, { org, reposFilter }) {
   })
 
   let targets = allRepos.filter(
-    (r) => !r.archived && !r.disabled && (r.size || 0) > 0
+    (r): r is typeof r & RepoMeta =>
+      !r.archived &&
+      !r.disabled &&
+      (r.size || 0) > 0 &&
+      typeof r.default_branch === 'string'
   )
 
   if (reposFilter.length === 0) return targets
@@ -44,7 +53,7 @@ async function listTargetRepos(octokit, { org, reposFilter }) {
     pattern: pat,
     isMatch: picomatch(pat, { dot: true }),
   }))
-  const hitPatterns = new Set()
+  const hitPatterns = new Set<string>()
   targets = targets.filter((r) => {
     const matched = matchers.filter((m) => m.isMatch(r.name))
     matched.forEach((m) => hitPatterns.add(m.pattern))
@@ -70,8 +79,11 @@ async function listTargetRepos(octokit, { org, reposFilter }) {
  * audit throws becomes a `failed` result instead of ending the run.
  * Dry-run summaries are appended to the job summary as they come.
  */
-async function auditRepos(ctx, targets) {
-  const results = []
+async function auditRepos(
+  ctx: RunContext,
+  targets: Array<RepoMeta>
+): Promise<Array<Result>> {
+  const results: Array<Result> = []
   let number = 0
   for (const repoMeta of targets) {
     number += 1
@@ -84,14 +96,14 @@ async function auditRepos(ctx, targets) {
         await core.summary.addRaw(audit.summary).write()
       }
     } catch (e) {
-      log.error(e.message)
-      results.push({ repo: repoSlug, action: 'failed', error: e.message })
+      log.error(errorMessage(e))
+      results.push({ repo: repoSlug, action: 'failed', error: errorMessage(e) })
     }
   }
   return results
 }
 
-async function main() {
+async function main(): Promise<void> {
   const token = core.getInput('github-token', { required: true })
   const octokit = actionsGithub.getOctokit(token)
   const { context } = actionsGithub
@@ -131,7 +143,7 @@ async function main() {
     `Auditing ${targets.length} repo(s) in ${org}${dryRun ? ' (dry run)' : ''}`
   )
 
-  const ctx = {
+  const ctx: RunContext = {
     octokit,
     org,
     dryRun,
@@ -149,6 +161,6 @@ async function main() {
   await core.summary.addRaw(summary).write()
 }
 
-main().catch((err) => {
-  core.setFailed(err.message ?? String(err))
+main().catch((err: unknown) => {
+  core.setFailed(errorMessage(err))
 })
