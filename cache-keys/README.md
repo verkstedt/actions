@@ -9,7 +9,7 @@ Example usage:
 
 - name: Restore cache
   id: cache
-  uses: actions/cache/restore@v4
+  uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
   with:
     path: |
       ./some-directory/

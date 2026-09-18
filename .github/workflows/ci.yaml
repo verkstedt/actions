@@ -156,7 +156,7 @@ jobs:
         # rather: especially if) linting fails, so that lint errors are
         # visible in the PR.
         if: always() && steps.lint.outputs.generated-eslint-report == 'true'
-        uses: ataylorme/eslint-annotate-action@3.0.0
+        uses: ataylorme/eslint-annotate-action@d57a1193d4c59cbfbf3f86c271f42612f9dbd9e9 # 3.0.0
         with:
           report-json: ${{ env.ESLINT_REPORT_JSON }}
           # Also report errors in files not changed in the PR,
@@ -456,7 +456,7 @@ jobs:
 
       - name: Determine browsers to install
         id: browsers
-        uses: actions/github-script@v9.0.0
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         env:
           INPUT_BROWSERS: ${{ inputs.browsers }}
         with:
@@ -654,7 +654,7 @@ jobs:
 
       - name: Restore cache
         id: cache
-        uses: actions/cache/restore@v6.1.0
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         # ⚠ Keep in sync with cache/save below
         with:
           path: |
@@ -673,7 +673,7 @@ jobs:
 
       - name: Save cache
         if: steps.cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v6.1.0
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         # ⚠ Keep in sync with cache/restore above
         with:
           path: |
