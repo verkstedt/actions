@@ -16,9 +16,10 @@ const options = (checks: Array<Check>) => ({
   runAttempt: 1,
   log: fakeLog(),
 })
-const hygienePr = (url: string, fullName: string) => ({
+const hygienePr = (url: string, fullName: string, userType = 'Bot') => ({
   number: 9,
   html_url: url,
+  user: { login: 'hygiene[bot]', type: userType },
   head: {
     ref: 'chore/repo-hygiene/99-1',
     sha: 's',
@@ -53,6 +54,7 @@ describe('auditRepo', () => {
         hygienePr('https://p/1', 'Org/R'),
         hygienePr('https://p/2', 'org/r'),
         hygienePr('https://p/3', 'someone/r'),
+        hygienePr('https://p/4', 'org/r', 'User'),
       ],
     })
     const { findings } = await auditRepo(octokit, repoMeta, options(checks))

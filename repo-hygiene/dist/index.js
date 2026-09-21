@@ -47387,24 +47387,32 @@ function parseCodeowners(text) {
 }
 function normalisePattern(p) {
     let s = p;
-    if (s.startsWith('**/'))
+    if (s.startsWith('**/')) {
         s = s.slice(3);
-    if (s.startsWith('/'))
+    }
+    if (s.startsWith('/')) {
         s = s.slice(1);
-    if (s.endsWith('/'))
+    }
+    if (s.endsWith('/')) {
         s = s.slice(0, -1);
+    }
     return s;
 }
-function codeownersPatternCovers(pat, reqNorm, reqIsDir) {
-    if (pat === reqNorm)
+function codeownersPatternCovers(pattern, normalisedRequired, requiredIsDirectory) {
+    if (pattern === normalisedRequired) {
         return true;
-    if (pat === '*' || pat === '.' || pat === '')
+    }
+    if (pattern === '*' || pattern === '.' || pattern === '') {
         return true;
-    if (reqNorm.startsWith(`${pat}/`))
+    }
+    if (normalisedRequired.startsWith(`${pattern}/`)) {
         return true;
+    }
     // A required directory (e.g. `/.github/workflows/`) is covered by
     // existing entries like `/.github/workflows/*` or `…/**`.
-    if (reqIsDir && (pat === `${reqNorm}/*` || pat === `${reqNorm}/**`)) {
+    if (requiredIsDirectory &&
+        (pattern === `${normalisedRequired}/*` ||
+            pattern === `${normalisedRequired}/**`)) {
         return true;
     }
     // Glob support via picomatch — lets entries like
@@ -47412,7 +47420,8 @@ function codeownersPatternCovers(pat, reqNorm, reqIsDir) {
     // `docker-compose.yaml`. `dot: true` so `*` matches
     // dot-prefixed names (CODEOWNERS doesn’t treat them
     // specially). CODEOWNERS also supports `?` and `[…]`.
-    return /[*?[\]]/.test(pat) && picomatch_default().isMatch(reqNorm, pat, { dot: true });
+    return (/[*?[\]]/.test(pattern) &&
+        picomatch_default().isMatch(normalisedRequired, pattern, { dot: true }));
 }
 /**
  * The existing line that covers a `required` pattern, or `null`.
@@ -47420,10 +47429,10 @@ function codeownersPatternCovers(pat, reqNorm, reqIsDir) {
  * https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners#codeowners-syntax
  */
 function findCoveringLine(required, existingLines) {
-    const reqNorm = normalisePattern(required);
-    const reqIsDir = required.endsWith('/');
+    const normalisedRequired = normalisePattern(required);
+    const requiredIsDirectory = required.endsWith('/');
     for (const line of existingLines.toReversed()) {
-        if (codeownersPatternCovers(normalisePattern(line.pattern), reqNorm, reqIsDir)) {
+        if (codeownersPatternCovers(normalisePattern(line.pattern), normalisedRequired, requiredIsDirectory)) {
             return line;
         }
     }
@@ -47439,9 +47448,11 @@ function findOwningLine(required, existingLines) {
     const line = findCoveringLine(required, existingLines);
     return line && line.owners.length > 0 ? line : null;
 }
-// The last existing line that already covers any required pattern, or
-// -1. New lines get inserted right after it (no blank-line separator,
-// no header comment) so they sit next to their relatives.
+/**
+ * The last existing line that already covers any required pattern, or
+ * -1. New lines get inserted right after it (no blank-line separator,
+ * no header comment) so they sit next to their relatives.
+ */
 function findInsertAfterIdx(requiredPatterns, parsedLines) {
     let insertAfterIdx = -1;
     for (const req of requiredPatterns) {
@@ -47452,10 +47463,11 @@ function findInsertAfterIdx(requiredPatterns, parsedLines) {
     }
     return insertAfterIdx;
 }
-// Splice `addedLines` into `text` after line `insertAfterIdx`, or
-// append them after a blank line when there is no such line. Also
-// returns the 1-indexed line of the first added pattern.
-function spliceLines(text, addedLines, insertAfterIdx, includeHeader) {
+/**
+ * Splice `addedLines` into `text` after line `insertAfterIdx`, or
+ * append them after a blank line when there is no such line.
+ */
+function spliceLines(text, addedLines, insertAfterIdx) {
     const baseLines = text.split('\n');
     // split on a string ending with \n leaves a trailing empty element;
     // drop it for clean splicing.
@@ -47463,30 +47475,20 @@ function spliceLines(text, addedLines, insertAfterIdx, includeHeader) {
         baseLines.pop();
     }
     if (insertAfterIdx >= 0) {
-        return {
-            combinedLines: [
-                ...baseLines.slice(0, insertAfterIdx + 1),
-                ...addedLines,
-                ...baseLines.slice(insertAfterIdx + 1),
-            ],
-            // No header in this branch; first added line is the first pattern.
-            patternStartLine: insertAfterIdx + 2,
-        };
+        return [
+            ...baseLines.slice(0, insertAfterIdx + 1),
+            ...addedLines,
+            ...baseLines.slice(insertAfterIdx + 1),
+        ];
     }
-    const headerLines = includeHeader ? 1 : 0;
     if (baseLines.length > 0) {
-        return {
-            combinedLines: [...baseLines, '', ...addedLines],
-            patternStartLine: baseLines.length + 1 /* blank */ + headerLines + 1,
-        };
+        return [...baseLines, '', ...addedLines];
     }
-    return { combinedLines: [...addedLines], patternStartLine: headerLines + 1 };
+    return [...addedLines];
 }
 /**
  * New CODEOWNERS content with lines for `missingPatterns` added, each
- * owned by `ownerToken`. Returns the change object the audit commits,
- * including the 1-indexed line number of every added pattern so a
- * review comment can point at them.
+ * owned by `ownerToken`. Returns the change object the audit commits.
  */
 function buildCodeownersAddition({ existing, parsedLines, requiredPatterns, missingPatterns, ownerToken, }) {
     const insertAfterIdx = findInsertAfterIdx(requiredPatterns, parsedLines);
@@ -47497,18 +47499,12 @@ function buildCodeownersAddition({ existing, parsedLines, requiredPatterns, miss
             : []),
         ...missingPatterns.map((pat) => `${pat}  ${ownerToken}`),
     ];
-    const { combinedLines, patternStartLine } = spliceLines(existing ? existing.content : '', addedLines, insertAfterIdx, includeHeader);
+    const combinedLines = spliceLines(existing ? existing.content : '', addedLines, insertAfterIdx);
     const listed = missingPatterns.map((p) => `\`${p}\``).join(', ');
     return {
         path: existing ? existing.path : 'CODEOWNERS',
         sha: existing ? existing.sha : undefined,
         newContent: `${combinedLines.join('\n')}\n`,
-        missingLines: missingPatterns.map((pat, i) => ({
-            pattern: pat,
-            lineNumber: patternStartLine + i,
-            ownerToken,
-        })),
-        addedLines,
         summary: existing
             ? `added ${missingPatterns.length} line(s) to \`${existing.path}\`: ${listed}`
             : `created \`CODEOWNERS\` with ${missingPatterns.length} line(s): ${listed}`,
@@ -47518,16 +47514,16 @@ function buildCodeownersAddition({ existing, parsedLines, requiredPatterns, miss
 ;// CONCATENATED MODULE: ./lib/github.ts
 
 /** The HTTP status of a failed Octokit request, or `undefined`. */
-function httpStatus(e) {
-    if (typeof e === 'object' && e !== null && 'status' in e) {
-        const { status } = e;
+function getHttpStatus(error) {
+    if (typeof error === 'object' && error !== null && 'status' in error) {
+        const { status } = error;
         return typeof status === 'number' ? status : undefined;
     }
     return undefined;
 }
 /** The message of whatever was thrown. */
-function errorMessage(e) {
-    return e instanceof Error ? e.message : String(e);
+function getErrorMessage(error) {
+    return error instanceof Error ? error.message : String(error);
 }
 /**
  * The first of `paths` that exists as a file, as `{ sha, path,
@@ -47547,7 +47543,7 @@ async function tryGetContent(octokit, { paths, ...params }) {
             }
         }
         catch (e) {
-            if (httpStatus(e) !== 404) {
+            if (getHttpStatus(e) !== 404) {
                 throw e;
             }
         }
@@ -47608,8 +47604,9 @@ async function listTargetRepos(octokit, { org, reposFilter }) {
         !r.disabled &&
         (r.size || 0) > 0 &&
         typeof r.default_branch === 'string');
-    if (reposFilter.length === 0)
+    if (reposFilter.length === 0) {
         return targets;
+    }
     const matchers = reposFilter.map((pattern) => ({
         pattern,
         isMatch: picomatch_default()(pattern, { dot: true }),
@@ -47639,22 +47636,10 @@ const MAX_REVIEWERS = 15;
  * slugs, without the `@` and org prefixes.
  */
 function splitReviewers(ownerTokens) {
-    const users = new Set();
-    const teams = new Set();
-    for (const tok of ownerTokens) {
-        const login = tok.replace(/^@/, '');
-        if (login) {
-            if (login.includes('/')) {
-                const [, team] = login.split('/');
-                if (team)
-                    teams.add(team);
-            }
-            else {
-                users.add(login);
-            }
-        }
-    }
-    return { users: [...users], teams: [...teams] };
+    const logins = ownerTokens.map((tok) => tok.replace(/^@/, '')).filter(Boolean);
+    const { users = [], teams = [] } = Object.groupBy(logins, (login) => login.includes('/') ? 'teams' : 'users');
+    const slugs = teams.map((team) => team.split('/')[1]).filter(Boolean);
+    return { users: [...new Set(users)], teams: [...new Set(slugs)] };
 }
 async function listHumanContributors(octokit, { org, repo }) {
     let contribs = [];
@@ -47667,7 +47652,7 @@ async function listHumanContributors(octokit, { org, repo }) {
         contribs = Array.isArray(data) ? data : [];
     }
     catch (e) {
-        const status = httpStatus(e);
+        const status = getHttpStatus(e);
         if (status !== 404 && status !== 204) {
             throw e;
         }
@@ -47677,7 +47662,10 @@ async function listHumanContributors(octokit, { org, repo }) {
         !/\[bot\]$/.test(c.login) &&
         !KNOWN_BOTS.has(c.login));
 }
-/** Where GitHub looks for CODEOWNERS, in order of precedence. */
+/**
+ * Where GitHub looks for CODEOWNERS, in order of precedence, per
+ * https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners#codeowners-file-location
+ */
 const CODEOWNERS_PATHS = [
     '.github/CODEOWNERS',
     'CODEOWNERS',
@@ -47685,13 +47673,14 @@ const CODEOWNERS_PATHS = [
 ];
 /** `reviewer: @a`, `reviewers: @a, @b`, or `no reviewer assigned`. */
 function describeReviewers(reviewers) {
-    if (reviewers.length === 0)
+    if (reviewers.length === 0) {
         return 'no reviewer assigned';
+    }
     const label = reviewers.length === 1 ? 'reviewer' : 'reviewers';
     return `${label}: ${reviewers.join(', ')}`;
 }
 /** `@user` and `@org/team` handles for the split reviewers. */
-function reviewerHandles(org, { users, teams }) {
+function formatReviewerHandles(org, { users, teams }) {
     return [...users.map((u) => `@${u}`), ...teams.map((t) => `@${org}/${t}`)];
 }
 /**
@@ -47739,8 +47728,9 @@ async function chooseReviewers(octokit, { org, repo, suggested, parsedLines }) {
 async function requestReviewersOneByOne(octokit, { org, repo, pullNumber, users, teams, log }) {
     const requested = [];
     for (const user of users) {
-        if (requested.length >= MAX_REVIEWERS)
+        if (requested.length >= MAX_REVIEWERS) {
             break;
+        }
         try {
             await octokit.rest.pulls.requestReviewers({
                 owner: org,
@@ -47751,14 +47741,16 @@ async function requestReviewersOneByOne(octokit, { org, repo, pullNumber, users,
             requested.push(`@${user}`);
         }
         catch (e) {
-            if (httpStatus(e) !== 422)
+            if (getHttpStatus(e) !== 422) {
                 throw e;
-            log.warning(`could not request reviewer @${user}: ${errorMessage(e)}`);
+            }
+            log.warning(`could not request reviewer @${user}: ${getErrorMessage(e)}`);
         }
     }
     for (const team of teams) {
-        if (requested.length >= MAX_REVIEWERS)
+        if (requested.length >= MAX_REVIEWERS) {
             break;
+        }
         try {
             await octokit.rest.pulls.requestReviewers({
                 owner: org,
@@ -47769,9 +47761,10 @@ async function requestReviewersOneByOne(octokit, { org, repo, pullNumber, users,
             requested.push(`@${org}/${team}`);
         }
         catch (e) {
-            if (httpStatus(e) !== 422)
+            if (getHttpStatus(e) !== 422) {
                 throw e;
-            log.warning(`could not request team reviewer @${org}/${team}: ${errorMessage(e)}`);
+            }
+            log.warning(`could not request team reviewer @${org}/${team}: ${getErrorMessage(e)}`);
         }
     }
     return requested;
@@ -47792,10 +47785,11 @@ function normalise(path) {
     return path.replace(/^\//, '');
 }
 /** One entry per path, the last fix’s content winning. */
-function finalFiles(findings) {
+function collectFinalFiles(findings) {
     const files = new Map();
-    for (const { fix } of findings)
+    for (const { fix } of findings) {
         files.set(normalise(fix.path), fix.content);
+    }
     return files;
 }
 const REVIEWER_PARAGRAPHS = {
@@ -47805,23 +47799,25 @@ const REVIEWER_PARAGRAPHS = {
 };
 function composePrBody(reviewerSource, describes) {
     const parts = [
-        `🤖 Opened automatically by [repo-hygiene action from verkstedt/actions](${WORKFLOW_LINK}).`,
+        `> [!NOTE]\n> 🤖 Opened automatically by [repo-hygiene action from verkstedt/actions](${WORKFLOW_LINK}). Merge after approving.`,
     ];
     const paragraph = REVIEWER_PARAGRAPHS[reviewerSource];
-    if (paragraph)
+    if (paragraph) {
         parts.push(paragraph);
-    parts.push(`## What?\n\n${describes.map((d) => `- ${d}`).join('\n')}`);
+    }
+    parts.push('## What?', `${describes.map((d) => `- ${d}`).join('\n')}`);
     return parts.join('\n\n');
 }
-async function committedCodeowners(snapshot) {
+async function readCommittedCodeowners(snapshot) {
     for (const path of CODEOWNERS_PATHS) {
         const file = await snapshot.readFileOnDefaultBranch(path);
-        if (file)
+        if (file) {
             return parseCodeowners(file.content);
+        }
     }
     return [];
 }
-function suggestedReviewers(fileFindings, findings) {
+function collectSuggestedReviewers(fileFindings, findings) {
     return findings
         .filter((f) => f.reviewers && (fileFindings.includes(f) || !f.fix))
         .flatMap((f) => f.reviewers ?? []);
@@ -47830,17 +47826,17 @@ async function planPr(fileFindings, findings, snapshot) {
     const { reviewerTokens, reviewerSource } = await chooseReviewers(snapshot.octokit, {
         org: snapshot.org,
         repo: snapshot.repo,
-        suggested: suggestedReviewers(fileFindings, findings),
-        parsedLines: await committedCodeowners(snapshot),
+        suggested: collectSuggestedReviewers(fileFindings, findings),
+        parsedLines: await readCommittedCodeowners(snapshot),
     });
     const reviewers = splitReviewers(reviewerTokens);
     const describes = fileFindings.map((f) => f.fix.describe);
     return {
-        files: finalFiles(fileFindings),
+        files: collectFinalFiles(fileFindings),
         langs: new Map(fileFindings.map((f) => [normalise(f.fix.path), f.fix.lang])),
         describes,
         reviewers,
-        reviewerHandles: reviewerHandles(snapshot.org, reviewers),
+        reviewerHandles: formatReviewerHandles(snapshot.org, reviewers),
         body: composePrBody(reviewerSource, describes),
     };
 }
@@ -47855,7 +47851,7 @@ async function renderFilePreview(path, content, plan, snapshot) {
         '```',
     ];
 }
-async function renderPreview(plan, snapshot) {
+async function renderPrPreview(plan, snapshot) {
     const lines = [
         `### \`${snapshot.org}/${snapshot.repo}\`: ${PR_TITLE}`,
         '',
@@ -47924,7 +47920,7 @@ async function openPr(plan, snapshot, run) {
     log.info(`opened ${pr.data.html_url}`);
     return { pr: pr.data, requested };
 }
-function outcomeForActionResult(fix, result) {
+function createActionOutcome(fix, result) {
     if (typeof result === 'object' && result !== null) {
         return { status: 'none', detail: result.detail };
     }
@@ -47944,10 +47940,10 @@ async function runAction(finding, snapshot, pr, files) {
             files,
             log: snapshot.log,
         });
-        return outcomeForActionResult(fix, result);
+        return createActionOutcome(fix, result);
     }
     catch (e) {
-        return { status: 'failed', detail: errorMessage(e) };
+        return { status: 'failed', detail: getErrorMessage(e) };
     }
 }
 async function applyFileFixes(fileFindings, findings, snapshot, run) {
@@ -47958,7 +47954,7 @@ async function applyFileFixes(fileFindings, findings, snapshot, run) {
     const files = Object.fromEntries(plan.files);
     if (run.dryRun) {
         snapshot.log.info('Dry run, skipping PR creation');
-        const preview = await renderPreview(plan, snapshot);
+        const preview = await renderPrPreview(plan, snapshot);
         for (const f of fileFindings) {
             f.outcome = { status: 'would-fix', detail: f.fix.describe };
         }
@@ -47976,7 +47972,7 @@ async function applyFileFixes(fileFindings, findings, snapshot, run) {
         return { pr, files, preview: null };
     }
     catch (e) {
-        const detail = errorMessage(e);
+        const detail = getErrorMessage(e);
         for (const f of fileFindings) {
             f.outcome = { status: 'failed', detail };
         }
@@ -48021,8 +48017,9 @@ function run_checks_normalise(path) {
  * either the check never read the path, or it already fixed it.
  */
 function acceptFileFix(finding, check, snapshot, fixedByThisCheck) {
-    if (finding.fix?.kind !== 'file')
+    if (finding.fix?.kind !== 'file') {
         return;
+    }
     const path = run_checks_normalise(finding.fix.path);
     const { pending, reads } = snapshot.workingCopy;
     const blind = pending.has(path) && !reads.has(path);
@@ -48032,13 +48029,14 @@ function acceptFileFix(finding, check, snapshot, fixedByThisCheck) {
             status: 'failed',
             detail: `${check.name} check changed ${path} without reading the pending fix for it`,
         };
-        return;
     }
-    snapshot.workingCopy.attach(path, finding.fix.content);
-    fixedByThisCheck.add(path);
+    else {
+        snapshot.workingCopy.attach(path, finding.fix.content);
+        fixedByThisCheck.add(path);
+    }
 }
-function errorFinding(check, e, snapshot) {
-    const message = errorMessage(e);
+function createErrorFinding(check, e, snapshot) {
+    const message = getErrorMessage(e);
     snapshot.log.error(`${check.name} check failed: ${message}`);
     return {
         repo: `${snapshot.org}/${snapshot.repo}`,
@@ -48062,7 +48060,7 @@ async function runChecks(checks, snapshot) {
             found = await check.run(snapshot);
         }
         catch (e) {
-            findings.push(errorFinding(check, e, snapshot));
+            findings.push(createErrorFinding(check, e, snapshot));
         }
         if (found !== undefined) {
             const fixedByThisCheck = new Set();
@@ -48092,7 +48090,7 @@ function stripLeadingSlash(path) {
 /**
  * The repo as one run sees it: head SHA fetched now, everything else
  * fetched once on first use and pinned to that SHA. `readFile` and
- * `readFirstFile` see file fixes attached by earlier checks and
+ * `readFirstExistingFile` see file fixes attached by earlier checks and
  * record what they read; `readFileOnDefaultBranch` does neither.
  */
 async function takeSnapshot(octokit, repoMeta, { org, log }) {
@@ -48134,15 +48132,17 @@ async function takeSnapshot(octokit, repoMeta, { org, log }) {
         workingCopy.reads.add(path);
         const file = await readFileOnDefaultBranch(path);
         const content = workingCopy.pending.get(path);
-        if (content === undefined)
+        if (content === undefined) {
             return file;
+        }
         return { path, sha: file?.sha, content };
     };
-    const readFirstFile = async (paths) => {
-        for (const path of paths) {
+    const readFirstExistingFile = async (pathCandidates) => {
+        for (const path of pathCandidates) {
             const file = await readFile(path);
-            if (file)
+            if (file) {
                 return file;
+            }
         }
         return null;
     };
@@ -48183,7 +48183,7 @@ async function takeSnapshot(octokit, repoMeta, { org, log }) {
         headSha,
         listPaths,
         readFile,
-        readFirstFile,
+        readFirstExistingFile,
         readFileOnDefaultBranch,
         listOpenPrs,
         octokit,
@@ -48198,11 +48198,12 @@ async function takeSnapshot(octokit, repoMeta, { org, log }) {
 
 
 /** Hygiene PRs from earlier runs still open on this very repo, not a fork. */
-function findHygienePrs(openPrs, repoSlug) {
-    return openPrs.filter((pr) => pr.head.ref.startsWith(BRANCH_PREFIX) &&
+function findExistingHygienePrs(openPrs, repoSlug) {
+    return openPrs.filter((pr) => pr.user?.type === 'Bot' &&
+        pr.head.ref.startsWith(BRANCH_PREFIX) &&
         pr.head.repo?.full_name?.toLowerCase() === repoSlug.toLowerCase());
 }
-function skippedFinding(pr, org, repoSlug) {
+function createSkippedFinding(pr, org, repoSlug) {
     const reviewers = [
         ...(pr.requested_reviewers || []).map((u) => `@${u.login}`),
         ...(pr.requested_teams || []).map((t) => `@${org}/${t.slug}`),
@@ -48227,11 +48228,12 @@ function skippedFinding(pr, org, repoSlug) {
 async function auditRepo(octokit, repoMeta, { org, checks, log, ...run }) {
     const snapshot = await takeSnapshot(octokit, repoMeta, { org, log });
     const repoSlug = `${org}/${repoMeta.name}`;
-    const existing = findHygienePrs(await snapshot.listOpenPrs(), repoSlug);
-    for (const pr of existing)
+    const existingPrs = findExistingHygienePrs(await snapshot.listOpenPrs(), repoSlug);
+    for (const pr of existingPrs) {
         log.info(`existing hygiene PR open (${pr.html_url})`);
-    const skipped = existing.map((pr) => skippedFinding(pr, org, repoSlug));
-    const toRun = existing.length > 0 ? checks.filter((c) => !c.opensPr) : checks;
+    }
+    const skipped = existingPrs.map((pr) => createSkippedFinding(pr, org, repoSlug));
+    const toRun = existingPrs.length > 0 ? checks.filter((c) => !c.opensPr) : checks;
     const findings = await runChecks(toRun, snapshot);
     const applied = await applyFixes(findings, snapshot, run);
     return {
@@ -48269,10 +48271,12 @@ function stringifyDependabotDoc(doc) {
         lineWidth: 120,
     });
 }
-// Drop `.type` from every string scalar in a node (or document) so
-// `defaultStringType` decides their quoting on serialise. Use this on
-// cloned template entries before splicing them into a host doc that
-// uses a different quote style.
+/**
+ * Drop `.type` from every string scalar in a node (or document) so
+ * `defaultStringType` decides their quoting on serialise. Use this on
+ * cloned template entries before splicing them into a host doc that
+ * uses a different quote style.
+ */
 function clearScalarQuoting(node) {
     dist.visit(node, {
         Scalar(_, scalar) {
@@ -48301,10 +48305,12 @@ function parseDependabotTemplate(text) {
     }
     return { doc, entryByEcosystem };
 }
-// Sorted unique basenames of `paths` whose basename matches `re`.
-// CODEOWNERS matches a bare name at any depth, so one line per
-// distinct name covers every copy of it.
-function basenamesMatching(paths, re) {
+/**
+ * Sorted unique basenames of `paths` whose basename matches `re`.
+ * CODEOWNERS matches a bare name at any depth, so one line per
+ * distinct name covers every copy of it.
+ */
+function collectBasenamesMatching(paths, re) {
     const names = new Set(paths.map((p) => p.split('/').pop() ?? '').filter((name) => re.test(name)));
     return [...names].sort();
 }
@@ -48347,12 +48353,12 @@ function detectEcosystems(paths) {
     // Dependabot matches “dockerfile” or “containerfile” anywhere in the
     // file name, case-insensitively. Cover the names people actually use:
     // `Dockerfile`, `Dockerfile.worker`, `base.Dockerfile`, `Containerfile`.
-    const dockerfileNames = basenamesMatching(paths, /^(dockerfile|containerfile)(\.|$)|\.(dockerfile|containerfile)$/i);
+    const dockerfileNames = collectBasenamesMatching(paths, /^(dockerfile|containerfile)(\.|$)|\.(dockerfile|containerfile)$/i);
     if (dockerfileNames.length > 0) {
         detected.add('docker');
         requiredCodeowners.push(...dockerfileNames);
     }
-    const composeNames = basenamesMatching(paths, /^docker-compose.*\.ya?ml$/);
+    const composeNames = collectBasenamesMatching(paths, /^docker-compose.*\.ya?ml$/);
     if (composeNames.length > 0) {
         detected.add('docker-compose');
         requiredCodeowners.push(...composeNames);
@@ -48367,22 +48373,25 @@ function detectEcosystems(paths) {
     }
     return { detected, requiredCodeowners };
 }
-// The `package-ecosystem` of an `updates` entry, or `undefined`.
-function ecosystemOf(entry) {
-    if (!dist.isMap(entry))
+/** The `package-ecosystem` of an `updates` entry, or `undefined`. */
+function readEcosystem(entry) {
+    if (!dist.isMap(entry)) {
         return undefined;
+    }
     const eco = entry.get('package-ecosystem');
     return typeof eco === 'string' ? eco : undefined;
 }
-// Start from a clone of the template Document so we keep its header /
-// per-entry comments. Prune entries for ecosystems we didn’t detect.
+/**
+ * Start from a clone of the template Document so we keep its header /
+ * per-entry comments. Prune entries for ecosystems we didn’t detect.
+ */
 function createFromTemplate(template, detected) {
     const newDoc = template.doc.clone();
     const updates = newDoc.get('updates');
     const kept = [];
     if (dist.isSeq(updates)) {
         for (let i = updates.items.length - 1; i >= 0; i -= 1) {
-            const eco = ecosystemOf(updates.items[i]);
+            const eco = readEcosystem(updates.items[i]);
             if (eco !== undefined && detected.has(eco)) {
                 kept.unshift(eco);
             }
@@ -48391,8 +48400,9 @@ function createFromTemplate(template, detected) {
             }
         }
     }
-    if (kept.length === 0)
+    if (kept.length === 0) {
         return null;
+    }
     return {
         path: '.github/dependabot.yaml',
         newContent: stringifyDependabotDoc(newDoc),
@@ -48409,16 +48419,18 @@ function parseExisting(existing, log) {
         return parsed;
     }
     catch (e) {
-        log.warning(`could not parse existing dependabot file: ${errorMessage(e)}`);
+        log.warning(`could not parse existing dependabot file: ${getErrorMessage(e)}`);
         return null;
     }
 }
-// Make every `updates` entry wait at least 7 days before proposing a
-// new version. Returns a description of each fix made.
+/**
+ * Make every `updates` entry wait at least 7 days before proposing a
+ * new version. Returns a description of each fix made.
+ */
 function ensureCooldowns(parsed, updates) {
     const fixes = [];
     for (const u of updates.items.filter((item) => dist.isMap(item))) {
-        const eco = ecosystemOf(u);
+        const eco = readEcosystem(u);
         const cooldown = u.get('cooldown');
         const days = dist.isMap(cooldown)
             ? cooldown.get('default-days')
@@ -48435,10 +48447,12 @@ function ensureCooldowns(parsed, updates) {
     }
     return fixes;
 }
-// Append template entries for `detected` ecosystems `updates` lacks.
-// Returns the ecosystems added.
+/**
+ * Append template entries for `detected` ecosystems `updates` lacks.
+ * Returns the ecosystems added.
+ */
 function addMissingEcosystems(updates, template, detected) {
-    const existingEcos = new Set(updates.items.map(ecosystemOf));
+    const existingEcos = new Set(updates.items.map(readEcosystem));
     const added = [];
     for (const eco of detected) {
         const templateEntry = template.entryByEcosystem.get(eco);
@@ -48455,13 +48469,16 @@ function addMissingEcosystems(updates, template, detected) {
     }
     return added;
 }
-// Add missing ecosystems from the template, set a missing `version`
-// and enforce a cooldown on every entry. Returns null when the file is
-// fine, unparseable, or has an `updates` that is not a list.
+/**
+ * Add missing ecosystems from the template, set a missing `version`
+ * and enforce a cooldown on every entry. Returns null when the file is
+ * fine, unparseable, or has an `updates` that is not a list.
+ */
 function updateExisting(existing, template, detected, log) {
     const parsed = parseExisting(existing, log);
-    if (!parsed)
+    if (!parsed) {
         return null;
+    }
     const fixes = [];
     if (parsed.get('version') == null) {
         parsed.set('version', 2);
@@ -48478,8 +48495,9 @@ function updateExisting(existing, template, detected, log) {
     }
     fixes.push(...ensureCooldowns(parsed, updates));
     const added = addMissingEcosystems(updates, template, detected);
-    if (fixes.length === 0 && added.length === 0)
+    if (fixes.length === 0 && added.length === 0) {
         return null;
+    }
     const parts = [];
     if (added.length > 0) {
         parts.push(`added sections: ${added.map((e) => `\`${e}\``).join(', ')}`);
@@ -48516,7 +48534,7 @@ function planDependabotChange({ detected, existing, template, log, }) {
 const OWNER_PLACEHOLDER = '@OWNER';
 const PLACEHOLDER_COMMENT = 'Failed to guess who the owner should be — please replace the `@OWNER` placeholder with one or more people.';
 /** 1-indexed numbers of the lines that end in the placeholder. */
-function placeholderLines(content) {
+function findPlaceholderLines(content) {
     return content
         .split('\n')
         .flatMap((line, index) => line.trimEnd().endsWith(`  ${OWNER_PLACEHOLDER}`) ? [index + 1] : []);
@@ -48532,7 +48550,7 @@ const codeowners = {
     opensPr: true,
     run: async (snapshot) => {
         const { requiredCodeowners } = detectEcosystems(await snapshot.listPaths());
-        const existing = await snapshot.readFirstFile(CODEOWNERS_PATHS);
+        const existing = await snapshot.readFirstExistingFile(CODEOWNERS_PATHS);
         const parsedLines = parseCodeowners(existing ? existing.content : '');
         const matchedOwners = new Set();
         for (const required of requiredCodeowners) {
@@ -48581,9 +48599,10 @@ const codeowners = {
                     afterPr: true,
                     describe: 'comment on the `@OWNER` lines asking for a real owner',
                     run: async ({ octokit, org, repo, pr, files }) => {
-                        if (!pr)
+                        if (!pr) {
                             throw new Error('hygiene PR was not opened');
-                        const lineNumbers = placeholderLines(files[addition.path] ?? '');
+                        }
+                        const lineNumbers = findPlaceholderLines(files[addition.path] ?? '');
                         if (lineNumbers.length === 0) {
                             return {
                                 fixed: false,
@@ -48612,7 +48631,7 @@ const codeowners = {
 /** Where dependabot looks for its config, in order of precedence. */
 const DEPENDABOT_PATHS = ['.github/dependabot.yaml', '.github/dependabot.yml'];
 let template = null;
-function loadedTemplate() {
+function requireLoadedTemplate() {
     if (!template) {
         throw new Error('dependabot-config check used before setup');
     }
@@ -48631,11 +48650,11 @@ const dependabotConfig = {
     },
     run: async (snapshot) => {
         const { detected } = detectEcosystems(await snapshot.listPaths());
-        const existing = await snapshot.readFirstFile(DEPENDABOT_PATHS);
+        const existing = await snapshot.readFirstExistingFile(DEPENDABOT_PATHS);
         const change = planDependabotChange({
             detected,
             existing,
-            template: loadedTemplate(),
+            template: requireLoadedTemplate(),
             log: snapshot.log,
         });
         if (!change) {
@@ -48685,16 +48704,18 @@ function log_createLogger(prefix) {
  * our text, which we cannot measure from here.
  */
 const SLACK_MAX_CHARS = 2600;
-// The newline is included, so section costs add up to the length of the
-// joined text.
-function linesCost(lines) {
+/**
+ * The newline is included, so section costs add up to the length of the
+ * joined text.
+ */
+function measureLines(lines) {
     return lines.reduce((sum, line) => sum + line.length + 1, 0);
 }
 function renderList(heading, items) {
     return ['', heading, ...items.map((item, idx) => `${idx + 1}. ${item}`)];
 }
-// One line standing in for a section we have no room to list.
-function countLabel({ heading, items }) {
+/** One line standing in for a section we have no room to list. */
+function renderCountLabel({ heading, items }) {
     return ['', `${heading} ${items.length} — see the run summary`];
 }
 /**
@@ -48714,14 +48735,17 @@ function fillSection(section, budget, { partial }) {
             ...renderList(heading, next),
             ...(left > 0 ? [noteFor(left)] : []),
         ];
-        if (linesCost(lines) > budget)
+        if (measureLines(lines) > budget) {
             break;
+        }
         kept = next;
     }
-    if (kept.length === items.length)
+    if (kept.length === items.length) {
         return renderList(heading, items);
-    if (!partial || kept.length === 0)
-        return countLabel(section);
+    }
+    if (!partial || kept.length === 0) {
+        return renderCountLabel(section);
+    }
     return [...renderList(heading, kept), noteFor(items.length - kept.length)];
 }
 /**
@@ -48738,8 +48762,8 @@ function renderSlackText({ sections, fillOrder, showOrder, runUrl, }) {
     // own reserve back when its turn comes; what the others leave unspent
     // stays as a buffer.
     let budget = SLACK_MAX_CHARS -
-        linesCost(footerLines) -
-        listed.reduce((sum, section) => sum + linesCost(countLabel(section)), 0);
+        measureLines(footerLines) -
+        listed.reduce((sum, section) => sum + measureLines(renderCountLabel(section)), 0);
     const filled = {};
     for (const { key, partial } of fillOrder) {
         const section = sections[key];
@@ -48747,20 +48771,14 @@ function renderSlackText({ sections, fillOrder, showOrder, runUrl, }) {
             filled[key] = [];
         }
         else {
-            const reserve = linesCost(countLabel(section));
+            const reserve = measureLines(renderCountLabel(section));
             filled[key] = fillSection(section, budget + reserve, { partial });
-            budget += reserve - linesCost(filled[key]);
+            budget += reserve - measureLines(filled[key]);
         }
     }
     return [...showOrder.flatMap((key) => filled[key]), ...footerLines].join('\n');
 }
-const GROUP_ORDER = [
-    'failed',
-    'attention',
-    'opened',
-    'fixed',
-    'previous',
-];
+/** Report groups with their headings, in the order they are shown. */
 const HEADINGS = {
     failed: '*💥 Failed:*',
     attention: '*⚠️ Needs attention:*',
@@ -48768,6 +48786,7 @@ const HEADINGS = {
     fixed: '*🔧 Fixed:*',
     previous: '*🥶 Previously opened PRs:*',
 };
+const GROUP_ORDER = Object.keys(HEADINGS);
 const DRY_RUN_HEADINGS = {
     opened: '*🆕 Would open PRs (dry run):*',
     fixed: '*🔧 Would fix (dry run):*',
@@ -48781,83 +48800,92 @@ const PARTIAL = {
     previous: false,
 };
 const MAX_DETAILS = 5;
-function groupOf(finding) {
+function classifyFinding(finding) {
     const status = finding.outcome?.status ?? 'none';
-    if (status === 'failed' || finding.level === 'error')
+    if (status === 'failed' || finding.level === 'error') {
         return 'failed';
-    if (status === 'skipped')
+    }
+    if (status === 'skipped') {
         return 'previous';
+    }
     if (status === 'fixed' || status === 'would-fix') {
         return finding.fix?.kind === 'file' ? 'opened' : 'fixed';
     }
-    if (finding.level === 'warning' || finding.fix)
+    if (finding.level === 'warning' || finding.fix) {
         return 'attention';
+    }
     return null;
 }
 /** `repo` or `repo: <url>`. */
-function where(finding) {
+function formatLocation(finding) {
     const url = finding.outcome?.url ?? finding.url;
     return url ? `${finding.repo}: <${url}>` : finding.repo;
 }
 /** At most `MAX_DETAILS` items, then a count of the rest. */
-function detailsText(details) {
+function formatDetails(details) {
     const shown = details.slice(0, MAX_DETAILS);
     const rest = details.length - shown.length;
     return rest > 0 ? `${shown.join(', ')} and ${rest} more` : shown.join(', ');
 }
-function findingLine(finding, { summary, details }) {
-    const parts = [where(finding)];
-    if (summary)
+function formatFindingLine(finding, { summary, details }) {
+    const parts = [formatLocation(finding)];
+    if (summary) {
         parts.push(finding.summary);
-    if (finding.outcome?.detail)
+    }
+    if (finding.outcome?.detail) {
         parts.push(finding.outcome.detail);
+    }
     if (details && finding.details && finding.details.length > 0) {
-        parts.push(detailsText(finding.details));
+        parts.push(formatDetails(finding.details));
     }
     return parts.join(' — ');
 }
 /** One item per finding, except Opened PRs, which is one per repo. */
-function groupItems(group, findings, { details }) {
+function renderGroupItems(group, findings, { details }) {
     if (group === 'opened' || group === 'previous') {
         const seen = new Set();
         return findings.flatMap((f) => {
-            const key = group === 'opened' ? f.repo : where(f);
-            if (seen.has(key))
+            const key = group === 'opened' ? f.repo : formatLocation(f);
+            if (seen.has(key)) {
                 return [];
+            }
             seen.add(key);
-            return [findingLine(f, { summary: false, details: false })];
+            return [formatFindingLine(f, { summary: false, details: false })];
         });
     }
-    return findings.map((f) => findingLine(f, { summary: true, details }));
+    return findings.map((f) => formatFindingLine(f, { summary: true, details }));
 }
-function groupHeading(group, findings) {
+function pickGroupHeading(group, findings) {
     const dry = findings.some((f) => f.outcome?.status === 'would-fix');
     return (dry && DRY_RUN_HEADINGS[group]) || HEADINGS[group];
 }
-/** `results_json`’s shape: every field but the fix, per the design spec. */
-function forOutput({ repo, level, summary, url, details, reviewers, outcome, }) {
+/** `results_json`’s shape: every field but the fix. */
+function getFindingsNotifyData({ repo, level, summary, url, details, reviewers, outcome, }) {
     return { repo, level, summary, url, details, reviewers, outcome };
 }
 /** The action outputs and job summary for `findings`. */
 function report(findings, { repoCount, dryRun, previews, runUrl }) {
     const groups = Object.fromEntries(GROUP_ORDER.map((key) => [key, []]));
     for (const finding of findings) {
-        const group = groupOf(finding);
-        if (group)
+        const group = classifyFinding(finding);
+        if (group) {
             groups[group].push(finding);
+        }
     }
     const summaryLines = GROUP_ORDER.flatMap((key) => groups[key].length > 0
-        ? renderList(groupHeading(key, groups[key]), groupItems(key, groups[key], { details: true }))
+        ? renderList(pickGroupHeading(key, groups[key]), renderGroupItems(key, groups[key], { details: true }))
         : []);
     const slackText = renderSlackText({
         sections: Object.fromEntries(GROUP_ORDER.map((key) => [
             key,
             {
-                heading: groupHeading(key, groups[key]),
+                heading: pickGroupHeading(key, groups[key]),
                 // Failed lines carry the error itself as `details`, so Slack
                 // keeps it; other groups’ `details` are the extra context
                 // that only the job summary has room for.
-                items: groupItems(key, groups[key], { details: key === 'failed' }),
+                items: renderGroupItems(key, groups[key], {
+                    details: key === 'failed',
+                }),
             },
         ])),
         fillOrder: GROUP_ORDER.map((key) => ({ key, partial: PARTIAL[key] })),
@@ -48866,7 +48894,7 @@ function report(findings, { repoCount, dryRun, previews, runUrl }) {
     });
     const notify = groups.failed.length + groups.opened.length + groups.fixed.length > 0;
     const outputs = {
-        results_json: JSON.stringify(findings.map(forOutput)),
+        results_json: JSON.stringify(findings.map(getFindingsNotifyData)),
         slack_text: slackText,
         should_notify: notify ? 'true' : 'false',
         slack_status: groups.failed.length > 0 ? 'failure' : 'warning',
@@ -48935,20 +48963,21 @@ function readInputs() {
         runAttempt: Number(process.env.GITHUB_RUN_ATTEMPT) || 1,
     };
 }
-function failedRepo(org, repoMeta, e) {
+function createFailedRepoFinding(org, repoMeta, e) {
     return {
         repo: `${org}/${repoMeta.name}`,
         level: 'error',
         summary: 'could not audit repo',
-        details: [errorMessage(e)],
+        details: [getErrorMessage(e)],
         outcome: { status: 'none' },
     };
 }
 async function main() {
     const inputs = readInputs();
     const octokit = getOctokit(inputs.token);
-    if (inputs.dryRun)
+    if (inputs.dryRun) {
         await summary_summary.addRaw(DRY_RUN_NOTE).write();
+    }
     if (inputs.reposFilter.length > 0) {
         await summary_summary
             .addRaw([
@@ -48964,8 +48993,9 @@ async function main() {
         org: inputs.org,
         reposFilter: inputs.reposFilter,
     });
-    for (const check of checks)
+    for (const check of checks) {
         await check.setup?.(octokit);
+    }
     info(`Auditing ${repos.length} repo(s) in ${inputs.org}${inputs.dryRun ? ' (dry run)' : ''}`);
     const findings = [];
     const previews = [];
@@ -48981,12 +49011,13 @@ async function main() {
                 log,
             });
             findings.push(...audited.findings);
-            if (audited.preview)
+            if (audited.preview) {
                 previews.push(audited.preview);
+            }
         }
         catch (e) {
-            log.error(errorMessage(e));
-            findings.push(failedRepo(inputs.org, repoMeta, e));
+            log.error(getErrorMessage(e));
+            findings.push(createFailedRepoFinding(inputs.org, repoMeta, e));
         }
     }
     await publish(findings, {
@@ -48995,5 +49026,5 @@ async function main() {
         previews,
     });
 }
-main().catch((e) => setFailed(errorMessage(e)));
+main().catch((e) => setFailed(getErrorMessage(e)));
 
