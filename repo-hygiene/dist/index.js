@@ -47366,6 +47366,392 @@ function getOctokit(token, options, ...additionalPlugins) {
 // EXTERNAL MODULE: ./node_modules/picomatch/index.js
 var picomatch = __nccwpck_require__(9138);
 var picomatch_default = /*#__PURE__*/__nccwpck_require__.n(picomatch);
+;// CONCATENATED MODULE: ./lib/github.ts
+
+/** The HTTP status of a failed Octokit request, or `undefined`. */
+function getHttpStatus(error) {
+    if (typeof error === 'object' && error !== null && 'status' in error) {
+        const { status } = error;
+        return typeof status === 'number' ? status : undefined;
+    }
+    return undefined;
+}
+/** The message of whatever was thrown. */
+function getErrorMessage(error) {
+    return error instanceof Error ? error.message : String(error);
+}
+/**
+ * The first of `paths` that exists as a file, as `{ sha, path,
+ * content }`, or `null`. Other `params` (owner, repo, ref) are passed
+ * through to the contents API.
+ */
+async function tryGetContent(octokit, { paths, ...params }) {
+    for (const path of paths) {
+        try {
+            const res = await octokit.rest.repos.getContent({ ...params, path });
+            if (!Array.isArray(res.data) && 'content' in res.data) {
+                return {
+                    sha: res.data.sha,
+                    path: res.data.path,
+                    content: Buffer.from(res.data.content, 'base64').toString('utf8'),
+                };
+            }
+        }
+        catch (e) {
+            if (getHttpStatus(e) !== 404) {
+                throw e;
+            }
+        }
+    }
+    return null;
+}
+/** Commit `content` to `path` on `branch`; `sha` set means an update. */
+async function commitChange(octokit, { org, repo, branch, path, content, sha, }) {
+    await octokit.rest.repos.createOrUpdateFileContents({
+        owner: org,
+        repo,
+        branch,
+        path,
+        message: sha ? `chore: Update ${path}` : `chore: Add ${path}`,
+        content: Buffer.from(content, 'utf8').toString('base64'),
+        sha,
+    });
+}
+/** Leave one review comment spanning `lineNumbers` of `path` on the PR. */
+async function createLineComment(octokit, { org, repo, pr, path, lineNumbers, body }) {
+    const startLine = Math.min(...lineNumbers);
+    const endLine = Math.max(...lineNumbers);
+    const comment = { path, body, side: 'RIGHT', line: endLine };
+    if (startLine !== endLine) {
+        comment.start_line = startLine;
+        comment.start_side = 'RIGHT';
+    }
+    await octokit.rest.pulls.createReview({
+        owner: org,
+        repo,
+        pull_number: pr.number,
+        commit_id: pr.head.sha,
+        event: 'COMMENT',
+        comments: [comment],
+    });
+}
+/** The App must be installed on every org repo, or the audit is partial. */
+async function assertAppSeesAllRepos(octokit) {
+    const inst = await octokit.request('GET /installation/repositories', {
+        per_page: 1,
+    });
+    if (inst.data.repository_selection !== 'all') {
+        throw new Error(`App has repository_selection='${inst.data.repository_selection}'; expected 'all'. Reconfigure the App’s repository access to “All repositories”.`);
+    }
+}
+/**
+ * Org repos to audit: sources only, skipping archived, disabled and
+ * empty ones, narrowed by `reposFilter` picomatch globs when given.
+ * Every pattern must match at least one repo.
+ */
+async function listTargetRepos(octokit, { org, reposFilter }) {
+    const allRepos = await octokit.paginate(octokit.rest.repos.listForOrg, {
+        org,
+        type: 'sources',
+        per_page: 100,
+    });
+    const targets = allRepos.filter((r) => !r.archived &&
+        !r.disabled &&
+        (r.size || 0) > 0 &&
+        typeof r.default_branch === 'string');
+    if (reposFilter.length === 0) {
+        return targets;
+    }
+    const matchers = reposFilter.map((pattern) => ({
+        pattern,
+        isMatch: picomatch_default()(pattern, { dot: true }),
+    }));
+    const hitPatterns = new Set();
+    const matched = targets.filter((r) => {
+        const hits = matchers.filter((m) => m.isMatch(r.name));
+        hits.forEach((m) => hitPatterns.add(m.pattern));
+        return hits.length > 0;
+    });
+    const missing = reposFilter.filter((p) => !hitPatterns.has(p));
+    if (missing.length > 0) {
+        throw new Error(missing
+            .map((p) => `Requested repo pattern "${p}" matched no repos in ${org} (after filtering archived/disabled/fork/empty).`)
+            .join('\n'));
+    }
+    return matched;
+}
+
+;// CONCATENATED MODULE: ./lib/log.ts
+
+/** Logs through the workflow commands GitHub Actions renders. */
+const actionsLogger = {
+    info: (message) => info(message),
+    warning: (message) => warning(message),
+    error: (message) => error(message),
+};
+/**
+ * A logger prefixing every message with `prefix` before handing it to
+ * `base`, so a per-repo logger can be built once and handed down.
+ * Tests pass their own recording object instead.
+ */
+function log_createLogger(prefix, base = actionsLogger) {
+    const withPrefix = (message) => prefix ? `${prefix} ${message}` : message;
+    return {
+        info: (message) => base.info(withPrefix(message)),
+        warning: (message) => base.warning(withPrefix(message)),
+        error: (message) => base.error(withPrefix(message)),
+    };
+}
+
+;// CONCATENATED MODULE: ./lib/report.ts
+
+/**
+ * Slack renders the whole summary inside a single Block Kit `section`
+ * block, whose text is capped at 3000 characters, per
+ * https://docs.slack.dev/reference/block-kit/blocks/section-block
+ * About 400 of those go to the header `notify-status` composes around
+ * our text, which we cannot measure from here.
+ */
+const SLACK_MAX_CHARS = 2600;
+/**
+ * The newline is included, so section costs add up to the length of the
+ * joined text.
+ */
+function measureLines(lines) {
+    return lines.reduce((sum, line) => sum + line.length + 1, 0);
+}
+function renderList(heading, items) {
+    return ['', heading, ...items.map((item, idx) => `${idx + 1}. ${item}`)];
+}
+/** One line standing in for a section we have no room to list. */
+function renderCountLabel({ heading, items }) {
+    return ['', `${heading} ${items.length} — see the run summary`];
+}
+/**
+ * As many of a section’s items as `budget` allows, ending in a note
+ * counting the rest. A section that does not fit at all — or one asked
+ * not to list `partial`ly, where half a list would be noise — collapses
+ * to its count label instead.
+ */
+function fillSection(section, budget, { partial }) {
+    const { heading, items } = section;
+    const noteFor = (left) => `… and ${left} more`;
+    let kept = [];
+    for (const item of items) {
+        const next = [...kept, item];
+        const left = items.length - next.length;
+        const lines = [
+            ...renderList(heading, next),
+            ...(left > 0 ? [noteFor(left)] : []),
+        ];
+        if (measureLines(lines) > budget) {
+            break;
+        }
+        kept = next;
+    }
+    if (kept.length === items.length) {
+        return renderList(heading, items);
+    }
+    if (!partial || kept.length === 0) {
+        return renderCountLabel(section);
+    }
+    return [...renderList(heading, kept), noteFor(items.length - kept.length)];
+}
+/**
+ * Slack text for the run: `sections` (keyed, each `{ heading, items }`)
+ * fitted into one section block. Sections are filled in `fillOrder`
+ * and shown in `showOrder`; whatever does not fit collapses to a count
+ * pointing at the run summary.
+ */
+function renderSlackText({ sections, fillOrder, showOrder, runUrl, }) {
+    const footerLines = runUrl
+        ? ['', `<${runUrl}|See full list with more details>`]
+        : [];
+    const listed = Object.values(sections).filter(({ items }) => items.length > 0);
+    // Reserve the footer and every section’s count label up front, so
+    // each section is guaranteed at least its count. A section gets its
+    // own reserve back when its turn comes; what the others leave unspent
+    // stays as a buffer.
+    let budget = SLACK_MAX_CHARS -
+        measureLines(footerLines) -
+        listed.reduce((sum, section) => sum + measureLines(renderCountLabel(section)), 0);
+    const filled = {};
+    for (const { key, partial } of fillOrder) {
+        const section = sections[key];
+        if (section.items.length === 0) {
+            filled[key] = [];
+        }
+        else {
+            const reserve = measureLines(renderCountLabel(section));
+            filled[key] = fillSection(section, budget + reserve, { partial });
+            budget += reserve - measureLines(filled[key]);
+        }
+    }
+    return [...showOrder.flatMap((key) => filled[key]), ...footerLines].join('\n');
+}
+/** Report groups with their headings, in the order they are shown. */
+const HEADINGS = {
+    failed: '*💥 Failed:*',
+    attention: '*⚠️ Needs attention:*',
+    opened: '*🆕 Opened PRs:*',
+    fixed: '*🔧 Fixed:*',
+    previous: '*🥶 Previously opened PRs:*',
+};
+const GROUP_ORDER = Object.keys(HEADINGS);
+const DRY_RUN_HEADINGS = {
+    opened: '*🆕 Would open PRs (dry run):*',
+    fixed: '*🔧 Would fix (dry run):*',
+};
+/** Sections that list half their items when short of room; the rest collapse to a count. */
+const PARTIAL = {
+    failed: true,
+    attention: true,
+    opened: true,
+    fixed: true,
+    previous: false,
+};
+const MAX_DETAILS = 5;
+function classifyFinding(finding) {
+    const status = finding.outcome?.status ?? 'none';
+    if (status === 'failed' || finding.level === 'error') {
+        return 'failed';
+    }
+    if (status === 'skipped') {
+        return 'previous';
+    }
+    if (status === 'fixed' || status === 'would-fix') {
+        return finding.fix?.kind === 'file' ? 'opened' : 'fixed';
+    }
+    if (finding.level === 'warning' || finding.fix) {
+        return 'attention';
+    }
+    return null;
+}
+/** `repo` or `repo: <url>`. */
+function formatLocation(finding) {
+    const url = finding.outcome?.url ?? finding.url;
+    return url ? `${finding.repo}: <${url}>` : finding.repo;
+}
+/** At most `MAX_DETAILS` items, then a count of the rest. */
+function formatDetails(details) {
+    const shown = details.slice(0, MAX_DETAILS);
+    const rest = details.length - shown.length;
+    return rest > 0 ? `${shown.join(', ')} and ${rest} more` : shown.join(', ');
+}
+function formatFindingLine(finding, { summary, details }) {
+    const parts = [formatLocation(finding)];
+    if (summary) {
+        parts.push(finding.summary);
+    }
+    if (finding.outcome?.detail) {
+        parts.push(finding.outcome.detail);
+    }
+    if (details && finding.details && finding.details.length > 0) {
+        parts.push(formatDetails(finding.details));
+    }
+    return parts.join(' — ');
+}
+/** One item per finding, except Opened PRs, which is one per repo. */
+function renderGroupItems(group, findings, { details }) {
+    if (group === 'opened' || group === 'previous') {
+        const seen = new Set();
+        return findings.flatMap((f) => {
+            const key = group === 'opened' ? f.repo : formatLocation(f);
+            if (seen.has(key)) {
+                return [];
+            }
+            seen.add(key);
+            return [formatFindingLine(f, { summary: false, details: false })];
+        });
+    }
+    return findings.map((f) => formatFindingLine(f, { summary: true, details }));
+}
+function pickGroupHeading(group, findings) {
+    const dry = findings.some((f) => f.outcome?.status === 'would-fix');
+    return (dry && DRY_RUN_HEADINGS[group]) || HEADINGS[group];
+}
+/** `results_json`’s shape: every field but the fix. */
+function getFindingsNotifyData({ repo, level, summary, url, details, reviewers, outcome, }) {
+    return { repo, level, summary, url, details, reviewers, outcome };
+}
+/** The action outputs and job summary for `findings`. */
+function report(findings, { repoCount, dryRun, previews, runUrl }) {
+    const groups = Object.fromEntries(GROUP_ORDER.map((key) => [key, []]));
+    for (const finding of findings) {
+        const group = classifyFinding(finding);
+        if (group) {
+            groups[group].push(finding);
+        }
+    }
+    const summaryLines = GROUP_ORDER.flatMap((key) => groups[key].length > 0
+        ? renderList(pickGroupHeading(key, groups[key]), renderGroupItems(key, groups[key], { details: true }))
+        : []);
+    const slackText = renderSlackText({
+        sections: Object.fromEntries(GROUP_ORDER.map((key) => [
+            key,
+            {
+                heading: pickGroupHeading(key, groups[key]),
+                // Failed lines carry the error itself as `details`, so Slack
+                // keeps it; other groups’ `details` are the extra context
+                // that only the job summary has room for.
+                items: renderGroupItems(key, groups[key], {
+                    details: key === 'failed',
+                }),
+            },
+        ])),
+        fillOrder: GROUP_ORDER.map((key) => ({ key, partial: PARTIAL[key] })),
+        showOrder: GROUP_ORDER,
+        runUrl,
+    });
+    const notify = groups.failed.length + groups.opened.length + groups.fixed.length > 0;
+    const outputs = {
+        results_json: JSON.stringify(findings.map(getFindingsNotifyData)),
+        slack_text: slackText,
+        should_notify: notify ? 'true' : 'false',
+        slack_status: groups.failed.length > 0 ? 'failure' : 'warning',
+    };
+    const summary = [
+        '',
+        '## Summary',
+        '',
+        `\`repo-hygiene\` run complete, ${repoCount} repo(s) checked.`,
+        ...summaryLines,
+        '',
+        ...previews.flatMap((preview) => ['', preview]),
+        ...(dryRun || !notify
+            ? [
+                '',
+                '## Slack message',
+                '',
+                '<details>',
+                `<summary>Not sent: ${dryRun ? 'dry run' : 'nothing to notify about'}</summary>`,
+                '',
+                '```',
+                slackText,
+                '```',
+                '',
+                '</details>',
+                '',
+            ]
+            : []),
+    ].join('\n');
+    return { outputs, summary };
+}
+/** Write the outputs and the job summary for the run. */
+async function publish(findings, options) {
+    const runUrl = [
+        process.env.GITHUB_SERVER_URL,
+        process.env.GITHUB_REPOSITORY,
+        'actions/runs',
+        process.env.GITHUB_RUN_ID,
+    ].join('/');
+    const { outputs, summary } = report(findings, { ...options, runUrl });
+    for (const [name, value] of Object.entries(outputs)) {
+        setOutput(name, value);
+    }
+    await summary_summary.addRaw(summary).write();
+}
+
 ;// CONCATENATED MODULE: ./lib/codeowners.ts
 
 /**
@@ -47509,121 +47895,6 @@ function buildCodeownersAddition({ existing, parsedLines, requiredPatterns, miss
             ? `added ${missingPatterns.length} line(s) to \`${existing.path}\`: ${listed}`
             : `created \`CODEOWNERS\` with ${missingPatterns.length} line(s): ${listed}`,
     };
-}
-
-;// CONCATENATED MODULE: ./lib/github.ts
-
-/** The HTTP status of a failed Octokit request, or `undefined`. */
-function getHttpStatus(error) {
-    if (typeof error === 'object' && error !== null && 'status' in error) {
-        const { status } = error;
-        return typeof status === 'number' ? status : undefined;
-    }
-    return undefined;
-}
-/** The message of whatever was thrown. */
-function getErrorMessage(error) {
-    return error instanceof Error ? error.message : String(error);
-}
-/**
- * The first of `paths` that exists as a file, as `{ sha, path,
- * content }`, or `null`. Other `params` (owner, repo, ref) are passed
- * through to the contents API.
- */
-async function tryGetContent(octokit, { paths, ...params }) {
-    for (const path of paths) {
-        try {
-            const res = await octokit.rest.repos.getContent({ ...params, path });
-            if (!Array.isArray(res.data) && 'content' in res.data) {
-                return {
-                    sha: res.data.sha,
-                    path: res.data.path,
-                    content: Buffer.from(res.data.content, 'base64').toString('utf8'),
-                };
-            }
-        }
-        catch (e) {
-            if (getHttpStatus(e) !== 404) {
-                throw e;
-            }
-        }
-    }
-    return null;
-}
-/** Commit `content` to `path` on `branch`; `sha` set means an update. */
-async function commitChange(octokit, { org, repo, branch, path, content, sha, }) {
-    await octokit.rest.repos.createOrUpdateFileContents({
-        owner: org,
-        repo,
-        branch,
-        path,
-        message: sha ? `chore: Update ${path}` : `chore: Add ${path}`,
-        content: Buffer.from(content, 'utf8').toString('base64'),
-        sha,
-    });
-}
-/** Leave one review comment spanning `lineNumbers` of `path` on the PR. */
-async function createLineComment(octokit, { org, repo, pr, path, lineNumbers, body }) {
-    const startLine = Math.min(...lineNumbers);
-    const endLine = Math.max(...lineNumbers);
-    const comment = { path, body, side: 'RIGHT', line: endLine };
-    if (startLine !== endLine) {
-        comment.start_line = startLine;
-        comment.start_side = 'RIGHT';
-    }
-    await octokit.rest.pulls.createReview({
-        owner: org,
-        repo,
-        pull_number: pr.number,
-        commit_id: pr.head.sha,
-        event: 'COMMENT',
-        comments: [comment],
-    });
-}
-/** The App must be installed on every org repo, or the audit is partial. */
-async function assertAppSeesAllRepos(octokit) {
-    const inst = await octokit.request('GET /installation/repositories', {
-        per_page: 1,
-    });
-    if (inst.data.repository_selection !== 'all') {
-        throw new Error(`App has repository_selection='${inst.data.repository_selection}'; expected 'all'. Reconfigure the App’s repository access to “All repositories”.`);
-    }
-}
-/**
- * Org repos to audit: sources only, skipping archived, disabled and
- * empty ones, narrowed by `reposFilter` picomatch globs when given.
- * Every pattern must match at least one repo.
- */
-async function listTargetRepos(octokit, { org, reposFilter }) {
-    const allRepos = await octokit.paginate(octokit.rest.repos.listForOrg, {
-        org,
-        type: 'sources',
-        per_page: 100,
-    });
-    const targets = allRepos.filter((r) => !r.archived &&
-        !r.disabled &&
-        (r.size || 0) > 0 &&
-        typeof r.default_branch === 'string');
-    if (reposFilter.length === 0) {
-        return targets;
-    }
-    const matchers = reposFilter.map((pattern) => ({
-        pattern,
-        isMatch: picomatch_default()(pattern, { dot: true }),
-    }));
-    const hitPatterns = new Set();
-    const matched = targets.filter((r) => {
-        const hits = matchers.filter((m) => m.isMatch(r.name));
-        hits.forEach((m) => hitPatterns.add(m.pattern));
-        return hits.length > 0;
-    });
-    const missing = reposFilter.filter((p) => !hitPatterns.has(p));
-    if (missing.length > 0) {
-        throw new Error(missing
-            .map((p) => `Requested repo pattern "${p}" matched no repos in ${org} (after filtering archived/disabled/fork/empty).`)
-            .join('\n'));
-    }
-    return matched;
 }
 
 ;// CONCATENATED MODULE: ./lib/reviewers.ts
@@ -48678,267 +48949,60 @@ const dependabotConfig = {
     },
 };
 
-;// CONCATENATED MODULE: ./lib/log.ts
+;// CONCATENATED MODULE: ./lib/run.ts
 
-/**
- * Workflow log output with every message prefixed by `prefix`, so a
- * per-repo logger can be built once and handed down. Tests pass their
- * own recording object instead.
- */
-function log_createLogger(prefix) {
-    const withPrefix = (message) => prefix ? `${prefix} ${message}` : message;
+
+
+
+
+/** Every check the action runs, in order. */
+const allChecks = [dependabotConfig, codeowners];
+function createFailedRepoFinding(org, repoMeta, error) {
     return {
-        info: (message) => info(withPrefix(message)),
-        warning: (message) => warning(withPrefix(message)),
-        error: (message) => error(withPrefix(message)),
+        repo: `${org}/${repoMeta.name}`,
+        level: 'error',
+        summary: 'could not audit repo',
+        details: [getErrorMessage(error)],
+        outcome: { status: 'none' },
     };
 }
-
-;// CONCATENATED MODULE: ./lib/report.ts
-
 /**
- * Slack renders the whole summary inside a single Block Kit `section`
- * block, whose text is capped at 3000 characters, per
- * https://docs.slack.dev/reference/block-kit/blocks/section-block
- * About 400 of those go to the header `notify-status` composes around
- * our text, which we cannot measure from here.
+ * Audit every target repo of the org with the checks. A repo whose
+ * audit throws becomes one error finding and the run carries on.
  */
-const SLACK_MAX_CHARS = 2600;
-/**
- * The newline is included, so section costs add up to the length of the
- * joined text.
- */
-function measureLines(lines) {
-    return lines.reduce((sum, line) => sum + line.length + 1, 0);
-}
-function renderList(heading, items) {
-    return ['', heading, ...items.map((item, idx) => `${idx + 1}. ${item}`)];
-}
-/** One line standing in for a section we have no room to list. */
-function renderCountLabel({ heading, items }) {
-    return ['', `${heading} ${items.length} — see the run summary`];
-}
-/**
- * As many of a section’s items as `budget` allows, ending in a note
- * counting the rest. A section that does not fit at all — or one asked
- * not to list `partial`ly, where half a list would be noise — collapses
- * to its count label instead.
- */
-function fillSection(section, budget, { partial }) {
-    const { heading, items } = section;
-    const noteFor = (left) => `… and ${left} more`;
-    let kept = [];
-    for (const item of items) {
-        const next = [...kept, item];
-        const left = items.length - next.length;
-        const lines = [
-            ...renderList(heading, next),
-            ...(left > 0 ? [noteFor(left)] : []),
-        ];
-        if (measureLines(lines) > budget) {
-            break;
-        }
-        kept = next;
+async function runAudit(octokit, { org, dryRun, reposFilter, runId, runAttempt, requireAppAccess, log, checks = allChecks, }) {
+    if (requireAppAccess) {
+        await assertAppSeesAllRepos(octokit);
     }
-    if (kept.length === items.length) {
-        return renderList(heading, items);
+    const repos = await listTargetRepos(octokit, { org, reposFilter });
+    for (const check of checks) {
+        await check.setup?.(octokit);
     }
-    if (!partial || kept.length === 0) {
-        return renderCountLabel(section);
-    }
-    return [...renderList(heading, kept), noteFor(items.length - kept.length)];
-}
-/**
- * Slack text for the run: `sections` (keyed, each `{ heading, items }`)
- * fitted into one section block. Sections are filled in `fillOrder`
- * and shown in `showOrder`; whatever does not fit collapses to a count
- * pointing at the run summary.
- */
-function renderSlackText({ sections, fillOrder, showOrder, runUrl, }) {
-    const footerLines = ['', `<${runUrl}|See full list with more details>`];
-    const listed = Object.values(sections).filter(({ items }) => items.length > 0);
-    // Reserve the footer and every section’s count label up front, so
-    // each section is guaranteed at least its count. A section gets its
-    // own reserve back when its turn comes; what the others leave unspent
-    // stays as a buffer.
-    let budget = SLACK_MAX_CHARS -
-        measureLines(footerLines) -
-        listed.reduce((sum, section) => sum + measureLines(renderCountLabel(section)), 0);
-    const filled = {};
-    for (const { key, partial } of fillOrder) {
-        const section = sections[key];
-        if (section.items.length === 0) {
-            filled[key] = [];
-        }
-        else {
-            const reserve = measureLines(renderCountLabel(section));
-            filled[key] = fillSection(section, budget + reserve, { partial });
-            budget += reserve - measureLines(filled[key]);
-        }
-    }
-    return [...showOrder.flatMap((key) => filled[key]), ...footerLines].join('\n');
-}
-/** Report groups with their headings, in the order they are shown. */
-const HEADINGS = {
-    failed: '*💥 Failed:*',
-    attention: '*⚠️ Needs attention:*',
-    opened: '*🆕 Opened PRs:*',
-    fixed: '*🔧 Fixed:*',
-    previous: '*🥶 Previously opened PRs:*',
-};
-const GROUP_ORDER = Object.keys(HEADINGS);
-const DRY_RUN_HEADINGS = {
-    opened: '*🆕 Would open PRs (dry run):*',
-    fixed: '*🔧 Would fix (dry run):*',
-};
-/** Sections that list half their items when short of room; the rest collapse to a count. */
-const PARTIAL = {
-    failed: true,
-    attention: true,
-    opened: true,
-    fixed: true,
-    previous: false,
-};
-const MAX_DETAILS = 5;
-function classifyFinding(finding) {
-    const status = finding.outcome?.status ?? 'none';
-    if (status === 'failed' || finding.level === 'error') {
-        return 'failed';
-    }
-    if (status === 'skipped') {
-        return 'previous';
-    }
-    if (status === 'fixed' || status === 'would-fix') {
-        return finding.fix?.kind === 'file' ? 'opened' : 'fixed';
-    }
-    if (finding.level === 'warning' || finding.fix) {
-        return 'attention';
-    }
-    return null;
-}
-/** `repo` or `repo: <url>`. */
-function formatLocation(finding) {
-    const url = finding.outcome?.url ?? finding.url;
-    return url ? `${finding.repo}: <${url}>` : finding.repo;
-}
-/** At most `MAX_DETAILS` items, then a count of the rest. */
-function formatDetails(details) {
-    const shown = details.slice(0, MAX_DETAILS);
-    const rest = details.length - shown.length;
-    return rest > 0 ? `${shown.join(', ')} and ${rest} more` : shown.join(', ');
-}
-function formatFindingLine(finding, { summary, details }) {
-    const parts = [formatLocation(finding)];
-    if (summary) {
-        parts.push(finding.summary);
-    }
-    if (finding.outcome?.detail) {
-        parts.push(finding.outcome.detail);
-    }
-    if (details && finding.details && finding.details.length > 0) {
-        parts.push(formatDetails(finding.details));
-    }
-    return parts.join(' — ');
-}
-/** One item per finding, except Opened PRs, which is one per repo. */
-function renderGroupItems(group, findings, { details }) {
-    if (group === 'opened' || group === 'previous') {
-        const seen = new Set();
-        return findings.flatMap((f) => {
-            const key = group === 'opened' ? f.repo : formatLocation(f);
-            if (seen.has(key)) {
-                return [];
+    log.info(`Auditing ${repos.length} repo(s) in ${org}${dryRun ? ' (dry run)' : ''}`);
+    const findings = [];
+    const previews = [];
+    for (const [index, repoMeta] of repos.entries()) {
+        const repoLog = log_createLogger(`${index + 1}/${repos.length}. ${org}/${repoMeta.name}:`, log);
+        try {
+            const audited = await auditRepo(octokit, repoMeta, {
+                org,
+                dryRun,
+                runId,
+                runAttempt,
+                checks,
+                log: repoLog,
+            });
+            findings.push(...audited.findings);
+            if (audited.preview) {
+                previews.push(audited.preview);
             }
-            seen.add(key);
-            return [formatFindingLine(f, { summary: false, details: false })];
-        });
-    }
-    return findings.map((f) => formatFindingLine(f, { summary: true, details }));
-}
-function pickGroupHeading(group, findings) {
-    const dry = findings.some((f) => f.outcome?.status === 'would-fix');
-    return (dry && DRY_RUN_HEADINGS[group]) || HEADINGS[group];
-}
-/** `results_json`’s shape: every field but the fix. */
-function getFindingsNotifyData({ repo, level, summary, url, details, reviewers, outcome, }) {
-    return { repo, level, summary, url, details, reviewers, outcome };
-}
-/** The action outputs and job summary for `findings`. */
-function report(findings, { repoCount, dryRun, previews, runUrl }) {
-    const groups = Object.fromEntries(GROUP_ORDER.map((key) => [key, []]));
-    for (const finding of findings) {
-        const group = classifyFinding(finding);
-        if (group) {
-            groups[group].push(finding);
+        }
+        catch (error) {
+            repoLog.error(getErrorMessage(error));
+            findings.push(createFailedRepoFinding(org, repoMeta, error));
         }
     }
-    const summaryLines = GROUP_ORDER.flatMap((key) => groups[key].length > 0
-        ? renderList(pickGroupHeading(key, groups[key]), renderGroupItems(key, groups[key], { details: true }))
-        : []);
-    const slackText = renderSlackText({
-        sections: Object.fromEntries(GROUP_ORDER.map((key) => [
-            key,
-            {
-                heading: pickGroupHeading(key, groups[key]),
-                // Failed lines carry the error itself as `details`, so Slack
-                // keeps it; other groups’ `details` are the extra context
-                // that only the job summary has room for.
-                items: renderGroupItems(key, groups[key], {
-                    details: key === 'failed',
-                }),
-            },
-        ])),
-        fillOrder: GROUP_ORDER.map((key) => ({ key, partial: PARTIAL[key] })),
-        showOrder: GROUP_ORDER,
-        runUrl,
-    });
-    const notify = groups.failed.length + groups.opened.length + groups.fixed.length > 0;
-    const outputs = {
-        results_json: JSON.stringify(findings.map(getFindingsNotifyData)),
-        slack_text: slackText,
-        should_notify: notify ? 'true' : 'false',
-        slack_status: groups.failed.length > 0 ? 'failure' : 'warning',
-    };
-    const summary = [
-        '',
-        '## Summary',
-        '',
-        `\`repo-hygiene\` run complete, ${repoCount} repo(s) checked.`,
-        ...summaryLines,
-        '',
-        ...previews.flatMap((preview) => ['', preview]),
-        ...(dryRun || !notify
-            ? [
-                '',
-                '## Slack message',
-                '',
-                '<details>',
-                `<summary>Not sent: ${dryRun ? 'dry run' : 'nothing to notify about'}</summary>`,
-                '',
-                '```',
-                slackText,
-                '```',
-                '',
-                '</details>',
-                '',
-            ]
-            : []),
-    ].join('\n');
-    return { outputs, summary };
-}
-/** Write the outputs and the job summary for the run. */
-async function publish(findings, options) {
-    const runUrl = [
-        process.env.GITHUB_SERVER_URL,
-        process.env.GITHUB_REPOSITORY,
-        'actions/runs',
-        process.env.GITHUB_RUN_ID,
-    ].join('/');
-    const { outputs, summary } = report(findings, { ...options, runUrl });
-    for (const [name, value] of Object.entries(outputs)) {
-        setOutput(name, value);
-    }
-    await summary_summary.addRaw(summary).write();
+    return { findings, previews, repoCount: repos.length };
 }
 
 ;// CONCATENATED MODULE: ./index.ts
@@ -48948,9 +49012,6 @@ async function publish(findings, options) {
 
 
 
-
-
-const checks = [dependabotConfig, codeowners];
 const DRY_RUN_NOTE = '> [!NOTE]\n> This is a **dry run**. No pull requests will be created. Will show info about ones that would, here in the summary.\n\n';
 function readInputs() {
     const { /* context */ "_": context } = github_namespaceObject;
@@ -48961,15 +49022,6 @@ function readInputs() {
         reposFilter: (getInput('repos') || '').split(/[,;\s]/).filter(Boolean),
         runId: context.runId,
         runAttempt: Number(process.env.GITHUB_RUN_ATTEMPT) || 1,
-    };
-}
-function createFailedRepoFinding(org, repoMeta, e) {
-    return {
-        repo: `${org}/${repoMeta.name}`,
-        level: 'error',
-        summary: 'could not audit repo',
-        details: [getErrorMessage(e)],
-        outcome: { status: 'none' },
     };
 }
 async function main() {
@@ -48988,43 +49040,16 @@ async function main() {
         ].join('\n'))
             .write();
     }
-    await assertAppSeesAllRepos(octokit);
-    const repos = await listTargetRepos(octokit, {
+    const { findings, previews, repoCount } = await runAudit(octokit, {
         org: inputs.org,
-        reposFilter: inputs.reposFilter,
-    });
-    for (const check of checks) {
-        await check.setup?.(octokit);
-    }
-    info(`Auditing ${repos.length} repo(s) in ${inputs.org}${inputs.dryRun ? ' (dry run)' : ''}`);
-    const findings = [];
-    const previews = [];
-    for (const [index, repoMeta] of repos.entries()) {
-        const log = log_createLogger(`${index + 1}/${repos.length}. ${inputs.org}/${repoMeta.name}:`);
-        try {
-            const audited = await auditRepo(octokit, repoMeta, {
-                org: inputs.org,
-                dryRun: inputs.dryRun,
-                runId: inputs.runId,
-                runAttempt: inputs.runAttempt,
-                checks,
-                log,
-            });
-            findings.push(...audited.findings);
-            if (audited.preview) {
-                previews.push(audited.preview);
-            }
-        }
-        catch (e) {
-            log.error(getErrorMessage(e));
-            findings.push(createFailedRepoFinding(inputs.org, repoMeta, e));
-        }
-    }
-    await publish(findings, {
-        repoCount: repos.length,
         dryRun: inputs.dryRun,
-        previews,
+        reposFilter: inputs.reposFilter,
+        runId: inputs.runId,
+        runAttempt: inputs.runAttempt,
+        requireAppAccess: true,
+        log: actionsLogger,
     });
+    await publish(findings, { repoCount, dryRun: inputs.dryRun, previews });
 }
-main().catch((e) => setFailed(getErrorMessage(e)));
+main().catch((error) => setFailed(getErrorMessage(error)));
 

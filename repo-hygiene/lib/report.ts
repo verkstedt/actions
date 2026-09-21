@@ -72,7 +72,8 @@ interface SlackTextParams<K extends string> {
   sections: Record<K, Section>
   fillOrder: ReadonlyArray<{ key: K; partial: boolean }>
   showOrder: ReadonlyArray<K>
-  runUrl: string
+  /** Link to the run; the footer pointing at it is dropped when absent. */
+  runUrl?: string
 }
 
 /**
@@ -87,7 +88,9 @@ export function renderSlackText<K extends string>({
   showOrder,
   runUrl,
 }: SlackTextParams<K>): string {
-  const footerLines = ['', `<${runUrl}|See full list with more details>`]
+  const footerLines = runUrl
+    ? ['', `<${runUrl}|See full list with more details>`]
+    : []
   const listed = (Object.values(sections) as Array<Section>).filter(
     ({ items }) => items.length > 0
   )
@@ -128,7 +131,7 @@ export interface ReportOptions {
   dryRun: boolean
   /** Rendered dry-run PRs, one per repo. */
   previews: Array<string>
-  runUrl: string
+  runUrl?: string
 }
 
 /** Report groups with their headings, in the order they are shown. */
