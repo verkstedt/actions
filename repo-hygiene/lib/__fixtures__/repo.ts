@@ -7,7 +7,7 @@ import {
   type FakeOctokit,
   type Handler,
 } from './octokit.ts'
-import type { Logger } from '../types.ts'
+import type { GitHub, Logger } from '../types.ts'
 
 export interface FakeRepoOptions {
   /** Tree paths without a leading `/`. */
@@ -16,6 +16,8 @@ export interface FakeRepoOptions {
   files?: Record<string, string>
   openPrs?: Array<unknown>
   contributors?: Array<unknown>
+  /** Repository settings, over a public repo with everything enabled. */
+  repository?: Partial<GitHub.Repository>
   /** Extra or overriding handlers, keyed like `'pulls.listFiles'`. */
   handlers?: Record<string, Handler>
 }
@@ -30,9 +32,21 @@ export function fakeRepo({
   files = {},
   openPrs = [],
   contributors,
+  repository = {},
   handlers = {},
 }: FakeRepoOptions = {}): FakeOctokit {
   return fakeOctokit({
+    'repos.get': () => ({
+      private: false,
+      visibility: 'public',
+      has_issues: true,
+      has_projects: true,
+      has_wiki: true,
+      allow_auto_merge: false,
+      delete_branch_on_merge: false,
+      ...repository,
+    }),
+    'repos.update': () => ({}),
     'pulls.list': () => openPrs,
     'git.getRef': () => ({ object: { sha: 'head' } }),
     'git.getCommit': () => ({ tree: { sha: 'tree' } }),

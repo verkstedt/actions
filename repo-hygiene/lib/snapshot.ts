@@ -132,6 +132,11 @@ export async function takeSnapshot(
     })
   )
 
+  const getRepository = memoise(
+    async (): Promise<GitHub.Repository> =>
+      (await octokit.rest.repos.get({ owner: org, repo })).data
+  )
+
   return {
     org,
     repo,
@@ -142,6 +147,7 @@ export async function takeSnapshot(
     readFirstExistingFile,
     readFileOnDefaultBranch,
     listOpenPrs,
+    getRepository,
     octokit,
     log,
     workingCopy,

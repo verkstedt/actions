@@ -48633,6 +48633,7 @@ async function takeSnapshot(octokit, repoMeta, { org, log }) {
         state: 'open',
         per_page: 100,
     }));
+    const getRepository = memoise(async () => (await octokit.rest.repos.get({ owner: org, repo })).data);
     return {
         org,
         repo,
@@ -48643,6 +48644,7 @@ async function takeSnapshot(octokit, repoMeta, { org, log }) {
         readFirstExistingFile,
         readFileOnDefaultBranch,
         listOpenPrs,
+        getRepository,
         octokit,
         log,
         workingCopy,
@@ -49290,7 +49292,83 @@ const dependabotReviewers = {
     },
 };
 
+;// CONCATENATED MODULE: ./lib/checks/repo-settings.ts
+/**
+ * Keeps the repository settings tidy:
+ *
+ * - wiki off
+ * - projects off
+ * - issues off, unless the repo is public
+ * - auto-merge on
+ * - branches deleted once merged
+ *
+ * All differing settings are changed with one repository update; no PR
+ * is involved.
+ */
+/**
+ * Wikis and projects are never used, so they only add tabs. Issues
+ * are kept on public repos, where outsiders report through them, and
+ * switched off elsewhere. Auto-merge and deleting the branch after a
+ * merge keep Dependabot PRs from piling up.
+ */
+function listWantedSettings(repository) {
+    const isPublic = repository.visibility
+        ? repository.visibility === 'public'
+        : !repository.private;
+    return [
+        { setting: 'has_wiki', value: false, describe: 'disable the wiki' },
+        { setting: 'has_projects', value: false, describe: 'disable projects' },
+        ...(isPublic
+            ? []
+            : [
+                {
+                    setting: 'has_issues',
+                    value: false,
+                    describe: 'disable issues (not a public repo)',
+                },
+            ]),
+        { setting: 'allow_auto_merge', value: true, describe: 'allow auto-merge' },
+        {
+            setting: 'delete_branch_on_merge',
+            value: true,
+            describe: 'delete branches once merged',
+        },
+    ];
+}
+/** Repository settings every repo should have; see `listWantedSettings`. */
+const repoSettings = {
+    name: 'repo-settings',
+    run: async (snapshot) => {
+        const repository = await snapshot.getRepository();
+        const changes = listWantedSettings(repository).filter(({ setting, value }) => repository[setting] !== value);
+        if (changes.length === 0) {
+            return [{ level: 'info', summary: 'repository settings are as wanted' }];
+        }
+        const describes = changes.map((c) => c.describe);
+        return [
+            {
+                level: 'info',
+                summary: 'repository settings differ from the wanted ones',
+                details: describes,
+                fix: {
+                    kind: 'action',
+                    describe: describes.join(', '),
+                    run: async (ctx) => {
+                        await ctx.octokit.rest.repos.update({
+                            owner: ctx.org,
+                            repo: ctx.repo,
+                            ...Object.fromEntries(changes.map((c) => [c.setting, c.value])),
+                        });
+                        return describes.join(', ');
+                    },
+                },
+            },
+        ];
+    },
+};
+
 ;// CONCATENATED MODULE: ./lib/run.ts
+
 
 
 
@@ -49299,6 +49377,7 @@ const dependabotReviewers = {
 
 /** Every check the action runs, in order. */
 const allChecks = [
+    repoSettings,
     dependabotReviewers,
     dependabotConfig,
     codeowners,

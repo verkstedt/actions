@@ -93,6 +93,17 @@ export namespace GitHub {
     requested_reviewers?: Array<User> | null
     requested_teams?: Array<Team> | null
   }
+
+  /** The settings of a repository, as `GET /repos/{owner}/{repo}` returns them. */
+  export interface Repository {
+    private: boolean
+    visibility?: string
+    has_issues: boolean
+    has_projects: boolean
+    has_wiki: boolean
+    allow_auto_merge?: boolean
+    delete_branch_on_merge?: boolean
+  }
 }
 
 export type Level = 'info' | 'warning' | 'error'
@@ -177,6 +188,7 @@ export interface Snapshot {
   ) => Promise<FileContent | null>
   readFileOnDefaultBranch: (path: string) => Promise<FileContent | null>
   listOpenPrs: () => Promise<Array<GitHub.PullRequest>>
+  getRepository: () => Promise<GitHub.Repository>
   octokit: Octokit
   log: Logger
 }
