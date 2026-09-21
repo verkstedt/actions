@@ -65,13 +65,14 @@ describe('runChecks', () => {
     assert.deepEqual(findings, [
       {
         repo: 'org/r',
+        check: 'broken',
         level: 'error',
         summary: 'broken check failed',
         details: ['kaboom'],
       },
-      { repo: 'org/r', level: 'info', summary: 'ok' },
+      { repo: 'org/r', check: 'fine', level: 'info', summary: 'ok' },
     ])
-    assert.deepEqual(log.calls.error, ['broken check failed: kaboom'])
+    assert.deepEqual(log.calls.error, ['broken: check failed: kaboom'])
   })
 
   it('fails a blind overwrite of a pending fix', async () => {

@@ -2,9 +2,13 @@ import * as core from '@actions/core'
 import * as actionsGithub from '@actions/github'
 
 import { getErrorMessage } from './lib/github.ts'
-import { actionsLogger } from './lib/log.ts'
+import { formatLogLine } from './lib/log.ts'
 import { publish } from './lib/report.ts'
 import { runAudit } from './lib/run.ts'
+import type { LogSink } from './lib/types.ts'
+
+/** Logs through the workflow commands GitHub Actions renders. */
+const actionsLog: LogSink = (entry) => core[entry.level](formatLogLine(entry))
 
 const DRY_RUN_NOTE =
   '> [!NOTE]\n> This is a **dry run**. No pull requests will be created. Will show info about ones that would, here in the summary.\n\n'
@@ -48,7 +52,7 @@ async function main(): Promise<void> {
     runId: inputs.runId,
     runAttempt: inputs.runAttempt,
     requireAppAccess: true,
-    log: actionsLogger,
+    log: actionsLog,
   })
 
   await publish(findings, { repoCount, dryRun: inputs.dryRun, previews })

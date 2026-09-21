@@ -1,4 +1,5 @@
 import { getErrorMessage } from './github.ts'
+import { createLogger } from './log.ts'
 import type { RepoSnapshot } from './snapshot.ts'
 import type { Check, CheckFinding, Finding } from './types.ts'
 
@@ -37,13 +38,14 @@ function acceptFileFix(
 
 function createErrorFinding(
   check: Check,
-  e: unknown,
+  error: unknown,
   snapshot: RepoSnapshot
 ): Finding {
-  const message = getErrorMessage(e)
-  snapshot.log.error(`${check.name} check failed: ${message}`)
+  const message = getErrorMessage(error)
+  snapshot.log.error(`check failed: ${message}`)
   return {
     repo: `${snapshot.org}/${snapshot.repo}`,
+    check: check.name,
     level: 'error',
     summary: `${check.name} check failed`,
     details: [message],
@@ -51,9 +53,10 @@ function createErrorFinding(
 }
 
 /**
- * Run `checks` in order against `snapshot`. Each finding gets its
- * `repo`; file fixes become the working copy later checks read. A
- * check that throws yields one error finding and the rest still run.
+ * Run `checks` in order against `snapshot`. Each check logs under its
+ * own name and each finding gets its `repo` and `check`; file fixes
+ * become the working copy later checks read. A check that throws
+ * yields one error finding and the rest still run.
  */
 export async function runChecks(
   checks: Array<Check>,
@@ -63,16 +66,20 @@ export async function runChecks(
   const findings: Array<Finding> = []
   for (const check of checks) {
     snapshot.workingCopy.startCheck()
+    const checkSnapshot: RepoSnapshot = {
+      ...snapshot,
+      log: createLogger({ check: check.name }, snapshot.log),
+    }
     let found: Array<CheckFinding> | undefined
     try {
-      found = await check.run(snapshot)
-    } catch (e) {
-      findings.push(createErrorFinding(check, e, snapshot))
+      found = await check.run(checkSnapshot)
+    } catch (error) {
+      findings.push(createErrorFinding(check, error, checkSnapshot))
     }
     if (found !== undefined) {
       const fixedByThisCheck = new Set<string>()
       for (const checkFinding of found) {
-        const finding: Finding = { repo, ...checkFinding }
+        const finding: Finding = { repo, check: check.name, ...checkFinding }
         acceptFileFix(finding, check, snapshot, fixedByThisCheck)
         findings.push(finding)
       }

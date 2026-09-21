@@ -6,9 +6,10 @@ import { parseArgs } from 'node:util'
 import { getOctokit } from '@actions/github'
 
 import { getErrorMessage } from './lib/github.ts'
+import { formatLogPrefix } from './lib/log.ts'
 import { report } from './lib/report.ts'
 import { runAudit } from './lib/run.ts'
-import type { Logger } from './lib/types.ts'
+import type { LogSink } from './lib/types.ts'
 
 const HELP = `Usage: repo-hygiene --org <org> [--repos <glob>[,<glob>…]]…
 
@@ -63,10 +64,18 @@ if (!token) {
   process.exit(64) // EX_USAGE
 }
 
-const logger: Logger = {
-  info: (message) => process.stdout.write(`${message}\n`),
-  warning: (message) => process.stdout.write(`WARNING: ${message}\n`),
-  error: (message) => process.stdout.write(`ERROR: ${message}\n`),
+const LEVEL_LABELS = { info: '', warning: 'WARNING: ', error: 'ERROR: ' }
+
+/**
+ * `1/3. repo, check: WARNING: message`, the context dimmed on a TTY.
+ * Info goes to stdout, warnings and errors to stderr.
+ */
+const log: LogSink = (entry) => {
+  const stream = entry.level === 'info' ? process.stdout : process.stderr
+  const prefix = formatLogPrefix(entry)
+  const dim = (text: string) => (stream.isTTY ? `\x1b[2m${text}\x1b[22m` : text)
+  const context = prefix ? `${dim(`${prefix}:`)} ` : ''
+  stream.write(`${context}${LEVEL_LABELS[entry.level]}${entry.message}\n`)
 }
 
 try {
@@ -79,7 +88,7 @@ try {
     runId: 0,
     runAttempt: 0,
     requireAppAccess: false,
-    log: logger,
+    log,
   })
   const { summary } = report(findings, { repoCount, dryRun: true, previews })
   process.stdout.write(`${summary}\n`)

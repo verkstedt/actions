@@ -40277,6 +40277,36 @@ exports.visitAsync = visitAsync;
 /******/ 	};
 /******/ })();
 /******/ 
+/******/ /* webpack/runtime/create fake namespace object */
+/******/ (() => {
+/******/ 	var getProto = Object.getPrototypeOf ? (obj) => (Object.getPrototypeOf(obj)) : (obj) => (obj.__proto__);
+/******/ 	var leafPrototypes;
+/******/ 	// create a fake namespace object
+/******/ 	// mode & 1: value is a module id, require it
+/******/ 	// mode & 2: merge all properties of value into the ns
+/******/ 	// mode & 4: return value when already ns object
+/******/ 	// mode & 16: return value when it's Promise-like
+/******/ 	// mode & 8|1: behave like require
+/******/ 	__nccwpck_require__.t = function(value, mode) {
+/******/ 		if(mode & 1) value = this(value);
+/******/ 		if(mode & 8) return value;
+/******/ 		if(typeof value === 'object' && value) {
+/******/ 			if((mode & 4) && value.__esModule) return value;
+/******/ 			if((mode & 16) && typeof value.then === 'function') return value;
+/******/ 		}
+/******/ 		var ns = Object.create(null);
+/******/ 		__nccwpck_require__.r(ns);
+/******/ 		var def = {};
+/******/ 		leafPrototypes = leafPrototypes || [null, getProto({}), getProto([]), getProto(getProto)];
+/******/ 		for(var current = mode & 2 && value; typeof current == 'object' && !~leafPrototypes.indexOf(current); current = getProto(current)) {
+/******/ 			Object.getOwnPropertyNames(current).forEach((key) => (def[key] = () => (value[key])));
+/******/ 		}
+/******/ 		def['default'] = () => (value);
+/******/ 		__nccwpck_require__.d(ns, def);
+/******/ 		return ns;
+/******/ 	};
+/******/ })();
+/******/ 
 /******/ /* webpack/runtime/define property getters */
 /******/ (() => {
 /******/ 	// define getter functions for harmony exports
@@ -40312,6 +40342,52 @@ exports.visitAsync = visitAsync;
 /************************************************************************/
 var __webpack_exports__ = {};
 
+// NAMESPACE OBJECT: ../node_modules/@actions/core/lib/platform.js
+var platform_namespaceObject = {};
+__nccwpck_require__.r(platform_namespaceObject);
+__nccwpck_require__.d(platform_namespaceObject, {
+  arch: () => (arch),
+  getDetails: () => (getDetails),
+  isLinux: () => (isLinux),
+  isMacOS: () => (isMacOS),
+  isWindows: () => (isWindows),
+  platform: () => (platform)
+});
+
+// NAMESPACE OBJECT: ../node_modules/@actions/core/lib/core.js
+var core_namespaceObject = {};
+__nccwpck_require__.r(core_namespaceObject);
+__nccwpck_require__.d(core_namespaceObject, {
+  ExitCode: () => (ExitCode),
+  addPath: () => (addPath),
+  debug: () => (debug),
+  endGroup: () => (endGroup),
+  error: () => (error),
+  exportVariable: () => (exportVariable),
+  getBooleanInput: () => (getBooleanInput),
+  getIDToken: () => (getIDToken),
+  getInput: () => (getInput),
+  getMultilineInput: () => (getMultilineInput),
+  getState: () => (getState),
+  group: () => (group),
+  info: () => (info),
+  isDebug: () => (isDebug),
+  markdownSummary: () => (markdownSummary),
+  notice: () => (notice),
+  platform: () => (platform_namespaceObject),
+  saveState: () => (saveState),
+  setCommandEcho: () => (setCommandEcho),
+  setFailed: () => (setFailed),
+  setOutput: () => (setOutput),
+  setSecret: () => (setSecret),
+  startGroup: () => (startGroup),
+  summary: () => (summary_summary),
+  toPlatformPath: () => (toPlatformPath),
+  toPosixPath: () => (toPosixPath),
+  toWin32Path: () => (toWin32Path),
+  warning: () => (warning)
+});
+
 // NAMESPACE OBJECT: ../node_modules/@actions/github/lib/github.js
 var github_namespaceObject = {};
 __nccwpck_require__.r(github_namespaceObject);
@@ -40329,7 +40405,7 @@ const external_os_namespaceObject = __WEBPACK_EXTERNAL_createRequire(import.meta
  * Sanitizes an input into a string so it can be passed into issueCommand safely
  * @param input input to sanitize into a string
  */
-function utils_toCommandValue(input) {
+function toCommandValue(input) {
     if (input === null || input === undefined) {
         return '';
     }
@@ -40344,7 +40420,7 @@ function utils_toCommandValue(input) {
  * @returns The command properties to send with the actual annotation command
  * See IssueCommandProperties: https://github.com/actions/runner/blob/main/src/Runner.Worker/ActionCommandManager.cs#L646
  */
-function utils_toCommandProperties(annotationProperties) {
+function toCommandProperties(annotationProperties) {
     if (!Object.keys(annotationProperties).length) {
         return {};
     }
@@ -40394,12 +40470,12 @@ function utils_toCommandProperties(annotationProperties) {
  * This is an internal utility function that powers the public API functions
  * such as setSecret, warning, error, and exportVariable.
  */
-function command_issueCommand(command, properties, message) {
+function issueCommand(command, properties, message) {
     const cmd = new Command(command, properties, message);
     process.stdout.write(cmd.toString() + external_os_namespaceObject.EOL);
 }
-function command_issue(name, message = '') {
-    command_issueCommand(name, {}, message);
+function issue(name, message = '') {
+    issueCommand(name, {}, message);
 }
 const CMD_STRING = '::';
 class Command {
@@ -40436,13 +40512,13 @@ class Command {
     }
 }
 function escapeData(s) {
-    return utils_toCommandValue(s)
+    return toCommandValue(s)
         .replace(/%/g, '%25')
         .replace(/\r/g, '%0D')
         .replace(/\n/g, '%0A');
 }
 function escapeProperty(s) {
-    return utils_toCommandValue(s)
+    return toCommandValue(s)
         .replace(/%/g, '%25')
         .replace(/\r/g, '%0D')
         .replace(/\n/g, '%0A')
@@ -40462,7 +40538,7 @@ const external_fs_namespaceObject = __WEBPACK_EXTERNAL_createRequire(import.meta
 
 
 
-function file_command_issueFileCommand(command, message) {
+function issueFileCommand(command, message) {
     const filePath = process.env[`GITHUB_${command}`];
     if (!filePath) {
         throw new Error(`Unable to find environment variable for file command ${command}`);
@@ -40470,13 +40546,13 @@ function file_command_issueFileCommand(command, message) {
     if (!external_fs_namespaceObject.existsSync(filePath)) {
         throw new Error(`Missing file at path: ${filePath}`);
     }
-    external_fs_namespaceObject.appendFileSync(filePath, `${utils_toCommandValue(message)}${external_os_namespaceObject.EOL}`, {
+    external_fs_namespaceObject.appendFileSync(filePath, `${toCommandValue(message)}${external_os_namespaceObject.EOL}`, {
         encoding: 'utf8'
     });
 }
-function file_command_prepareKeyValueMessage(key, value) {
+function prepareKeyValueMessage(key, value) {
     const delimiter = `ghadelimiter_${external_crypto_namespaceObject.randomUUID()}`;
-    const convertedValue = utils_toCommandValue(value);
+    const convertedValue = toCommandValue(value);
     // These should realistically never happen, but just in case someone finds a
     // way to exploit uuid generation let's not allow keys or values that contain
     // the delimiter.
@@ -40493,8 +40569,10 @@ function file_command_prepareKeyValueMessage(key, value) {
 const external_path_namespaceObject = __WEBPACK_EXTERNAL_createRequire(import.meta.url)("path");
 // EXTERNAL MODULE: external "http"
 var external_http_ = __nccwpck_require__(8611);
+var external_http_namespaceObject = /*#__PURE__*/__nccwpck_require__.t(external_http_, 2);
 // EXTERNAL MODULE: external "https"
 var external_https_ = __nccwpck_require__(5692);
+var external_https_namespaceObject = /*#__PURE__*/__nccwpck_require__.t(external_https_, 2);
 ;// CONCATENATED MODULE: ../node_modules/@actions/http-client/lib/proxy.js
 function getProxyUrl(reqUrl) {
     const usingSsl = reqUrl.protocol === 'https:';
@@ -40587,7 +40665,7 @@ class DecodedURL extends URL {
 }
 //# sourceMappingURL=proxy.js.map
 // EXTERNAL MODULE: ../node_modules/tunnel/index.js
-var node_modules_tunnel = __nccwpck_require__(776);
+var tunnel = __nccwpck_require__(776);
 // EXTERNAL MODULE: ../node_modules/undici/index.js
 var undici = __nccwpck_require__(734);
 ;// CONCATENATED MODULE: ../node_modules/@actions/http-client/lib/index.js
@@ -40665,7 +40743,7 @@ const HttpResponseRetryCodes = [
     HttpCodes.ServiceUnavailable,
     HttpCodes.GatewayTimeout
 ];
-const RetryableHttpVerbs = (/* unused pure expression or super */ null && (['OPTIONS', 'GET', 'DELETE', 'HEAD']));
+const RetryableHttpVerbs = ['OPTIONS', 'GET', 'DELETE', 'HEAD'];
 const ExponentialBackoffCeiling = 10;
 const ExponentialBackoffTimeSlice = 5;
 class HttpClientError extends Error {
@@ -40711,7 +40789,7 @@ function isHttps(requestUrl) {
     const parsedUrl = new URL(requestUrl);
     return parsedUrl.protocol === 'https:';
 }
-class lib_HttpClient {
+class HttpClient {
     constructor(userAgent, handlers, requestOptions) {
         this._ignoreSslError = false;
         this._allowRedirects = true;
@@ -41014,7 +41092,7 @@ class lib_HttpClient {
     }
     getAgentDispatcher(serverUrl) {
         const parsedUrl = new URL(serverUrl);
-        const proxyUrl = pm.getProxyUrl(parsedUrl);
+        const proxyUrl = getProxyUrl(parsedUrl);
         const useProxy = proxyUrl && proxyUrl.hostname;
         if (!useProxy) {
             return;
@@ -41025,7 +41103,7 @@ class lib_HttpClient {
         const info = {};
         info.parsedUrl = requestUrl;
         const usingSsl = info.parsedUrl.protocol === 'https:';
-        info.httpModule = usingSsl ? https : http;
+        info.httpModule = usingSsl ? external_https_namespaceObject : external_http_namespaceObject;
         const defaultPort = usingSsl ? 443 : 80;
         info.options = {};
         info.options.host = info.parsedUrl.hostname;
@@ -41124,7 +41202,7 @@ class lib_HttpClient {
     }
     _getAgent(parsedUrl) {
         let agent;
-        const proxyUrl = pm.getProxyUrl(parsedUrl);
+        const proxyUrl = getProxyUrl(parsedUrl);
         const useProxy = proxyUrl && proxyUrl.hostname;
         if (this._keepAlive && useProxy) {
             agent = this._proxyAgent;
@@ -41139,7 +41217,7 @@ class lib_HttpClient {
         const usingSsl = parsedUrl.protocol === 'https:';
         let maxSockets = 100;
         if (this.requestOptions) {
-            maxSockets = this.requestOptions.maxSockets || http.globalAgent.maxSockets;
+            maxSockets = this.requestOptions.maxSockets || external_http_.globalAgent.maxSockets;
         }
         // This is `useProxy` again, but we need to check `proxyURl` directly for TypeScripts's flow analysis.
         if (proxyUrl && proxyUrl.hostname) {
@@ -41164,7 +41242,7 @@ class lib_HttpClient {
         // if tunneling agent isn't assigned create a new agent
         if (!agent) {
             const options = { keepAlive: this._keepAlive, maxSockets };
-            agent = usingSsl ? new https.Agent(options) : new http.Agent(options);
+            agent = usingSsl ? new external_https_.Agent(options) : new external_http_.Agent(options);
             this._agent = agent;
         }
         if (usingSsl && this._ignoreSslError) {
@@ -41187,7 +41265,7 @@ class lib_HttpClient {
             return proxyAgent;
         }
         const usingSsl = parsedUrl.protocol === 'https:';
-        proxyAgent = new ProxyAgent(Object.assign({ uri: proxyUrl.href, pipelining: !this._keepAlive ? 0 : 1 }, ((proxyUrl.username || proxyUrl.password) && {
+        proxyAgent = new undici.ProxyAgent(Object.assign({ uri: proxyUrl.href, pipelining: !this._keepAlive ? 0 : 1 }, ((proxyUrl.username || proxyUrl.password) && {
             token: `Basic ${Buffer.from(`${proxyUrl.username}:${proxyUrl.password}`).toString('base64')}`
         })));
         this._proxyAgentDispatcher = proxyAgent;
@@ -41318,7 +41396,7 @@ class BasicCredentialHandler {
         });
     }
 }
-class auth_BearerCredentialHandler {
+class BearerCredentialHandler {
     constructor(token) {
         this.token = token;
     }
@@ -41376,13 +41454,13 @@ var oidc_utils_awaiter = (undefined && undefined.__awaiter) || function (thisArg
 
 
 
-class oidc_utils_OidcClient {
+class OidcClient {
     static createHttpClient(allowRetry = true, maxRetry = 10) {
         const requestOptions = {
             allowRetries: allowRetry,
             maxRetries: maxRetry
         };
-        return new HttpClient('actions/oidc-client', [new BearerCredentialHandler(oidc_utils_OidcClient.getRequestToken())], requestOptions);
+        return new HttpClient('actions/oidc-client', [new BearerCredentialHandler(OidcClient.getRequestToken())], requestOptions);
     }
     static getRequestToken() {
         const token = process.env['ACTIONS_ID_TOKEN_REQUEST_TOKEN'];
@@ -41401,7 +41479,7 @@ class oidc_utils_OidcClient {
     static getCall(id_token_url) {
         return oidc_utils_awaiter(this, void 0, void 0, function* () {
             var _a;
-            const httpclient = oidc_utils_OidcClient.createHttpClient();
+            const httpclient = OidcClient.createHttpClient();
             const res = yield httpclient
                 .getJson(id_token_url)
                 .catch(error => {
@@ -41420,13 +41498,13 @@ class oidc_utils_OidcClient {
         return oidc_utils_awaiter(this, void 0, void 0, function* () {
             try {
                 // New ID Token is requested from action service
-                let id_token_url = oidc_utils_OidcClient.getIDTokenUrl();
+                let id_token_url = OidcClient.getIDTokenUrl();
                 if (audience) {
                     const encodedAudience = encodeURIComponent(audience);
                     id_token_url = `${id_token_url}&audience=${encodedAudience}`;
                 }
                 debug(`ID token url is ${id_token_url}`);
-                const id_token = yield oidc_utils_OidcClient.getCall(id_token_url);
+                const id_token = yield OidcClient.getCall(id_token_url);
                 setSecret(id_token);
                 return id_token;
             }
@@ -41715,7 +41793,7 @@ const _summary = new Summary();
 /**
  * @deprecated use `core.summary`
  */
-const markdownSummary = (/* unused pure expression or super */ null && (_summary));
+const markdownSummary = _summary;
 const summary_summary = _summary;
 //# sourceMappingURL=summary.js.map
 ;// CONCATENATED MODULE: ../node_modules/@actions/core/lib/path-utils.js
@@ -41749,7 +41827,7 @@ function toWin32Path(pth) {
  * @return string The platform-specific path.
  */
 function toPlatformPath(pth) {
-    return pth.replace(/[/\\]/g, path.sep);
+    return pth.replace(/[/\\]/g, external_path_namespaceObject.sep);
 }
 //# sourceMappingURL=path-utils.js.map
 // EXTERNAL MODULE: external "string_decoder"
@@ -42824,16 +42902,16 @@ var exec_awaiter = (undefined && undefined.__awaiter) || function (thisArg, _arg
  * @param     options            optional exec options.  See ExecOptions
  * @returns   Promise<number>    exit code
  */
-function exec_exec(commandLine, args, options) {
+function exec(commandLine, args, options) {
     return exec_awaiter(this, void 0, void 0, function* () {
-        const commandArgs = tr.argStringToArray(commandLine);
+        const commandArgs = argStringToArray(commandLine);
         if (commandArgs.length === 0) {
             throw new Error(`Parameter 'commandLine' cannot be null or empty.`);
         }
         // Path to tool to execute should be first arg
         const toolPath = commandArgs[0];
         args = commandArgs.slice(1).concat(args || []);
-        const runner = new tr.ToolRunner(toolPath, args, options);
+        const runner = new ToolRunner(toolPath, args, options);
         return runner.exec();
     });
 }
@@ -42853,8 +42931,8 @@ function getExecOutput(commandLine, args, options) {
         let stdout = '';
         let stderr = '';
         //Using string decoder covers the case where a mult-byte character is split
-        const stdoutDecoder = new StringDecoder('utf8');
-        const stderrDecoder = new StringDecoder('utf8');
+        const stdoutDecoder = new external_string_decoder_.StringDecoder('utf8');
+        const stderrDecoder = new external_string_decoder_.StringDecoder('utf8');
         const originalStdoutListener = (_a = options === null || options === void 0 ? void 0 : options.listeners) === null || _a === void 0 ? void 0 : _a.stdout;
         const originalStdErrListener = (_b = options === null || options === void 0 ? void 0 : options.listeners) === null || _b === void 0 ? void 0 : _b.stderr;
         const stdErrListener = (data) => {
@@ -42870,7 +42948,7 @@ function getExecOutput(commandLine, args, options) {
             }
         };
         const listeners = Object.assign(Object.assign({}, options === null || options === void 0 ? void 0 : options.listeners), { stdout: stdOutListener, stderr: stdErrListener });
-        const exitCode = yield exec_exec(commandLine, args, Object.assign(Object.assign({}, options), { listeners }));
+        const exitCode = yield exec(commandLine, args, Object.assign(Object.assign({}, options), { listeners }));
         //flush any remaining characters
         stdout += stdoutDecoder.end();
         stderr += stderrDecoder.end();
@@ -42895,10 +42973,10 @@ var platform_awaiter = (undefined && undefined.__awaiter) || function (thisArg, 
 
 
 const getWindowsInfo = () => platform_awaiter(void 0, void 0, void 0, function* () {
-    const { stdout: version } = yield exec.getExecOutput('powershell -command "(Get-CimInstance -ClassName Win32_OperatingSystem).Version"', undefined, {
+    const { stdout: version } = yield getExecOutput('powershell -command "(Get-CimInstance -ClassName Win32_OperatingSystem).Version"', undefined, {
         silent: true
     });
-    const { stdout: name } = yield exec.getExecOutput('powershell -command "(Get-CimInstance -ClassName Win32_OperatingSystem).Caption"', undefined, {
+    const { stdout: name } = yield getExecOutput('powershell -command "(Get-CimInstance -ClassName Win32_OperatingSystem).Caption"', undefined, {
         silent: true
     });
     return {
@@ -42908,7 +42986,7 @@ const getWindowsInfo = () => platform_awaiter(void 0, void 0, void 0, function* 
 });
 const getMacOsInfo = () => platform_awaiter(void 0, void 0, void 0, function* () {
     var _a, _b, _c, _d;
-    const { stdout } = yield exec.getExecOutput('sw_vers', undefined, {
+    const { stdout } = yield getExecOutput('sw_vers', undefined, {
         silent: true
     });
     const version = (_b = (_a = stdout.match(/ProductVersion:\s*(.+)/)) === null || _a === void 0 ? void 0 : _a[1]) !== null && _b !== void 0 ? _b : '';
@@ -42919,7 +42997,7 @@ const getMacOsInfo = () => platform_awaiter(void 0, void 0, void 0, function* ()
     };
 });
 const getLinuxInfo = () => platform_awaiter(void 0, void 0, void 0, function* () {
-    const { stdout } = yield exec.getExecOutput('lsb_release', ['-i', '-r', '-s'], {
+    const { stdout } = yield getExecOutput('lsb_release', ['-i', '-r', '-s'], {
         silent: true
     });
     const [name, version] = stdout.trim().split('\n');
@@ -43024,7 +43102,7 @@ function exportVariable(name, val) {
  * console.log(`Using token: ${apiToken}`); // Outputs: "Using token: ***"
  * ```
  */
-function core_setSecret(secret) {
+function setSecret(secret) {
     issueCommand('add-mask', {}, secret);
 }
 /**
@@ -43039,7 +43117,7 @@ function addPath(inputPath) {
     else {
         issueCommand('add-path', {}, inputPath);
     }
-    process.env['PATH'] = `${inputPath}${path.delimiter}${process.env['PATH']}`;
+    process.env['PATH'] = `${inputPath}${external_path_namespaceObject.delimiter}${process.env['PATH']}`;
 }
 /**
  * Gets the value of an input.
@@ -43108,10 +43186,10 @@ function getBooleanInput(name, options) {
 function setOutput(name, value) {
     const filePath = process.env['GITHUB_OUTPUT'] || '';
     if (filePath) {
-        return file_command_issueFileCommand('OUTPUT', file_command_prepareKeyValueMessage(name, value));
+        return issueFileCommand('OUTPUT', prepareKeyValueMessage(name, value));
     }
     process.stdout.write(external_os_namespaceObject.EOL);
-    command_issueCommand('set-output', { name }, utils_toCommandValue(value));
+    issueCommand('set-output', { name }, toCommandValue(value));
 }
 /**
  * Enables or disables the echoing of commands into stdout for the rest of the step.
@@ -43146,7 +43224,7 @@ function isDebug() {
  * Writes debug message to user log
  * @param message debug message
  */
-function core_debug(message) {
+function debug(message) {
     issueCommand('debug', {}, message);
 }
 /**
@@ -43155,7 +43233,7 @@ function core_debug(message) {
  * @param properties optional properties to add to the annotation.
  */
 function error(message, properties = {}) {
-    command_issueCommand('error', utils_toCommandProperties(properties), message instanceof Error ? message.toString() : message);
+    issueCommand('error', toCommandProperties(properties), message instanceof Error ? message.toString() : message);
 }
 /**
  * Adds a warning issue
@@ -43163,7 +43241,7 @@ function error(message, properties = {}) {
  * @param properties optional properties to add to the annotation.
  */
 function warning(message, properties = {}) {
-    command_issueCommand('warning', utils_toCommandProperties(properties), message instanceof Error ? message.toString() : message);
+    issueCommand('warning', toCommandProperties(properties), message instanceof Error ? message.toString() : message);
 }
 /**
  * Adds a notice issue
@@ -47482,25 +47560,54 @@ async function listTargetRepos(octokit, { org, reposFilter }) {
 }
 
 ;// CONCATENATED MODULE: ./lib/log.ts
-
-/** Logs through the workflow commands GitHub Actions renders. */
-const actionsLogger = {
-    info: (message) => info(message),
-    warning: (message) => warning(message),
-    error: (message) => error(message),
-};
+/** `1/3. repo, check`, or as much of it as the context has. */
+function formatLogPrefix({ repo, check }) {
+    const parts = [
+        repo ? `${repo.position}/${repo.total}. ${repo.name}` : undefined,
+        check,
+    ];
+    return parts.filter(Boolean).join(', ');
+}
+/** `prefix: message`, or the bare message without context. */
+function formatLogLine(entry) {
+    const prefix = formatLogPrefix(entry);
+    return prefix ? `${prefix}: ${entry.message}` : entry.message;
+}
+function isContextLogger(log) {
+    return 'context' in log && 'sink' in log;
+}
+/** A plain logger, such as the recording one in tests, as a sink. */
+function sinkFor(base) {
+    return (entry) => base[entry.level](formatLogLine(entry));
+}
 /**
- * A logger prefixing every message with `prefix` before handing it to
- * `base`, so a per-repo logger can be built once and handed down.
- * Tests pass their own recording object instead.
+ * A logger whose entries carry `context`. Built from a sink, it feeds
+ * that sink; built from another logger, it adds to that logger’s
+ * context and feeds the same sink. A plain logger as `base` receives
+ * formatted lines instead.
  */
-function log_createLogger(prefix, base = actionsLogger) {
-    const withPrefix = (message) => prefix ? `${prefix} ${message}` : message;
-    return {
-        info: (message) => base.info(withPrefix(message)),
-        warning: (message) => base.warning(withPrefix(message)),
-        error: (message) => base.error(withPrefix(message)),
+function log_createLogger(context, base) {
+    let sink;
+    let merged = context;
+    if (typeof base === 'function') {
+        sink = base;
+    }
+    else if (isContextLogger(base)) {
+        sink = base.sink;
+        merged = { ...base.context, ...context };
+    }
+    else {
+        sink = sinkFor(base);
+    }
+    const log = (level) => (message) => sink({ ...merged, level, message });
+    const logger = {
+        context: merged,
+        sink,
+        info: log('info'),
+        warning: log('warning'),
+        error: log('error'),
     };
+    return logger;
 }
 
 ;// CONCATENATED MODULE: ./lib/report.ts
@@ -47671,8 +47778,8 @@ function pickGroupHeading(group, findings) {
     return (dry && DRY_RUN_HEADINGS[group]) || HEADINGS[group];
 }
 /** `results_json`’s shape: every field but the fix. */
-function getFindingsNotifyData({ repo, level, summary, url, details, reviewers, outcome, }) {
-    return { repo, level, summary, url, details, reviewers, outcome };
+function getFindingsNotifyData({ repo, check, level, summary, url, details, reviewers, outcome, }) {
+    return { repo, check, level, summary, url, details, reviewers, outcome };
 }
 /** The action outputs and job summary for `findings`. */
 function report(findings, { repoCount, dryRun, previews, runUrl }) {
@@ -48045,6 +48152,7 @@ async function requestReviewersOneByOne(octokit, { org, repo, pullNumber, users,
 
 
 
+
 const WORKFLOW_LINK = 'https://github.com/verkstedt/actions/blob/HEAD/repo-hygiene/';
 /** Also how PRs from earlier runs are recognised. */
 const BRANCH_PREFIX = 'chore/repo-hygiene/';
@@ -48272,12 +48380,16 @@ async function applyFixes(findings, snapshot, run) {
     await applyActionFixes(findings, { snapshot, run, pr, files });
     for (const finding of findings.filter(isPending)) {
         finding.outcome = { status: 'none' };
-        snapshot.log.info(finding.summary);
+        const log = finding.check
+            ? log_createLogger({ check: finding.check }, snapshot.log)
+            : snapshot.log;
+        log.info(finding.summary);
     }
     return { findings, preview };
 }
 
 ;// CONCATENATED MODULE: ./lib/run-checks.ts
+
 
 function run_checks_normalise(path) {
     return path.replace(/^\//, '');
@@ -48306,37 +48418,43 @@ function acceptFileFix(finding, check, snapshot, fixedByThisCheck) {
         fixedByThisCheck.add(path);
     }
 }
-function createErrorFinding(check, e, snapshot) {
-    const message = getErrorMessage(e);
-    snapshot.log.error(`${check.name} check failed: ${message}`);
+function createErrorFinding(check, error, snapshot) {
+    const message = getErrorMessage(error);
+    snapshot.log.error(`check failed: ${message}`);
     return {
         repo: `${snapshot.org}/${snapshot.repo}`,
+        check: check.name,
         level: 'error',
         summary: `${check.name} check failed`,
         details: [message],
     };
 }
 /**
- * Run `checks` in order against `snapshot`. Each finding gets its
- * `repo`; file fixes become the working copy later checks read. A
- * check that throws yields one error finding and the rest still run.
+ * Run `checks` in order against `snapshot`. Each check logs under its
+ * own name and each finding gets its `repo` and `check`; file fixes
+ * become the working copy later checks read. A check that throws
+ * yields one error finding and the rest still run.
  */
 async function runChecks(checks, snapshot) {
     const repo = `${snapshot.org}/${snapshot.repo}`;
     const findings = [];
     for (const check of checks) {
         snapshot.workingCopy.startCheck();
+        const checkSnapshot = {
+            ...snapshot,
+            log: log_createLogger({ check: check.name }, snapshot.log),
+        };
         let found;
         try {
-            found = await check.run(snapshot);
+            found = await check.run(checkSnapshot);
         }
-        catch (e) {
-            findings.push(createErrorFinding(check, e, snapshot));
+        catch (error) {
+            findings.push(createErrorFinding(check, error, checkSnapshot));
         }
         if (found !== undefined) {
             const fixedByThisCheck = new Set();
             for (const checkFinding of found) {
-                const finding = { repo, ...checkFinding };
+                const finding = { repo, check: check.name, ...checkFinding };
                 acceptFileFix(finding, check, snapshot, fixedByThisCheck);
                 findings.push(finding);
             }
@@ -48978,11 +49096,13 @@ async function runAudit(octokit, { org, dryRun, reposFilter, runId, runAttempt, 
     for (const check of checks) {
         await check.setup?.(octokit);
     }
-    log.info(`Auditing ${repos.length} repo(s) in ${org}${dryRun ? ' (dry run)' : ''}`);
+    log_createLogger({}, log).info(`Auditing ${repos.length} repo(s) in ${org}${dryRun ? ' (dry run)' : ''}`);
     const findings = [];
     const previews = [];
     for (const [index, repoMeta] of repos.entries()) {
-        const repoLog = log_createLogger(`${index + 1}/${repos.length}. ${org}/${repoMeta.name}:`, log);
+        const repoLog = log_createLogger({
+            repo: { name: repoMeta.name, position: index + 1, total: repos.length },
+        }, log);
         try {
             const audited = await auditRepo(octokit, repoMeta, {
                 org,
@@ -49012,6 +49132,8 @@ async function runAudit(octokit, { org, dryRun, reposFilter, runId, runAttempt, 
 
 
 
+/** Logs through the workflow commands GitHub Actions renders. */
+const actionsLog = (entry) => core_namespaceObject[entry.level](formatLogLine(entry));
 const DRY_RUN_NOTE = '> [!NOTE]\n> This is a **dry run**. No pull requests will be created. Will show info about ones that would, here in the summary.\n\n';
 function readInputs() {
     const { /* context */ "_": context } = github_namespaceObject;
@@ -49047,7 +49169,7 @@ async function main() {
         runId: inputs.runId,
         runAttempt: inputs.runAttempt,
         requireAppAccess: true,
-        log: actionsLogger,
+        log: actionsLog,
     });
     await publish(findings, { repoCount, dryRun: inputs.dryRun, previews });
 }

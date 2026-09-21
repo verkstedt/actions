@@ -1,11 +1,10 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 
-import { fakeLog } from './__fixtures__/log.ts'
 import { createHttpError, listCallsTo } from './__fixtures__/octokit.ts'
 import { fakeRepo } from './__fixtures__/repo.ts'
 import { runAudit } from './run.ts'
-import type { Check } from './types.ts'
+import type { Check, LogEntry } from './types.ts'
 
 const repos = [
   { name: 'a', default_branch: 'main', size: 1 },
@@ -30,7 +29,7 @@ describe('runAudit', () => {
         },
       },
     })
-    const log = fakeLog()
+    const entries: Array<LogEntry> = []
     const { findings, previews, repoCount } = await runAudit(octokit, {
       org: 'org',
       dryRun: true,
@@ -38,7 +37,7 @@ describe('runAudit', () => {
       runId: 0,
       runAttempt: 0,
       requireAppAccess: false,
-      log,
+      log: (entry) => entries.push(entry),
       checks: [check],
     })
     assert.deepEqual(seen, ['a', 'b'])
@@ -55,7 +54,17 @@ describe('runAudit', () => {
       listCallsTo(octokit, 'GET /installation/repositories').length,
       0
     )
-    assert.match(log.calls.info[0], /Auditing 2 repo\(s\) in org \(dry run\)/)
+    assert.deepEqual(entries[0], {
+      level: 'info',
+      message: 'Auditing 2 repo(s) in org (dry run)',
+    })
+    assert.deepEqual(
+      entries.filter((e) => e.check).map((e) => [e.repo, e.check]),
+      [
+        [{ name: 'a', position: 1, total: 2 }, 'spy'],
+        [{ name: 'b', position: 2, total: 2 }, 'spy'],
+      ]
+    )
   })
 
   it('turns a repo that cannot be audited into an error finding', async () => {
@@ -77,7 +86,7 @@ describe('runAudit', () => {
       runId: 0,
       runAttempt: 0,
       requireAppAccess: false,
-      log: fakeLog(),
+      log: () => {},
       checks: [],
     })
     assert.deepEqual(

@@ -7,7 +7,7 @@ import {
   listTargetRepos,
 } from './github.ts'
 import { createLogger } from './log.ts'
-import type { Check, Finding, GitHub, Logger, Octokit } from './types.ts'
+import type { Check, Finding, GitHub, LogSink, Octokit } from './types.ts'
 
 /** Every check the action runs, in order. */
 export const allChecks: Array<Check> = [dependabotConfig, codeowners]
@@ -21,7 +21,7 @@ export interface RunAuditOptions {
   runAttempt: number
   /** Fail unless the token is an App installation that sees every repo. */
   requireAppAccess: boolean
-  log: Logger
+  log: LogSink
   checks?: Array<Check>
 }
 
@@ -70,7 +70,7 @@ export async function runAudit(
   for (const check of checks) {
     await check.setup?.(octokit)
   }
-  log.info(
+  createLogger({}, log).info(
     `Auditing ${repos.length} repo(s) in ${org}${dryRun ? ' (dry run)' : ''}`
   )
 
@@ -78,7 +78,9 @@ export async function runAudit(
   const previews: Array<string> = []
   for (const [index, repoMeta] of repos.entries()) {
     const repoLog = createLogger(
-      `${index + 1}/${repos.length}. ${org}/${repoMeta.name}:`,
+      {
+        repo: { name: repoMeta.name, position: index + 1, total: repos.length },
+      },
       log
     )
     try {

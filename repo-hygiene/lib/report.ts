@@ -238,6 +238,7 @@ function pickGroupHeading(group: GroupKey, findings: Array<Finding>): string {
 /** `results_json`’s shape: every field but the fix. */
 function getFindingsNotifyData({
   repo,
+  check,
   level,
   summary,
   url,
@@ -245,7 +246,7 @@ function getFindingsNotifyData({
   reviewers,
   outcome,
 }: Finding): Omit<Finding, 'fix'> {
-  return { repo, level, summary, url, details, reviewers, outcome }
+  return { repo, check, level, summary, url, details, reviewers, outcome }
 }
 
 /** The action outputs and job summary for `findings`. */

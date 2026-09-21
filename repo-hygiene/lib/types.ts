@@ -3,7 +3,28 @@ import type { Document, YAMLMap } from 'yaml'
 
 export type Octokit = ReturnType<typeof getOctokit>
 
-/** Workflow log output; see `createLogger`. */
+export type LogLevel = 'info' | 'warning' | 'error'
+
+/** What a log line is about; nothing for run-wide lines. */
+export interface LogContext {
+  repo?: {
+    name: string
+    /** 1-based. */
+    position: number
+    total: number
+  }
+  check?: string
+}
+
+export interface LogEntry extends LogContext {
+  level: LogLevel
+  message: string
+}
+
+/** Where log entries end up; the entry points decide how to print them. */
+export type LogSink = (entry: LogEntry) => void
+
+/** What the code logs through; see `createLogger`. */
 export interface Logger {
   info: (message: string) => void
   warning: (message: string) => void
@@ -128,6 +149,8 @@ export type Fix = FileFix | ActionFix
 /** One thing a check found. */
 export interface Finding {
   repo: string
+  /** Name of the check that produced it; absent for runner findings. */
+  check?: string
   level: Level
   summary: string
   url?: string
@@ -138,8 +161,8 @@ export interface Finding {
   outcome?: Outcome
 }
 
-/** What a check returns: a finding before the runner stamps `repo`. */
-export type CheckFinding = Omit<Finding, 'repo' | 'outcome'>
+/** What a check returns: a finding before the runner stamps `repo` and `check`. */
+export type CheckFinding = Omit<Finding, 'repo' | 'check' | 'outcome'>
 
 /** The only thing a check receives; see `takeSnapshot`. */
 export interface Snapshot {

@@ -1,5 +1,6 @@
 import { parseCodeowners } from './codeowners.ts'
 import { commitChange, getErrorMessage } from './github.ts'
+import { createLogger } from './log.ts'
 import {
   CODEOWNERS_PATHS,
   chooseReviewers,
@@ -362,7 +363,10 @@ export async function applyFixes(
 
   for (const finding of findings.filter(isPending)) {
     finding.outcome = { status: 'none' }
-    snapshot.log.info(finding.summary)
+    const log = finding.check
+      ? createLogger({ check: finding.check }, snapshot.log)
+      : snapshot.log
+    log.info(finding.summary)
   }
   return { findings, preview }
 }
