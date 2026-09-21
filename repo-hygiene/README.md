@@ -35,3 +35,10 @@ npm run build -w repo-hygiene
 `dist/` is committed because GitHub Actions runs the action straight
 from the repo without `npm install`. Always rebuild before committing
 changes in the source code.
+
+To see what the action would do without a workflow run, audit repos
+from your machine as a dry run:
+
+```sh
+npx repo-hygiene --help
+```
