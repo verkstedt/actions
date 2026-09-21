@@ -327,6 +327,7 @@ async function main() {
       })
       const existingHygienePrs = openPrs.filter(
         (pr) =>
+          pr.user?.type === 'Bot' &&
           pr.head.ref.startsWith(BRANCH_PREFIX) &&
           pr.head.repo?.full_name?.toLowerCase() === repoSlug.toLowerCase()
       )
