@@ -1,3 +1,15 @@
+/**
+ * Makes sure `CODEOWNERS` covers every file Dependabot touches, so its
+ * PRs get reviewers.
+ *
+ * In the hygiene PR:
+ *
+ * - missing lines are added, with owners taken from lines that already
+ *   cover a related pattern
+ * - when no owner can be guessed, the line gets an `@OWNER` placeholder
+ *   and a review comment asks for a real one
+ */
+
 import {
   buildCodeownersAddition,
   findCoveringLine,

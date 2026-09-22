@@ -1,3 +1,15 @@
+/**
+ * Makes sure `.github/dependabot.yaml`:
+ *
+ * - exists
+ * - has an entry for every package ecosystem the repo uses
+ * - has a `version`
+ * - has a cooldown
+ *
+ * Entries are built from the org-wide template in `verkstedt/.github`
+ * and written in the hygiene PR.
+ */
+
 import {
   detectEcosystems,
   loadDependabotTemplate,

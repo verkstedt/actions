@@ -3,11 +3,9 @@
 Check the hygiene of repos in an organisation and open PR fixing the
 issues.
 
-Current checks:
-
-- Make sure there’s `.github/dependabot.yaml` with entries for things
-  that are used in the repo and `CODEOWNERS` set up in a way that will
-  make dependabot PRs get reviewers
+The checks live in [`lib/checks/`](./lib/checks/), one file per check.
+Each file starts with a description of what the check looks for and
+how it fixes it.
 
 Usual approach is to create a dedicated repository in your organisation
 (e.g. `repo-hygiene-runner`) with `on: schedule:` trigger that calls

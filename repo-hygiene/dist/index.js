@@ -48916,6 +48916,17 @@ function planDependabotChange({ detected, existing, template, log, }) {
 }
 
 ;// CONCATENATED MODULE: ./lib/checks/codeowners.ts
+/**
+ * Makes sure `CODEOWNERS` covers every file Dependabot touches, so its
+ * PRs get reviewers.
+ *
+ * In the hygiene PR:
+ *
+ * - missing lines are added, with owners taken from lines that already
+ *   cover a related pattern
+ * - when no owner can be guessed, the line gets an `@OWNER` placeholder
+ *   and a review comment asks for a real one
+ */
 
 
 
@@ -49016,6 +49027,17 @@ const codeowners = {
 };
 
 ;// CONCATENATED MODULE: ./lib/checks/dependabot-config.ts
+/**
+ * Makes sure `.github/dependabot.yaml`:
+ *
+ * - exists
+ * - has an entry for every package ecosystem the repo uses
+ * - has a `version`
+ * - has a cooldown
+ *
+ * Entries are built from the org-wide template in `verkstedt/.github`
+ * and written in the hygiene PR.
+ */
 
 /** Where dependabot looks for its config, in order of precedence. */
 const DEPENDABOT_PATHS = ['.github/dependabot.yaml', '.github/dependabot.yml'];
