@@ -90,6 +90,58 @@ const config = {
         },
       ],
 
+      'Cargo.toml': [
+        '@semantic-release/exec',
+        {
+          // `[package]` or `[workspace.package]`, plus Cargo.lock
+          // Function source ends up in a double–quoted shell string and is
+          // interpolated by semantic-release, so it must not contain `"`,
+          // `$` or backticks.
+          prepareCmd: [
+            'set -e\n',
+            'node -e "(',
+            async function bumpCargoVersion(version) {
+              const { readFile, writeFile } = await import('node:fs/promises')
+              const lines = (await readFile('Cargo.toml', 'utf8')).split('\n')
+              let section = null
+              let isDone = false
+              const newLines = lines.map((line) => {
+                if (line.startsWith('[')) {
+                  section = line.replace(/#.*/, '').trim()
+                }
+                const isPackageSection =
+                  section === '[package]' || section === '[workspace.package]'
+                if (
+                  !isDone &&
+                  isPackageSection &&
+                  /^version\s*=\s*[\x22\x27]/.test(line)
+                ) {
+                  isDone = true
+                  return line.replace(
+                    /\x22[^\x22]*\x22|\x27[^\x27]*\x27/,
+                    JSON.stringify(version)
+                  )
+                }
+                return line
+              })
+              if (!isDone) {
+                throw new Error(
+                  'Cargo.toml: no version found in [package] or [workspace.package]'
+                )
+              }
+              await writeFile('Cargo.toml', newLines.join('\n'))
+            }.toString(),
+            `)(process.argv[1])" "\${nextRelease.version}"\n`,
+            unindent(`
+              if [ -f Cargo.lock ]
+              then
+                cargo update --workspace --offline || cargo update --workspace
+              fi
+            `),
+          ].join(''),
+        },
+      ],
+
       'package.json': [
         '@semantic-release/npm',
         {
@@ -154,6 +206,8 @@ const config = {
           'package-lock.json',
           'yarn.lock',
           'version.txt',
+          'Cargo.toml',
+          'Cargo.lock',
         ],
         message: unindent(`
           chore(release): \${nextRelease.version}

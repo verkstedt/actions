@@ -6,7 +6,8 @@ name: Create Release
 # releaser to decide if it’s major, minor or patch release.
 #
 # - Push a commit bumping up a version:
-#   - Version in whichever of these exist: `package.json` and `version.txt`
+#   - Version in whichever of these exist: `package.json`, `version.txt`
+#     and `Cargo.toml` (and `Cargo.lock`)
 #   - Release notes in `CHANGELOG.md`
 # - Create git version tag
 # - Create GitHub release
