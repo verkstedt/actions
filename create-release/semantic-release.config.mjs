@@ -7,9 +7,6 @@ function unindent(text) {
   return textTrimLines.replaceAll(new RegExp(`^${indent}`, 'gm'), '')
 }
 
-const packageJsonMissing = !fs.existsSync('package.json')
-const versionTxtMissing = !fs.existsSync('version.txt')
-
 /**
  * @type {import('semantic-release').GlobalConfig}
  */
@@ -82,31 +79,27 @@ const config = {
       },
     ],
 
-    // Update version.txt
-    ...(versionTxtMissing
-      ? []
-      : [
-          [
-            '@semantic-release/exec',
-            {
-              prepareCmd: unindent(`
-          echo "\${nextRelease.version}" > version.txt
-        `),
-            },
-          ],
-        ]),
+    // Update version in whichever of these files exist
+    ...Object.entries({
+      'version.txt': [
+        '@semantic-release/exec',
+        {
+          prepareCmd: unindent(`
+            echo "\${nextRelease.version}" > version.txt
+          `),
+        },
+      ],
 
-    // Update version package.json (do not publish to npm registry)
-    ...(packageJsonMissing
-      ? []
-      : [
-          [
-            '@semantic-release/npm',
-            {
-              npmPublish: false,
-            },
-          ],
-        ]),
+      'package.json': [
+        '@semantic-release/npm',
+        {
+          // Do not publish to npm registry, just bump the version
+          npmPublish: false,
+        },
+      ],
+    })
+      .filter(([path]) => fs.existsSync(path))
+      .map(([, plugin]) => plugin),
 
     // Write release notes to CHANGELOG.md
     ['@semantic-release/changelog'],
