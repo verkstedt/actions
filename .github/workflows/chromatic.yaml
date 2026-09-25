@@ -122,7 +122,7 @@ jobs:
 
       - name: Publish to Chromatic
         id: publish
-        uses: chromaui/action@v18.0.1
+        uses: chromaui/action@94713c544284a14195de3b50ef24301579f1877e # v18.0.1
         with:
           workingDir: ${{ steps.sb-dir.outputs.relative-dir }}
           projectToken: ${{ secrets.CHROMATIC_PROJECT_TOKEN }}
