@@ -7,9 +7,6 @@ function unindent(text) {
   return textTrimLines.replaceAll(new RegExp(`^${indent}`, 'gm'), '')
 }
 
-const packageJsonMissing = !fs.existsSync('package.json')
-const versionTxtMissing = !fs.existsSync('version.txt')
-
 /**
  * @type {import('semantic-release').GlobalConfig}
  */
@@ -82,31 +79,80 @@ const config = {
       },
     ],
 
-    // Update version.txt
-    ...(versionTxtMissing
-      ? []
-      : [
-          [
-            '@semantic-release/exec',
-            {
-              prepareCmd: unindent(`
-          echo "\${nextRelease.version}" > version.txt
-        `),
-            },
-          ],
-        ]),
+    // Update version in whichever of these files exist
+    ...Object.entries({
+      'version.txt': [
+        '@semantic-release/exec',
+        {
+          prepareCmd: unindent(`
+            echo "\${nextRelease.version}" > version.txt
+          `),
+        },
+      ],
 
-    // Update version package.json (do not publish to npm registry)
-    ...(packageJsonMissing
-      ? []
-      : [
-          [
-            '@semantic-release/npm',
-            {
-              npmPublish: false,
-            },
-          ],
-        ]),
+      'Cargo.toml': [
+        '@semantic-release/exec',
+        {
+          // `[package]` and/or `[workspace.package]`, plus Cargo.lock
+          // Function source ends up in a double–quoted shell string and is
+          // interpolated by semantic-release, so it must not contain `"`,
+          // `$` or backticks.
+          prepareCmd: [
+            'set -e\n',
+            'node -e "(',
+            async function bumpCargoVersion(version) {
+              const { readFile, writeFile } = await import('node:fs/promises')
+              const lines = (await readFile('Cargo.toml', 'utf8')).split('\n')
+              let section = null
+              const updatedSections = new Set()
+              const newLines = lines.map((line) => {
+                const trimmedLine = line.trim()
+                if (trimmedLine.startsWith('[')) {
+                  section = trimmedLine.replace(/#.*/, '').trim()
+                }
+                const isPackageSection =
+                  section === '[package]' || section === '[workspace.package]'
+                if (
+                  isPackageSection &&
+                  !updatedSections.has(section) &&
+                  /^version\s*=\s*[\x22\x27]/.test(trimmedLine)
+                ) {
+                  updatedSections.add(section)
+                  return line.replace(
+                    /\x22[^\x22]*\x22|\x27[^\x27]*\x27/,
+                    JSON.stringify(version)
+                  )
+                }
+                return line
+              })
+              if (updatedSections.size === 0) {
+                throw new Error(
+                  'Cargo.toml: no version found in [package] or [workspace.package]'
+                )
+              }
+              await writeFile('Cargo.toml', newLines.join('\n'))
+            }.toString(),
+            `)(process.argv[1])" "\${nextRelease.version}"\n`,
+            unindent(`
+              if [ -f Cargo.lock ]
+              then
+                cargo update --workspace --offline || cargo update --workspace
+              fi
+            `),
+          ].join(''),
+        },
+      ],
+
+      'package.json': [
+        '@semantic-release/npm',
+        {
+          // Do not publish to npm registry, just bump the version
+          npmPublish: false,
+        },
+      ],
+    })
+      .filter(([path]) => fs.existsSync(path))
+      .map(([, plugin]) => plugin),
 
     // Write release notes to CHANGELOG.md
     ['@semantic-release/changelog'],
@@ -161,6 +207,8 @@ const config = {
           'package-lock.json',
           'yarn.lock',
           'version.txt',
+          'Cargo.toml',
+          'Cargo.lock',
         ],
         message: unindent(`
           chore(release): \${nextRelease.version}
