@@ -91,8 +91,6 @@ jobs:
     if: contains(needs.initial-setup.outputs.scripts, ',lint:js,')
     needs:
       - initial-setup
-    env:
-      ESLINT_REPORT_JSON: '${{ inputs.working-directory }}/eslint_report.json'
     steps:
       - name: Set environment variables
         env:
@@ -115,14 +113,81 @@ jobs:
           github-npm-registry-personal-access-token: ${{ secrets.GH_NPM_REGISTRY_PERSONAL_ACCESS_TOKEN }}
 
       # Once https://github.com/actions/setup-node/issues/96 is
-      # implemented, next two steps can be replaced with just:
+      # implemented, this step can be replaced with just:
       #
       # - name: Lint JS
-      #   run: npm lint:js
+      #   run: npm run lint:js
 
       - name: Lint JS
-        id: lint
         working-directory: ${{ inputs.working-directory }}
+        env:
+          # ESLint formatter printing both human–readable output and
+          # GitHub workflow commands, which create annotations.
+          #
+          # Keep it compatible with ESLint 8 and newer: CommonJS
+          # (.cjs), no dependencies, and only the result fields present
+          # in all these versions.
+          ESLINT_FORMATTER_GITHUB: |
+            const path = require('node:path');
+
+            const workspace = process.env.GITHUB_WORKSPACE || process.cwd();
+
+            function escapeData(s) {
+              return String(s)
+                .replace(/%/g, '%25')
+                .replace(/\r/g, '%0D')
+                .replace(/\n/g, '%0A');
+            }
+
+            function escapeProperty(s) {
+              return escapeData(s).replace(/:/g, '%3A').replace(/,/g, '%2C');
+            }
+
+            /**
+             * Format ESLint results as human–readable lines, each followed
+             * by a GitHub `::error` or `::warning` workflow command.
+             *
+             * @param {import('eslint').ESLint.LintResult[]} results
+             * @returns {string}
+             */
+            module.exports = (results) => {
+              const lines = [];
+              let errors = 0;
+              let warnings = 0;
+              for (const { filePath, messages } of results) {
+                const file = path.relative(workspace, filePath);
+                for (const m of messages) {
+                  const level = m.fatal || m.severity === 2 ? 'error' : 'warning';
+                  if (level === 'error') {
+                    errors += 1;
+                  } else {
+                    warnings += 1;
+                  }
+                  const rule = m.ruleId ?? 'fatal';
+                  const line = m.line ?? 1;
+                  const column = m.column ?? 1;
+                  lines.push(`${file}:${line}:${column}  ${level}  ${m.message}  ${rule}`);
+                  const properties = [
+                    `file=${escapeProperty(file)}`,
+                    `line=${line}`,
+                    `col=${column}`,
+                    m.endLine != null && `endLine=${m.endLine}`,
+                    m.endColumn != null && `endColumn=${m.endColumn}`,
+                    `title=${escapeProperty(`ESLint: ${rule}`)}`,
+                  ].filter(Boolean);
+                  lines.push(
+                    `::${level} ${properties.join(',')}::${escapeData(m.message)}`
+                  );
+                }
+              }
+              if (errors + warnings > 0) {
+                lines.push(
+                  '',
+                  `${errors + warnings} problems (${errors} errors, ${warnings} warnings)`
+                );
+              }
+              return lines.join('\n');
+            };
         run: |
           set -- npm run lint:js
 
@@ -131,37 +196,15 @@ jobs:
           then
             if echo "$npm_script" | grep -qE '\<(eslint|next lint)\>([^;&|]*)($|"\$@")'
             then
-              set -- "$@" -- --format=json --output-file=${{ env.ESLINT_REPORT_JSON }}
+              formatter="$RUNNER_TEMP/eslint-formatter-github.cjs"
+              printf '%s\n' "$ESLINT_FORMATTER_GITHUB" > "$formatter"
+              set -- "$@" -- --format="$formatter"
             else
               echo "::warning::lint:js script seems to be using eslint in a way that doesn’t pass arguments to it. Please fix that. e.g. \`eslint .\` or \`sh -c 'eslint . \"\$@\" && echo OK' _\`"
             fi
           fi
 
-          set +e
           "$@"
-          exit_code=$?
-          set -e
-
-          if [ -s "${ESLINT_REPORT_JSON}" ]
-          then
-            echo "generated-eslint-report=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "generated-eslint-report=false" >> "$GITHUB_OUTPUT"
-          fi
-
-          exit "$exit_code"
-
-      - name: Annotate
-        # Using always(), because we want this step to run even if (or
-        # rather: especially if) linting fails, so that lint errors are
-        # visible in the PR.
-        if: always() && steps.lint.outputs.generated-eslint-report == 'true'
-        uses: ataylorme/eslint-annotate-action@5a8d8ab89a57679e90c32750e0f382e9d8570750 # 4.0.0
-        with:
-          report-json: ${{ env.ESLINT_REPORT_JSON }}
-          # Also report errors in files not changed in the PR,
-          # assuring there are no errors in the whole codebase
-          only-pr-files: false
 
   lint-ts:
     name: 'Lint TS'
