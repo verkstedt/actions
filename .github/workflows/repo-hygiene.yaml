@@ -131,3 +131,13 @@ jobs:
           slack-bot-token: ${{ secrets.slack-bot-token }}
           slack-channel-id: ${{ inputs.slack-channel-id }}
           text: '`repo-hygiene` run failed before summary — see workflow logs'
+
+      - name: Notify Slack (back to normal)
+        if: inputs.notify-slack && !inputs.dry-run && steps.audit.conclusion == 'success'
+        uses: verkstedt/actions/notify-status@v1
+        with:
+          status: success
+          slack-bot-token: ${{ secrets.slack-bot-token }}
+          slack-channel-id: ${{ inputs.slack-channel-id }}
+          text: '`repo-hygiene` is back to normal after previous failure'
+          only-after-failure: true

@@ -1,19 +1,31 @@
 name: 'Notify about failure on main branch'
 
-# This MUST be specified as a job that `needs` all of the other jobs int
-# he worflow:
+# This MUST be specified as a job that `needs` all of the other jobs in
+# the workflow:
 #
-# notify-main-branch-failures:
+# notify-main-branch-failure:
 #   name: Notify about failure on main branch
 #   needs:
 #     - setup
 #     - …
-#   if: failure() && github.ref == 'refs/heads/main'
-#   uses: verkstedt/actions/.github/workflows/notify-main-failures.yaml@v1
+#   if: always() && github.ref_name == github.event.repository.default_branch
+#   uses: verkstedt/actions/.github/workflows/notify-main-branch-failure.yaml@v1
+#   with:
+#     status: ${{ contains(needs.*.result, 'failure') && 'failure' || 'success' }}
+#   permissions:
+#     actions: read
 #   secrets: inherit
 
 on:
   workflow_call:
+    inputs:
+      status:
+        description: >
+          Result of the calling workflow’s jobs. One of: success, failure.
+          Not passing it is deprecated and treated as passing `failure`.
+        type: string
+        required: false
+        default: ''
 
 env:
   NEXT_TELEMETRY_DISABLED: 1
@@ -22,9 +34,13 @@ jobs:
   notify-main-branch-failure:
     name: Notify about failure on main branch
     runs-on: ubuntu-latest
+    permissions:
+      actions: read
     steps:
       - name: Verify workflow setup
         shell: sh
+        env:
+          STATUS: ${{ inputs.status }}
         run: |
           exit_code=0
 
@@ -41,11 +57,36 @@ jobs:
             exit_code=78
           fi
 
+          case "$STATUS" in
+            success|failure)
+              ;;
+            '')
+              # shellcheck disable=SC1111
+              echo "::warning::Not passing “status” input is deprecated and will become an error. See usage in https://github.com/verkstedt/actions/blob/v1/.github/workflows/notify-main-branch-failure.yaml"
+              ;;
+            *)
+              # shellcheck disable=SC1111
+              echo "::error::Invalid status input “$STATUS”. Expected success or failure."
+              exit_code=78
+              ;;
+          esac
+
           exit $exit_code
 
       - name: Notify about failure on main branch
+        if: inputs.status != 'success'
         uses: verkstedt/actions/notify-status@v1
         with:
           status: failure
+          slack-bot-token: ${{ secrets.SLACK_BOT_TOKEN }}
+          slack-channel-id: ${{ vars.SLACK_CHANNEL_ID }}
+
+      - name: Notify about main branch being back to normal
+        if: inputs.status == 'success'
+        uses: verkstedt/actions/notify-status@v1
+        with:
+          status: success
+          text: Back to normal after previous failure.
+          only-after-failure: true
           slack-bot-token: ${{ secrets.SLACK_BOT_TOKEN }}
           slack-channel-id: ${{ vars.SLACK_CHANNEL_ID }}

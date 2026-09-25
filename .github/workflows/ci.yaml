@@ -384,6 +384,22 @@ jobs:
           text: |
             ${{ steps.check.outputs.output }}
 
+      - name: Notify about violations being resolved
+        if: >
+          success()
+          && (
+            github.ref == 'refs/heads/main'
+            || github.ref == 'refs/heads/production'
+            || startsWith(github.ref, 'refs/tags/v')
+          )
+        uses: verkstedt/actions/notify-status@v1
+        with:
+          status: success
+          slack-bot-token: ${{ secrets.SLACK_BOT_TOKEN }}
+          slack-channel-id: ${{ vars.LICENSE_VIOLATIONS_SLACK_CHANNEL_ID }}
+          text: License violations resolved.
+          only-after-failure: this-job-only
+
   # We prefer to have lint script split into lint:*, but will use
   # generic lint if no lint:* scripts are found
   lint-fallback:
