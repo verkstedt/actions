@@ -22,7 +22,7 @@ on:
       status:
         description: >
           Result of the calling workflow’s jobs. One of: success, failure.
-          Not passing it is deprecated and treated as failure.
+          Not passing it is deprecated and treated as passing `failure`.
         type: string
         required: false
         default: ''
