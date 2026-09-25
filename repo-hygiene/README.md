@@ -3,11 +3,9 @@
 Check the hygiene of repos in an organisation and open PR fixing the
 issues.
 
-Current checks:
-
-- Make sure there’s `.github/dependabot.yaml` with entries for things
-  that are used in the repo and `CODEOWNERS` set up in a way that will
-  make dependabot PRs get reviewers
+The checks live in [`lib/checks/`](./lib/checks/), one file per check.
+Each file starts with a description of what the check looks for and
+how it fixes it.
 
 Usual approach is to create a dedicated repository in your organisation
 (e.g. `repo-hygiene-runner`) with `on: schedule:` trigger that calls
@@ -26,11 +24,19 @@ Slack notification) lives at
 ## Development
 
 ```sh
-cd repo-hygiene
 npm install
-npm run build
+npm test -w repo-hygiene
+npm run lint
+npm run build -w repo-hygiene
 ```
 
 `dist/` is committed because GitHub Actions runs the action straight
 from the repo without `npm install`. Always rebuild before committing
-changes to `index.mjs`.
+changes in the source code.
+
+To see what the action would do without a workflow run, audit repos
+from your machine as a dry run:
+
+```sh
+npx repo-hygiene --help
+```

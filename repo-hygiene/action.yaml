@@ -7,8 +7,8 @@ inputs:
   github-token:
     description: >
       Must belong to a GitHub App installed on ALL
-      org repos with READ AND WRITE access to Contents and
-      Pull requests, and READ access to Members.
+      org repos with READ AND WRITE access to Contents,
+      Pull requests and Administration, and READ access to Members.
       Typically minted by `verkstedt/actions/create-github-app-token@v1`.
     required: true
   org:
@@ -32,7 +32,11 @@ inputs:
 
 outputs:
   results_json:
-    description: JSON-encoded list of per-repo result objects.
+    description: >
+      JSON-encoded list of findings, one per thing a check found in a
+      repo: `repo`, `level` (info/warning/error), `summary`, optional
+      `url`, `details` and `reviewers`, and `outcome` with `status`
+      (fixed/would-fix/skipped/failed/none), optional `url` and `detail`.
   slack_text:
     description: >
       Pre-formatted run summary suitable for Slack `text:`, sized to fit
@@ -44,4 +48,4 @@ outputs:
 
 runs:
   using: node24
-  main: dist/index.mjs
+  main: dist/index.js
