@@ -106,15 +106,16 @@ const config = {
               let section = null
               let isDone = false
               const newLines = lines.map((line) => {
-                if (line.startsWith('[')) {
-                  section = line.replace(/#.*/, '').trim()
+                const trimmedLine = line.trim()
+                if (trimmedLine.startsWith('[')) {
+                  section = trimmedLine.replace(/#.*/, '').trim()
                 }
                 const isPackageSection =
                   section === '[package]' || section === '[workspace.package]'
                 if (
                   !isDone &&
                   isPackageSection &&
-                  /^version\s*=\s*[\x22\x27]/.test(line)
+                  /^version\s*=\s*[\x22\x27]/.test(trimmedLine)
                 ) {
                   isDone = true
                   return line.replace(
