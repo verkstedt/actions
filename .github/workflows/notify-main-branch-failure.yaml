@@ -1,15 +1,15 @@
 name: 'Notify about failure on main branch'
 
-# This MUST be specified as a job that `needs` all of the other jobs int
-# he worflow:
+# This MUST be specified as a job that `needs` all of the other jobs in
+# the workflow:
 #
-# notify-main-branch-failures:
+# notify-main-branch-failure:
 #   name: Notify about failure on main branch
 #   needs:
 #     - setup
 #     - …
-#   if: failure() && github.ref == 'refs/heads/main'
-#   uses: verkstedt/actions/.github/workflows/notify-main-failures.yaml@v1
+#   if: failure() && github.ref_name == github.event.repository.default_branch
+#   uses: verkstedt/actions/.github/workflows/notify-main-branch-failure.yaml@v1
 #   secrets: inherit
 
 on:
