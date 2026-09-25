@@ -15,12 +15,140 @@ inputs:
     description: 'Optional custom text to include in the message.'
     required: false
     default: ''
+  only-after-failure:
+    description: >
+      Send the message only when the previous completed run of the same
+      workflow on the same branch failed. Useful for “back to normal”
+      notifications. One of:
+      `false`;
+      `true` — the whole previous run failed;
+      `this-job-only` — the job this step runs in failed in the previous
+      run (runs where it was skipped are ignored).
+      Requires `actions: read` permission for `github-token`.
+    required: false
+    default: 'false'
+  github-token:
+    description: >
+      Token used to look up the previous run with `only-after-failure`.
+      Required permissions: `actions: read` (and `contents: read` for
+      private repositories).
+    required: false
+    default: ${{ github.token }}
 
 runs:
   using: composite
   steps:
+    - name: Check whether previous run failed
+      id: previous
+      if: inputs.only-after-failure != 'false' && inputs.only-after-failure != ''
+      uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+      env:
+        BRANCH: ${{ github.head_ref || github.ref_name }}
+        ONLY_AFTER_FAILURE: ${{ inputs.only-after-failure }}
+      with:
+        github-token: ${{ inputs.github-token }}
+        result-encoding: string
+        script: |
+          const { BRANCH: branch, ONLY_AFTER_FAILURE: scope, RUNNER_NAME: runnerName } = process.env
+          const { owner, repo } = context.repo
+          const decisive = new Set(['success', 'failure'])
+          // Stop looking eventually, e.g. when the job was renamed.
+          const maxRuns = 100
+
+          if (scope !== 'true' && scope !== 'this-job-only') {
+            throw new Error(`Invalid only-after-failure input “${scope}”. Expected true, false or this-job-only.`)
+          }
+
+          /**
+           * Display name of the job this step runs in, including the
+           * “caller / ” prefix in reusable workflows.
+           * @returns {Promise<string>}
+           */
+          const getCurrentJobName = async () => {
+            const jobs = await github.paginate(
+              github.rest.actions.listJobsForWorkflowRun,
+              { owner, repo, run_id: context.runId, per_page: 100 },
+            )
+            const job = jobs.find(
+              (job) => job.status === 'in_progress' && job.runner_name === runnerName,
+            )
+            if (!job) {
+              throw new Error(`Could not find the current job (runner “${runnerName}”).`)
+            }
+            return job.name
+          }
+
+          /** @returns {Promise<string | undefined>} */
+          const getConclusion = async (run, jobName) => {
+            if (!jobName) {
+              // Cancelled and skipped runs say nothing about the state
+              // of the branch.
+              return decisive.has(run.conclusion) ? run.conclusion : undefined
+            }
+            const jobs = await github.paginate(
+              github.rest.actions.listJobsForWorkflowRun,
+              { owner, repo, run_id: run.id, per_page: 100 },
+            )
+            // A job can be skipped in a run (e.g. by its `if`), in
+            // which case look further back.
+            return jobs.find(
+              (job) => job.name === jobName && decisive.has(job.conclusion),
+            )?.conclusion
+          }
+
+          /** @returns {Promise<string | undefined>} */
+          const findPreviousConclusion = async () => {
+            const jobName = scope === 'this-job-only' ? await getCurrentJobName() : undefined
+            if (jobName) {
+              core.info(`Checking job “${jobName}”`)
+            }
+            const { data: currentRun } = await github.rest.actions.getWorkflowRun({
+              owner,
+              repo,
+              run_id: context.runId,
+            })
+            const pages = github.paginate.iterator(
+              github.rest.actions.listWorkflowRuns,
+              {
+                owner,
+                repo,
+                workflow_id: currentRun.workflow_id,
+                branch,
+                status: 'completed',
+                per_page: 20,
+              },
+            )
+            let checked = 0
+            for await (const { data: runs } of pages) {
+              for (const run of runs) {
+                if (run.run_number >= context.runNumber) {
+                  continue
+                }
+                const conclusion = await getConclusion(run, jobName)
+                if (conclusion) {
+                  return conclusion
+                }
+                checked += 1
+                if (checked >= maxRuns) {
+                  return undefined
+                }
+              }
+            }
+            return undefined
+          }
+
+          try {
+            const conclusion = await findPreviousConclusion()
+            core.info(`Previous conclusion: ${conclusion ?? 'none'}`)
+            return String(conclusion === 'failure')
+          } catch (error) {
+            core.warning(`Could not look up the previous run (does the token have \`actions: read\` permission?): ${error.message}`)
+            return 'false'
+          }
+
     - name: Compose message
       id: message
+      if: steps.previous.outcome == 'skipped' || steps.previous.outputs.result == 'true'
       env:
         MESSAGE: >
           ${{
@@ -53,6 +181,7 @@ runs:
         fi
         printf "value<<EOM\n%s\nEOM\n" "$MESSAGE" | tee -a "$GITHUB_OUTPUT"
     - name: Send Slack message
+      if: steps.message.outcome == 'success'
       uses: slackapi/slack-github-action@dcb1066f776dd043e64d0e8ba94ca15cc7e1875d # v4.0.0
       with:
         method: chat.postMessage
