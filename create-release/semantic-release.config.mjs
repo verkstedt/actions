@@ -93,7 +93,7 @@ const config = {
       'Cargo.toml': [
         '@semantic-release/exec',
         {
-          // `[package]` or `[workspace.package]`, plus Cargo.lock
+          // `[package]` and/or `[workspace.package]`, plus Cargo.lock
           // Function source ends up in a double–quoted shell string and is
           // interpolated by semantic-release, so it must not contain `"`,
           // `$` or backticks.
@@ -104,7 +104,7 @@ const config = {
               const { readFile, writeFile } = await import('node:fs/promises')
               const lines = (await readFile('Cargo.toml', 'utf8')).split('\n')
               let section = null
-              let isDone = false
+              const updatedSections = new Set()
               const newLines = lines.map((line) => {
                 const trimmedLine = line.trim()
                 if (trimmedLine.startsWith('[')) {
@@ -113,11 +113,11 @@ const config = {
                 const isPackageSection =
                   section === '[package]' || section === '[workspace.package]'
                 if (
-                  !isDone &&
                   isPackageSection &&
+                  !updatedSections.has(section) &&
                   /^version\s*=\s*[\x22\x27]/.test(trimmedLine)
                 ) {
-                  isDone = true
+                  updatedSections.add(section)
                   return line.replace(
                     /\x22[^\x22]*\x22|\x27[^\x27]*\x27/,
                     JSON.stringify(version)
@@ -125,7 +125,7 @@ const config = {
                 }
                 return line
               })
-              if (!isDone) {
+              if (updatedSections.size === 0) {
                 throw new Error(
                   'Cargo.toml: no version found in [package] or [workspace.package]'
                 )
