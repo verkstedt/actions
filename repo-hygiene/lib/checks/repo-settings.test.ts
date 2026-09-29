@@ -59,7 +59,7 @@ describe('repoSettings', () => {
     assert.equal(finding.fix.describe, finding.details?.join(', '))
 
     const result = await finding.fix.run(actionContext(octokit))
-    assert.equal(result, finding.details?.join(', '))
+    assert.equal(result, 'updated repository settings')
     assert.deepEqual(listCallsTo(octokit, 'repos.update'), [
       {
         owner: 'org',
