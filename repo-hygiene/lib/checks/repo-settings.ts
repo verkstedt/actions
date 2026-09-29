@@ -86,7 +86,7 @@ export const repoSettings: Check = {
               repo: ctx.repo,
               ...Object.fromEntries(changes.map((c) => [c.setting, c.value])),
             })
-            return describes.join(', ')
+            return 'updated repository settings'
           },
         },
       },
