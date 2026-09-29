@@ -202,21 +202,21 @@ describe('report', () => {
         '`repo-hygiene` run complete, 5 repo(s) checked.',
         '',
         '*💥 Failed:*',
-        '1. org/legacy — could not list open PRs — Resource not accessible by integration',
-        '2. org/broken — add x — forbidden',
+        '1. legacy — could not list open PRs — Resource not accessible by integration',
+        '2. broken — add x — forbidden',
         '',
         '*⚠️ Needs attention:*',
-        '1. org/api: <https://p/121> — Dependabot PR has no reviewers and CODEOWNERS names nobody — a, b, c, d, e and 2 more',
-        '2. org/api: <https://p/119> — Dependabot PR has no reviewers — none of @gone could be requested',
+        '1. api: <https://p/121> — Dependabot PR has no reviewers and CODEOWNERS names nobody — a, b, c, d, e and 2 more',
+        '2. api: <https://p/119> — Dependabot PR has no reviewers — none of @gone could be requested',
         '',
         '*🆕 Opened PRs:*',
-        '1. org/shop: <https://p/42> — reviewers: @alice, @org/web',
+        '1. shop: <https://p/42> — reviewers: @alice, @org/web',
         '',
         '*🔧 Fixed:*',
-        '1. org/api: <https://p/118> — Dependabot PR has no reviewers — requested @bob',
+        '1. api: <https://p/118> — Dependabot PR has no reviewers — requested @bob',
         '',
         '*🥶 Previously opened PRs:*',
-        '1. org/docs: <https://p/7> — reviewer: @carol',
+        '1. docs: <https://p/7> — reviewer: @carol',
         '',
       ].join('\n')
     )
@@ -228,9 +228,9 @@ describe('report', () => {
     assert.equal(outputs.slack_status, 'failure')
     assert.match(
       outputs.slack_text,
-      /\*💥 Failed:\*\n1\. org\/legacy — could not list open PRs — Resource/
+      /\*💥 Failed:\*\n1\. legacy — could not list open PRs — Resource/
     )
-    assert.match(outputs.slack_text, /names nobody\n2\. org\/api/)
+    assert.match(outputs.slack_text, /names nobody\n2\. api/)
     assert.doesNotMatch(outputs.slack_text, /names nobody — a, b/)
     assert.match(
       outputs.slack_text,
@@ -268,11 +268,11 @@ describe('report', () => {
     })
     assert.match(
       summary,
-      /\*🆕 Would open PRs \(dry run\):\*\n1\. org\/shop — created a\n/
+      /\*🆕 Would open PRs \(dry run\):\*\n1\. shop — created a\n/
     )
     assert.match(
       summary,
-      /\*🔧 Would fix \(dry run\):\*\n1\. org\/api: <https:\/\/p\/118> — Dependabot PR has no reviewers — request @bob\n/
+      /\*🔧 Would fix \(dry run\):\*\n1\. api: <https:\/\/p\/118> — Dependabot PR has no reviewers — request @bob\n/
     )
     assert.match(summary, /\n### `org\/shop`: chore: Repo hygiene\n…\n/)
     assert.match(

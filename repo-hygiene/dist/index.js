@@ -47734,10 +47734,14 @@ function classifyFinding(finding) {
     }
     return null;
 }
-/** `repo` or `repo: <url>`. */
+/**
+ * `repo` or `repo: <url>`, without the org: every finding in a run
+ * shares it.
+ */
 function formatLocation(finding) {
     const url = finding.outcome?.url ?? finding.url;
-    return url ? `${finding.repo}: <${url}>` : finding.repo;
+    const name = finding.repo.slice(finding.repo.indexOf('/') + 1);
+    return url ? `${name}: <${url}>` : name;
 }
 /** At most `MAX_DETAILS` items, then a count of the rest. */
 function formatDetails(details) {
