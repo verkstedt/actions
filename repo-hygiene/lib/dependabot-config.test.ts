@@ -71,6 +71,37 @@ describe('detectEcosystems', () => {
     assert.deepEqual(requiredCodeowners, ['pnpm-lock.yaml'])
   })
 
+  it('detects cargo and requires an owner for its lockfile', () => {
+    const { detected, requiredCodeowners } = detectEcosystems([
+      '/Cargo.toml',
+      '/crates/a/Cargo.toml',
+      '/Cargo.lock',
+    ])
+    assert.deepEqual([...detected], ['cargo'])
+    assert.deepEqual(requiredCodeowners, ['Cargo.lock'])
+  })
+
+  it('detects pip from requirements files', () => {
+    const { detected, requiredCodeowners } = detectEcosystems([
+      '/requirements.txt',
+      '/requirements.in',
+      '/api/requirements-dev.txt',
+    ])
+    assert.deepEqual([...detected], ['pip'])
+    assert.deepEqual(requiredCodeowners, [
+      'requirements-dev.txt',
+      'requirements.in',
+      'requirements.txt',
+    ])
+  })
+
+  it('ignores Python projects without requirements files', () => {
+    assert.deepEqual(detectEcosystems(['/pyproject.toml', '/uv.lock']), {
+      detected: new Set(),
+      requiredCodeowners: [],
+    })
+  })
+
   it('detects docker, compose files, devcontainers and workflows', () => {
     const { detected, requiredCodeowners } = detectEcosystems([
       '/Dockerfile',
