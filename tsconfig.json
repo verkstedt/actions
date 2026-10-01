@@ -1,5 +1,17 @@
 {
-  "extends": "@verkstedt/lint/tsconfig",
   "$schema": "https://json.schemastore.org/tsconfig",
-  "files": []
+  "extends": "@verkstedt/lint/tsconfig",
+  "compilerOptions": {
+    "target": "es2024",
+    "module": "nodenext",
+    "lib": ["es2024"],
+    "types": ["node"],
+    "strict": true,
+    "noEmit": true,
+    "rewriteRelativeImportExtensions": true,
+    "erasableSyntaxOnly": true,
+    "verbatimModuleSyntax": true,
+    "skipLibCheck": true
+  },
+  "include": ["**/*.ts"]
 }
