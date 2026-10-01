@@ -1,6 +1,6 @@
-import { readFile } from 'fs/promises'
+import { readFile } from 'node:fs/promises';
 
-const inputs = JSON.parse(await readFile('./mock-inputs.json', 'utf8'))
+const inputs = JSON.parse(await readFile('./mock-inputs.json', 'utf8'));
 
 /** @type {import('@actions/github').context} */
 export const context = {
@@ -24,15 +24,15 @@ export const context = {
       html_url: 'https://dummy-pr-html.test/',
     },
   },
-}
+};
 
 // eslint-disable-next-line no-console -- mock
-export const setFailed = console.error
-export const getInput = (name) => inputs[name]
+export const setFailed = console.error;
+export const getInput = (name) => inputs[name];
 export const getOctokit = () => ({
   rest: {
     issues: {
       listComments: () => ({ data: [] }),
     },
   },
-})
+});

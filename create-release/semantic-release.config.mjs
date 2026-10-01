@@ -1,10 +1,10 @@
-import assert from 'node:assert'
-import fs from 'node:fs'
+import assert from 'node:assert';
+import fs from 'node:fs';
 
 function unindent(text) {
-  const textTrimLines = text.replaceAll(/(^\n+|\n+$)/g, '')
-  const [indent] = textTrimLines.match(/^\s*/m)
-  return textTrimLines.replaceAll(new RegExp(`^${indent}`, 'gm'), '')
+  const textTrimLines = text.replaceAll(/(^\n+|\n+$)/g, '');
+  const [indent] = textTrimLines.match(/^\s*/m);
+  return textTrimLines.replaceAll(new RegExp(`^${indent}`, 'gm'), '');
 }
 
 /**
@@ -101,36 +101,36 @@ const config = {
             'set -e\n',
             'node -e "(',
             async function bumpCargoVersion(version) {
-              const { readFile, writeFile } = await import('node:fs/promises')
-              const lines = (await readFile('Cargo.toml', 'utf8')).split('\n')
-              let section = null
-              const updatedSections = new Set()
+              const { readFile, writeFile } = await import('node:fs/promises');
+              const lines = (await readFile('Cargo.toml', 'utf8')).split('\n');
+              let section = null;
+              const updatedSections = new Set();
               const newLines = lines.map((line) => {
-                const trimmedLine = line.trim()
+                const trimmedLine = line.trim();
                 if (trimmedLine.startsWith('[')) {
-                  section = trimmedLine.replace(/#.*/, '').trim()
+                  section = trimmedLine.replace(/#.*/, '').trim();
                 }
                 const isPackageSection =
-                  section === '[package]' || section === '[workspace.package]'
+                  section === '[package]' || section === '[workspace.package]';
                 if (
                   isPackageSection &&
                   !updatedSections.has(section) &&
                   /^version\s*=\s*[\x22\x27]/.test(trimmedLine)
                 ) {
-                  updatedSections.add(section)
+                  updatedSections.add(section);
                   return line.replace(
                     /\x22[^\x22]*\x22|\x27[^\x27]*\x27/,
-                    JSON.stringify(version)
-                  )
+                    JSON.stringify(version),
+                  );
                 }
-                return line
-              })
+                return line;
+              });
               if (updatedSections.size === 0) {
                 throw new Error(
-                  'Cargo.toml: no version found in [package] or [workspace.package]'
-                )
+                  'Cargo.toml: no version found in [package] or [workspace.package]',
+                );
               }
-              await writeFile('Cargo.toml', newLines.join('\n'))
+              await writeFile('Cargo.toml', newLines.join('\n'));
             }.toString(),
             `)(process.argv[1])" "\${nextRelease.version}"\n`,
             unindent(`
@@ -232,14 +232,14 @@ const config = {
       },
     ],
   ],
-}
+};
 
 // Require all plugins to be specified as arrays to make it easier to
 // extract them.
 assert.equal(
   config.plugins.filter((plugin) => !Array.isArray(plugin)).length,
   0,
-  "All semantic-release plugins MUST be specified as arrays, i.e. ['plugin-name'], instead of 'plugin-name'."
-)
+  "All semantic-release plugins MUST be specified as arrays, i.e. ['plugin-name'], instead of 'plugin-name'.",
+);
 
-export default config
+export default config;

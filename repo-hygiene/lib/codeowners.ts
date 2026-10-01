@@ -1,6 +1,6 @@
-import picomatch from 'picomatch'
+import picomatch from 'picomatch';
 
-import type { Change, CodeownersLine, FileContent } from './types.ts'
+import type { Change, CodeownersLine, FileContent } from './types.ts';
 
 /**
  * Parse a CODEOWNERS file into `{ pattern, owners, rawIndex }` lines.
@@ -8,47 +8,47 @@ import type { Change, CodeownersLine, FileContent } from './types.ts'
  * line number in the original text.
  */
 export function parseCodeowners(
-  text: string | null | undefined
+  text: string | null | undefined,
 ): Array<CodeownersLine> {
-  const out: Array<CodeownersLine> = []
-  const lines = (text ?? '').split('\n')
+  const out: Array<CodeownersLine> = [];
+  const lines = (text ?? '').split('\n');
   for (let i = 0; i < lines.length; i += 1) {
-    const stripped = lines[i].replace(/#.*$/, '').trim()
+    const stripped = lines[i].replace(/#.*$/, '').trim();
     if (stripped) {
-      const [pattern, ...owners] = stripped.split(/\s+/)
-      out.push({ pattern, owners, rawIndex: i })
+      const [pattern, ...owners] = stripped.split(/\s+/);
+      out.push({ pattern, owners, rawIndex: i });
     }
   }
-  return out
+  return out;
 }
 
 function normalisePattern(p: string): string {
-  let s = p
+  let s = p;
   if (s.startsWith('**/')) {
-    s = s.slice(3)
+    s = s.slice(3);
   }
   if (s.startsWith('/')) {
-    s = s.slice(1)
+    s = s.slice(1);
   }
   if (s.endsWith('/')) {
-    s = s.slice(0, -1)
+    s = s.slice(0, -1);
   }
-  return s
+  return s;
 }
 
 function codeownersPatternCovers(
   pattern: string,
   normalisedRequired: string,
-  requiredIsDirectory: boolean
+  requiredIsDirectory: boolean,
 ): boolean {
   if (pattern === normalisedRequired) {
-    return true
+    return true;
   }
   if (pattern === '*' || pattern === '.' || pattern === '') {
-    return true
+    return true;
   }
   if (normalisedRequired.startsWith(`${pattern}/`)) {
-    return true
+    return true;
   }
   // A required directory (e.g. `/.github/workflows/`) is covered by
   // existing entries like `/.github/workflows/*` or `…/**`.
@@ -57,7 +57,7 @@ function codeownersPatternCovers(
     (pattern === `${normalisedRequired}/*` ||
       pattern === `${normalisedRequired}/**`)
   ) {
-    return true
+    return true;
   }
   // Glob support via picomatch — lets entries like
   // `docker-compose.*` cover `docker-compose.yml` /
@@ -67,10 +67,10 @@ function codeownersPatternCovers(
   return (
     /[*?[\]]/.test(pattern) &&
     picomatch.isMatch(normalisedRequired, pattern, { dot: true })
-  )
+  );
 }
 
-const GLOB_CHARS = /[*?]/
+const GLOB_CHARS = /[*?]/;
 
 /**
  * Translate a CODEOWNERS pattern into the picomatch globs it stands
@@ -89,28 +89,28 @@ const GLOB_CHARS = /[*?]/
  *   nothing rather than what picomatch would make of the brackets.
  */
 export function convertCodeownersPatternToGlobs(
-  pattern: string
+  pattern: string,
 ): Array<string> {
-  let p = pattern
+  let p = pattern;
   if (/[[\]]/.test(p)) {
-    return []
+    return [];
   }
-  const withoutTrailingSlash = p.endsWith('/') ? p.slice(0, -1) : p
-  const anchored = p.startsWith('/') || withoutTrailingSlash.includes('/')
+  const withoutTrailingSlash = p.endsWith('/') ? p.slice(0, -1) : p;
+  const anchored = p.startsWith('/') || withoutTrailingSlash.includes('/');
   if (p.startsWith('/')) {
-    p = p.slice(1)
+    p = p.slice(1);
   }
   if (!anchored) {
-    p = `**/${p}`
+    p = `**/${p}`;
   }
   if (p.endsWith('/')) {
-    return [`${p}**`]
+    return [`${p}**`];
   }
-  const lastSegment = p.slice(p.lastIndexOf('/') + 1)
+  const lastSegment = p.slice(p.lastIndexOf('/') + 1);
   if (GLOB_CHARS.test(lastSegment)) {
-    return [p]
+    return [p];
   }
-  return [p, `${p}/**`]
+  return [p, `${p}/**`];
 }
 
 /**
@@ -119,18 +119,18 @@ export function convertCodeownersPatternToGlobs(
  */
 export function findCodeownersFor(
   file: string,
-  parsedLines: Array<CodeownersLine>
+  parsedLines: Array<CodeownersLine>,
 ): Array<string> | null {
-  const path = file.replace(/^\//, '')
+  const path = file.replace(/^\//, '');
   for (const line of parsedLines.toReversed()) {
-    const globs = convertCodeownersPatternToGlobs(line.pattern)
+    const globs = convertCodeownersPatternToGlobs(line.pattern);
     // `dot: true` so `*` matches dot-prefixed names (CODEOWNERS does
     // not treat them specially).
     if (picomatch.isMatch(path, globs, { dot: true })) {
-      return line.owners
+      return line.owners;
     }
   }
-  return null
+  return null;
 }
 
 /**
@@ -139,15 +139,15 @@ export function findCodeownersFor(
  */
 export function collectCodeownersForFiles(
   files: Array<string>,
-  parsedLines: Array<CodeownersLine>
+  parsedLines: Array<CodeownersLine>,
 ): Array<string> {
-  const owners = new Set<string>()
+  const owners = new Set<string>();
   for (const file of files) {
     for (const owner of findCodeownersFor(file, parsedLines) || []) {
-      owners.add(owner)
+      owners.add(owner);
     }
   }
-  return [...owners]
+  return [...owners];
 }
 
 /**
@@ -157,22 +157,22 @@ export function collectCodeownersForFiles(
  */
 export function findCoveringLine(
   required: string,
-  existingLines: Array<CodeownersLine>
+  existingLines: Array<CodeownersLine>,
 ): CodeownersLine | null {
-  const normalisedRequired = normalisePattern(required)
-  const requiredIsDirectory = required.endsWith('/')
+  const normalisedRequired = normalisePattern(required);
+  const requiredIsDirectory = required.endsWith('/');
   for (const line of existingLines.toReversed()) {
     if (
       codeownersPatternCovers(
         normalisePattern(line.pattern),
         normalisedRequired,
-        requiredIsDirectory
+        requiredIsDirectory,
       )
     ) {
-      return line
+      return line;
     }
   }
-  return null
+  return null;
 }
 
 /**
@@ -183,10 +183,10 @@ export function findCoveringLine(
  */
 export function findOwningLine(
   required: string,
-  existingLines: Array<CodeownersLine>
+  existingLines: Array<CodeownersLine>,
 ): CodeownersLine | null {
-  const line = findCoveringLine(required, existingLines)
-  return line && line.owners.length > 0 ? line : null
+  const line = findCoveringLine(required, existingLines);
+  return line && line.owners.length > 0 ? line : null;
 }
 
 /**
@@ -196,16 +196,16 @@ export function findOwningLine(
  */
 function findInsertAfterIdx(
   requiredPatterns: Array<string>,
-  parsedLines: Array<CodeownersLine>
+  parsedLines: Array<CodeownersLine>,
 ): number {
-  let insertAfterIdx = -1
+  let insertAfterIdx = -1;
   for (const req of requiredPatterns) {
-    const match = findCoveringLine(req, parsedLines)
+    const match = findCoveringLine(req, parsedLines);
     if (match && match.rawIndex > insertAfterIdx) {
-      insertAfterIdx = match.rawIndex
+      insertAfterIdx = match.rawIndex;
     }
   }
-  return insertAfterIdx
+  return insertAfterIdx;
 }
 
 /**
@@ -215,13 +215,13 @@ function findInsertAfterIdx(
 function spliceLines(
   text: string,
   addedLines: Array<string>,
-  insertAfterIdx: number
+  insertAfterIdx: number,
 ): Array<string> {
-  const baseLines = text.split('\n')
+  const baseLines = text.split('\n');
   // split on a string ending with \n leaves a trailing empty element;
   // drop it for clean splicing.
   if (baseLines.length > 0 && baseLines[baseLines.length - 1] === '') {
-    baseLines.pop()
+    baseLines.pop();
   }
 
   if (insertAfterIdx >= 0) {
@@ -229,20 +229,20 @@ function spliceLines(
       ...baseLines.slice(0, insertAfterIdx + 1),
       ...addedLines,
       ...baseLines.slice(insertAfterIdx + 1),
-    ]
+    ];
   }
   if (baseLines.length > 0) {
-    return [...baseLines, '', ...addedLines]
+    return [...baseLines, '', ...addedLines];
   }
-  return [...addedLines]
+  return [...addedLines];
 }
 
 interface CodeownersAdditionParams {
-  existing: FileContent | null
-  parsedLines: Array<CodeownersLine>
-  requiredPatterns: Array<string>
-  missingPatterns: Array<string>
-  ownerToken: string
+  existing: FileContent | null;
+  parsedLines: Array<CodeownersLine>;
+  requiredPatterns: Array<string>;
+  missingPatterns: Array<string>;
+  ownerToken: string;
 }
 
 /**
@@ -256,23 +256,23 @@ export function buildCodeownersAddition({
   missingPatterns,
   ownerToken,
 }: CodeownersAdditionParams): Change {
-  const insertAfterIdx = findInsertAfterIdx(requiredPatterns, parsedLines)
-  const includeHeader = insertAfterIdx === -1
+  const insertAfterIdx = findInsertAfterIdx(requiredPatterns, parsedLines);
+  const includeHeader = insertAfterIdx === -1;
 
   const addedLines = [
     ...(includeHeader
       ? ['# Make sure dependabot PRs get reviewers assigned']
       : []),
     ...missingPatterns.map((pat) => `${pat}  ${ownerToken}`),
-  ]
+  ];
 
   const combinedLines = spliceLines(
     existing ? existing.content : '',
     addedLines,
-    insertAfterIdx
-  )
+    insertAfterIdx,
+  );
 
-  const listed = missingPatterns.map((p) => `\`${p}\``).join(', ')
+  const listed = missingPatterns.map((p) => `\`${p}\``).join(', ');
 
   return {
     path: existing ? existing.path : 'CODEOWNERS',
@@ -281,5 +281,5 @@ export function buildCodeownersAddition({
     summary: existing
       ? `added ${missingPatterns.length} line(s) to \`${existing.path}\`: ${listed}`
       : `created \`CODEOWNERS\` with ${missingPatterns.length} line(s): ${listed}`,
-  }
+  };
 }

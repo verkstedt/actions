@@ -1,15 +1,15 @@
-import { auditRepo } from './audit-repo.ts'
-import { codeowners } from './checks/codeowners.ts'
-import { dependabotConfig } from './checks/dependabot-config.ts'
-import { dependabotReviewers } from './checks/dependabot-reviewers.ts'
-import { repoSettings } from './checks/repo-settings.ts'
+import { auditRepo } from './audit-repo.ts';
+import { codeowners } from './checks/codeowners.ts';
+import { dependabotConfig } from './checks/dependabot-config.ts';
+import { dependabotReviewers } from './checks/dependabot-reviewers.ts';
+import { repoSettings } from './checks/repo-settings.ts';
 import {
   assertAppSeesAllRepos,
   getErrorMessage,
   listTargetRepos,
-} from './github.ts'
-import { createLogger } from './log.ts'
-import type { Check, Finding, GitHub, LogSink, Octokit } from './types.ts'
+} from './github.ts';
+import { createLogger } from './log.ts';
+import type { Check, Finding, GitHub, LogSink, Octokit } from './types.ts';
 
 /** Every check the action runs, in order. */
 export const allChecks: Array<Check> = [
@@ -17,32 +17,32 @@ export const allChecks: Array<Check> = [
   dependabotReviewers,
   dependabotConfig,
   codeowners,
-]
+];
 
 export interface RunAuditOptions {
-  org: string
-  dryRun: boolean
+  org: string;
+  dryRun: boolean;
   /** picomatch globs narrowing the repos; empty means every repo. */
-  reposFilter: Array<string>
-  runId: number
-  runAttempt: number
+  reposFilter: Array<string>;
+  runId: number;
+  runAttempt: number;
   /** Fail unless the token is an App installation that sees every repo. */
-  requireAppAccess: boolean
-  log: LogSink
-  checks?: Array<Check>
+  requireAppAccess: boolean;
+  log: LogSink;
+  checks?: Array<Check>;
 }
 
 export interface RunAuditResult {
-  findings: Array<Finding>
+  findings: Array<Finding>;
   /** Rendered dry-run PRs, one per repo that would get one. */
-  previews: Array<string>
-  repoCount: number
+  previews: Array<string>;
+  repoCount: number;
 }
 
 function createFailedRepoFinding(
   org: string,
   repoMeta: GitHub.RepoMeta,
-  error: unknown
+  error: unknown,
 ): Finding {
   return {
     repo: `${org}/${repoMeta.name}`,
@@ -50,7 +50,7 @@ function createFailedRepoFinding(
     summary: 'could not audit repo',
     details: [getErrorMessage(error)],
     outcome: { status: 'none' },
-  }
+  };
 }
 
 /**
@@ -68,28 +68,28 @@ export async function runAudit(
     requireAppAccess,
     log,
     checks = allChecks,
-  }: RunAuditOptions
+  }: RunAuditOptions,
 ): Promise<RunAuditResult> {
   if (requireAppAccess) {
-    await assertAppSeesAllRepos(octokit)
+    await assertAppSeesAllRepos(octokit);
   }
-  const repos = await listTargetRepos(octokit, { org, reposFilter })
+  const repos = await listTargetRepos(octokit, { org, reposFilter });
   for (const check of checks) {
-    await check.setup?.(octokit)
+    await check.setup?.(octokit);
   }
   createLogger({}, log).info(
-    `Auditing ${repos.length} repo(s) in ${org}${dryRun ? ' (dry run)' : ''}`
-  )
+    `Auditing ${repos.length} repo(s) in ${org}${dryRun ? ' (dry run)' : ''}`,
+  );
 
-  const findings: Array<Finding> = []
-  const previews: Array<string> = []
+  const findings: Array<Finding> = [];
+  const previews: Array<string> = [];
   for (const [index, repoMeta] of repos.entries()) {
     const repoLog = createLogger(
       {
         repo: { name: repoMeta.name, position: index + 1, total: repos.length },
       },
-      log
-    )
+      log,
+    );
     try {
       const audited = await auditRepo(octokit, repoMeta, {
         org,
@@ -98,16 +98,16 @@ export async function runAudit(
         runAttempt,
         checks,
         log: repoLog,
-      })
-      findings.push(...audited.findings)
+      });
+      findings.push(...audited.findings);
       if (audited.preview) {
-        previews.push(audited.preview)
+        previews.push(audited.preview);
       }
     } catch (error) {
-      repoLog.error(getErrorMessage(error))
-      findings.push(createFailedRepoFinding(org, repoMeta, error))
+      repoLog.error(getErrorMessage(error));
+      findings.push(createFailedRepoFinding(org, repoMeta, error));
     }
   }
 
-  return { findings, previews, repoCount: repos.length }
+  return { findings, previews, repoCount: repos.length };
 }

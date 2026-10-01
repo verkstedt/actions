@@ -1,23 +1,23 @@
-import { describe, it } from 'node:test'
-import assert from 'node:assert/strict'
+import assert from 'node:assert/strict';
+import { describe, it } from 'node:test';
 
-import { renderSlackText, report } from './report.ts'
-import type { Finding } from './types.ts'
+import { renderSlackText, report } from './report.ts';
+import type { Finding } from './types.ts';
 
 const fillOrder = [
   { key: 'failed', partial: true },
   { key: 'opened', partial: true },
   { key: 'preexisting', partial: false },
-] as const
-const showOrder = ['failed', 'preexisting', 'opened'] as const
-const runUrl = 'https://example.test/run/1'
+] as const;
+const showOrder = ['failed', 'preexisting', 'opened'] as const;
+const runUrl = 'https://example.test/run/1';
 
 const prItems = (prefix: string, count: number) =>
   Array.from(
     { length: count },
     (_, i) =>
-      `<https://github.com/org/${prefix}-${i}/pull/1> — no reviewer assigned`
-  )
+      `<https://github.com/org/${prefix}-${i}/pull/1> — no reviewer assigned`,
+  );
 
 describe('renderSlackText', () => {
   it('lists every non-empty section in show order, then the footer', () => {
@@ -30,7 +30,7 @@ describe('renderSlackText', () => {
       fillOrder,
       showOrder,
       runUrl,
-    })
+    });
     assert.equal(
       text,
       [
@@ -42,9 +42,9 @@ describe('renderSlackText', () => {
         '1. <u> — reviewer(s): @x',
         '',
         `<${runUrl}|See full list with more details>`,
-      ].join('\n')
-    )
-  })
+      ].join('\n'),
+    );
+  });
 
   it('stays within the Slack limit, truncating the less important lists', () => {
     const text = renderSlackText({
@@ -56,15 +56,15 @@ describe('renderSlackText', () => {
       fillOrder,
       showOrder,
       runUrl,
-    })
-    assert.ok(text.length <= 2600, `too long: ${text.length}`)
-    assert.match(text, /1\. a — boom/)
-    assert.match(text, /\*Opened:\*\n1\. </)
-    assert.match(text, /… and \d+ more/)
+    });
+    assert.ok(text.length <= 2600, `too long: ${text.length}`);
+    assert.match(text, /1\. a — boom/);
+    assert.match(text, /\*Opened:\*\n1\. </);
+    assert.match(text, /… and \d+ more/);
     // Non-partial sections collapse to a count rather than list half.
-    assert.match(text, /\*Old:\* 50 — see the run summary/)
-    assert.doesNotMatch(text, /old-0/)
-  })
+    assert.match(text, /\*Old:\* 50 — see the run summary/);
+    assert.doesNotMatch(text, /old-0/);
+  });
 
   it('collapses a section to its count when even one item does not fit', () => {
     const text = renderSlackText({
@@ -76,7 +76,7 @@ describe('renderSlackText', () => {
       fillOrder,
       showOrder,
       runUrl,
-    })
+    });
     assert.equal(
       text,
       [
@@ -84,13 +84,13 @@ describe('renderSlackText', () => {
         '*Failed:* 1 — see the run summary',
         '',
         `<${runUrl}|See full list with more details>`,
-      ].join('\n')
-    )
-  })
-})
+      ].join('\n'),
+    );
+  });
+});
 
 describe('report', () => {
-  const options = { repoCount: 5, dryRun: false, previews: [], runUrl }
+  const options = { repoCount: 5, dryRun: false, previews: [], runUrl };
   const findings: Array<Finding> = [
     {
       repo: 'org/legacy',
@@ -189,10 +189,10 @@ describe('report', () => {
       fix: { kind: 'file', path: 'x', content: '', lang: '', describe: 'x' },
       outcome: { status: 'failed', detail: 'forbidden' },
     },
-  ]
+  ];
 
   it('renders the job summary grouped by importance', () => {
-    const { summary } = report(findings, options)
+    const { summary } = report(findings, options);
     assert.equal(
       summary,
       [
@@ -218,39 +218,39 @@ describe('report', () => {
         '*🥶 Previously opened PRs:*',
         '1. docs: <https://p/7> — reviewer: @carol',
         '',
-      ].join('\n')
-    )
-  })
+      ].join('\n'),
+    );
+  });
 
   it('renders the same groups for Slack without details, and sets the outputs', () => {
-    const { outputs } = report(findings, options)
-    assert.equal(outputs.should_notify, 'true')
-    assert.equal(outputs.slack_status, 'failure')
+    const { outputs } = report(findings, options);
+    assert.equal(outputs.should_notify, 'true');
+    assert.equal(outputs.slack_status, 'failure');
     assert.match(
       outputs.slack_text,
-      /\*💥 Failed:\*\n1\. legacy — could not list open PRs — Resource/
-    )
-    assert.match(outputs.slack_text, /names nobody\n2\. api/)
-    assert.doesNotMatch(outputs.slack_text, /names nobody — a, b/)
+      /\*💥 Failed:\*\n1\. legacy — could not list open PRs — Resource/,
+    );
+    assert.match(outputs.slack_text, /names nobody\n2\. api/);
+    assert.doesNotMatch(outputs.slack_text, /names nobody — a, b/);
     assert.match(
       outputs.slack_text,
-      /<https:\/\/example\.test\/run\/1\|See full list with more details>$/
-    )
-    const json = JSON.parse(outputs.results_json)
-    assert.equal(json.length, findings.length)
-    assert.equal('fix' in json[3], false)
-    assert.deepEqual(json[3].outcome, findings[3].outcome)
-  })
+      /<https:\/\/example\.test\/run\/1\|See full list with more details>$/,
+    );
+    const json = JSON.parse(outputs.results_json);
+    assert.equal(json.length, findings.length);
+    assert.equal('fix' in json[3], false);
+    assert.deepEqual(json[3].outcome, findings[3].outcome);
+  });
 
   it('does not notify when only previously opened PRs and warnings remain', () => {
-    const { outputs, summary } = report([findings[1], findings[6]], options)
-    assert.equal(outputs.should_notify, 'false')
-    assert.equal(outputs.slack_status, 'warning')
+    const { outputs, summary } = report([findings[1], findings[6]], options);
+    assert.equal(outputs.should_notify, 'false');
+    assert.equal(outputs.slack_status, 'warning');
     assert.match(
       summary,
-      /## Slack message\n\n<details>\n<summary>Not sent: nothing to notify about<\/summary>\n\n```\n/
-    )
-  })
+      /## Slack message\n\n<details>\n<summary>Not sent: nothing to notify about<\/summary>\n\n```\n/,
+    );
+  });
 
   it('switches the fix headings in a dry run and shows the previews and the Slack text', () => {
     const dry = findings.map((f) =>
@@ -259,26 +259,26 @@ describe('report', () => {
             ...f,
             outcome: { status: 'would-fix' as const, detail: f.fix?.describe },
           }
-        : f
-    )
+        : f,
+    );
     const { summary, outputs } = report(dry, {
       ...options,
       dryRun: true,
       previews: ['### `org/shop`: chore: Repo hygiene\n…\n'],
-    })
+    });
     assert.match(
       summary,
-      /\*🆕 Would open PRs \(dry run\):\*\n1\. shop — created a\n/
-    )
+      /\*🆕 Would open PRs \(dry run\):\*\n1\. shop — created a\n/,
+    );
     assert.match(
       summary,
-      /\*🔧 Would fix \(dry run\):\*\n1\. api: <https:\/\/p\/118> — Dependabot PR has no reviewers — request @bob\n/
-    )
-    assert.match(summary, /\n### `org\/shop`: chore: Repo hygiene\n…\n/)
+      /\*🔧 Would fix \(dry run\):\*\n1\. api: <https:\/\/p\/118> — Dependabot PR has no reviewers — request @bob\n/,
+    );
+    assert.match(summary, /\n### `org\/shop`: chore: Repo hygiene\n…\n/);
     assert.match(
       summary,
-      /## Slack message\n\n<details>\n<summary>Not sent: dry run<\/summary>/
-    )
-    assert.match(outputs.slack_text, /Would open PRs \(dry run\)/)
-  })
-})
+      /## Slack message\n\n<details>\n<summary>Not sent: dry run<\/summary>/,
+    );
+    assert.match(outputs.slack_text, /Would open PRs \(dry run\)/);
+  });
+});

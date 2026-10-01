@@ -1,62 +1,64 @@
-import { getErrorMessage, getHttpStatus } from './github.ts'
+import { getErrorMessage, getHttpStatus } from './github.ts';
 import type {
   CodeownersLine,
   Logger,
   Octokit,
   ReviewerSource,
-} from './types.ts'
+} from './types.ts';
 
-const KNOWN_BOTS = new Set(['dependabot', 'github-actions', 'renovate'])
+const KNOWN_BOTS = new Set(['dependabot', 'github-actions', 'renovate']);
 
 /** GitHub allows at most this many requested reviewers on a PR. */
-const MAX_REVIEWERS = 15
+const MAX_REVIEWERS = 15;
 
 /**
  * Split CODEOWNERS owner tokens into unique user logins and team
  * slugs, without the `@` and org prefixes.
  */
 export function splitReviewers(ownerTokens: Array<string>): {
-  users: Array<string>
-  teams: Array<string>
+  users: Array<string>;
+  teams: Array<string>;
 } {
-  const logins = ownerTokens.map((tok) => tok.replace(/^@/, '')).filter(Boolean)
+  const logins = ownerTokens
+    .map((tok) => tok.replace(/^@/, ''))
+    .filter(Boolean);
   const { users = [], teams = [] } = Object.groupBy(logins, (login) =>
-    login.includes('/') ? 'teams' : 'users'
-  )
-  const slugs = teams.map((team) => team.split('/')[1]).filter(Boolean)
-  return { users: [...new Set(users)], teams: [...new Set(slugs)] }
+    login.includes('/') ? 'teams' : 'users',
+  );
+  const slugs = teams.map((team) => team.split('/')[1]).filter(Boolean);
+  return { users: [...new Set(users)], teams: [...new Set(slugs)] };
 }
 
 interface Contributor {
-  login?: string
-  type?: string
+  login?: string;
+  type?: string;
 }
 
 async function listHumanContributors(
   octokit: Octokit,
-  { org, repo }: { org: string; repo: string }
+  { org, repo }: { org: string; repo: string },
 ): Promise<Array<Contributor & { login: string }>> {
-  let contribs: Array<Contributor> = []
+  let contribs: Array<Contributor> = [];
   try {
     const { data } = await octokit.rest.repos.listContributors({
       owner: org,
       repo,
       per_page: 100,
-    })
-    contribs = Array.isArray(data) ? data : []
+    });
+    contribs = Array.isArray(data) ? data : [];
   } catch (e) {
-    const status = getHttpStatus(e)
+    const status = getHttpStatus(e);
     if (status !== 404 && status !== 204) {
-      throw e
+      throw e;
     }
   }
   return contribs.filter(
     (c): c is Contributor & { login: string } =>
       c.type === 'User' &&
       typeof c.login === 'string' &&
-      !/\[bot\]$/.test(c.login) &&
-      !KNOWN_BOTS.has(c.login)
-  )
+      !c.login.endsWith('[bot]') &&
+      !KNOWN_BOTS.has(c.login),
+  );
 }
 
 /**
@@ -67,37 +69,37 @@ export const CODEOWNERS_PATHS = [
   '.github/CODEOWNERS',
   'CODEOWNERS',
   'docs/CODEOWNERS',
-]
+];
 
 /** `reviewer: @a`, `reviewers: @a, @b`, or `no reviewer assigned`. */
 export function describeReviewers(reviewers: Array<string>): string {
   if (reviewers.length === 0) {
-    return 'no reviewer assigned'
+    return 'no reviewer assigned';
   }
-  const label = reviewers.length === 1 ? 'reviewer' : 'reviewers'
-  return `${label}: ${reviewers.join(', ')}`
+  const label = reviewers.length === 1 ? 'reviewer' : 'reviewers';
+  return `${label}: ${reviewers.join(', ')}`;
 }
 
 /** `@user` and `@org/team` handles for the split reviewers. */
 export function formatReviewerHandles(
   org: string,
-  { users, teams }: { users: Array<string>; teams: Array<string> }
+  { users, teams }: { users: Array<string>; teams: Array<string> },
 ): Array<string> {
-  return [...users.map((u) => `@${u}`), ...teams.map((t) => `@${org}/${t}`)]
+  return [...users.map((u) => `@${u}`), ...teams.map((t) => `@${org}/${t}`)];
 }
 
 interface ChooseReviewersParams {
-  org: string
-  repo: string
+  org: string;
+  repo: string;
   /** Owner tokens suggested by the findings going into the PR. */
-  suggested: Array<string>
+  suggested: Array<string>;
   /** The CODEOWNERS on the default branch. */
-  parsedLines: Array<CodeownersLine>
+  parsedLines: Array<CodeownersLine>;
 }
 
 interface ChosenReviewers {
-  reviewerTokens: Array<string>
-  reviewerSource: ReviewerSource
+  reviewerTokens: Array<string>;
+  reviewerSource: ReviewerSource;
 }
 
 /**
@@ -106,41 +108,41 @@ interface ChosenReviewers {
  */
 export async function chooseReviewers(
   octokit: Octokit,
-  { org, repo, suggested, parsedLines }: ChooseReviewersParams
+  { org, repo, suggested, parsedLines }: ChooseReviewersParams,
 ): Promise<ChosenReviewers> {
   if (suggested.length > 0) {
     return {
       reviewerTokens: [...new Set(suggested)],
       reviewerSource: 'codeowners-match',
-    }
+    };
   }
-  const allOwners = new Set<string>()
+  const allOwners = new Set<string>();
   for (const line of parsedLines) {
-    line.owners.forEach((o) => allOwners.add(o))
+    line.owners.forEach((o) => allOwners.add(o));
   }
   if (allOwners.size > 0) {
     return {
       reviewerTokens: [...allOwners],
       reviewerSource: 'codeowners-fallback',
-    }
+    };
   }
-  const humans = await listHumanContributors(octokit, { org, repo })
+  const humans = await listHumanContributors(octokit, { org, repo });
   if (humans.length > 0) {
     return {
       reviewerTokens: humans.map((h) => `@${h.login}`),
       reviewerSource: 'contributors',
-    }
+    };
   }
-  return { reviewerTokens: [], reviewerSource: 'none' }
+  return { reviewerTokens: [], reviewerSource: 'none' };
 }
 
 interface RequestReviewersParams {
-  org: string
-  repo: string
-  pullNumber: number
-  users: Array<string>
-  teams: Array<string>
-  log: Logger
+  org: string;
+  repo: string;
+  pullNumber: number;
+  users: Array<string>;
+  teams: Array<string>;
+  log: Logger;
 }
 
 /**
@@ -157,12 +159,12 @@ interface RequestReviewersParams {
  */
 export async function requestReviewersOneByOne(
   octokit: Octokit,
-  { org, repo, pullNumber, users, teams, log }: RequestReviewersParams
+  { org, repo, pullNumber, users, teams, log }: RequestReviewersParams,
 ): Promise<Array<string>> {
-  const requested: Array<string> = []
+  const requested: Array<string> = [];
   for (const user of users) {
     if (requested.length >= MAX_REVIEWERS) {
-      break
+      break;
     }
     try {
       await octokit.rest.pulls.requestReviewers({
@@ -170,18 +172,18 @@ export async function requestReviewersOneByOne(
         repo,
         pull_number: pullNumber,
         reviewers: [user],
-      })
-      requested.push(`@${user}`)
+      });
+      requested.push(`@${user}`);
     } catch (e) {
       if (getHttpStatus(e) !== 422) {
-        throw e
+        throw e;
       }
-      log.warning(`could not request reviewer @${user}: ${getErrorMessage(e)}`)
+      log.warning(`could not request reviewer @${user}: ${getErrorMessage(e)}`);
     }
   }
   for (const team of teams) {
     if (requested.length >= MAX_REVIEWERS) {
-      break
+      break;
     }
     try {
       await octokit.rest.pulls.requestReviewers({
@@ -189,16 +191,16 @@ export async function requestReviewersOneByOne(
         repo,
         pull_number: pullNumber,
         team_reviewers: [team],
-      })
-      requested.push(`@${org}/${team}`)
+      });
+      requested.push(`@${org}/${team}`);
     } catch (e) {
       if (getHttpStatus(e) !== 422) {
-        throw e
+        throw e;
       }
       log.warning(
-        `could not request team reviewer @${org}/${team}: ${getErrorMessage(e)}`
-      )
+        `could not request team reviewer @${org}/${team}: ${getErrorMessage(e)}`,
+      );
     }
   }
-  return requested
+  return requested;
 }
