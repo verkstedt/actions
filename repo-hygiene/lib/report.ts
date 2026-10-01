@@ -1,6 +1,6 @@
-import * as core from '@actions/core'
+import * as core from '@actions/core';
 
-import type { Finding } from './types.ts'
+import type { Finding } from './types.ts';
 
 /**
  * Slack renders the whole summary inside a single Block Kit `section`
@@ -9,11 +9,11 @@ import type { Finding } from './types.ts'
  * About 400 of those go to the header `notify-status` composes around
  * our text, which we cannot measure from here.
  */
-const SLACK_MAX_CHARS = 2600
+const SLACK_MAX_CHARS = 2600;
 
 interface Section {
-  heading: string
-  items: Array<string>
+  heading: string;
+  items: Array<string>;
 }
 
 /**
@@ -21,16 +21,16 @@ interface Section {
  * joined text.
  */
 function measureLines(lines: Array<string>): number {
-  return lines.reduce((sum, line) => sum + line.length + 1, 0)
+  return lines.reduce((sum, line) => sum + line.length + 1, 0);
 }
 
 function renderList(heading: string, items: Array<string>): Array<string> {
-  return ['', heading, ...items.map((item, idx) => `${idx + 1}. ${item}`)]
+  return ['', heading, ...items.map((item, idx) => `${idx + 1}. ${item}`)];
 }
 
 /** One line standing in for a section we have no room to list. */
 function renderCountLabel({ heading, items }: Section): Array<string> {
-  return ['', `${heading} ${items.length} — see the run summary`]
+  return ['', `${heading} ${items.length} — see the run summary`];
 }
 
 /**
@@ -42,38 +42,38 @@ function renderCountLabel({ heading, items }: Section): Array<string> {
 function fillSection(
   section: Section,
   budget: number,
-  { partial }: { partial: boolean }
+  { partial }: { partial: boolean },
 ): Array<string> {
-  const { heading, items } = section
-  const noteFor = (left: number) => `… and ${left} more`
-  let kept: Array<string> = []
+  const { heading, items } = section;
+  const noteFor = (left: number) => `… and ${left} more`;
+  let kept: Array<string> = [];
   for (const item of items) {
-    const next = [...kept, item]
-    const left = items.length - next.length
+    const next = [...kept, item];
+    const left = items.length - next.length;
     const lines = [
       ...renderList(heading, next),
       ...(left > 0 ? [noteFor(left)] : []),
-    ]
+    ];
     if (measureLines(lines) > budget) {
-      break
+      break;
     }
-    kept = next
+    kept = next;
   }
   if (kept.length === items.length) {
-    return renderList(heading, items)
+    return renderList(heading, items);
   }
   if (!partial || kept.length === 0) {
-    return renderCountLabel(section)
+    return renderCountLabel(section);
   }
-  return [...renderList(heading, kept), noteFor(items.length - kept.length)]
+  return [...renderList(heading, kept), noteFor(items.length - kept.length)];
 }
 
 interface SlackTextParams<K extends string> {
-  sections: Record<K, Section>
-  fillOrder: ReadonlyArray<{ key: K; partial: boolean }>
-  showOrder: ReadonlyArray<K>
+  sections: Record<K, Section>;
+  fillOrder: ReadonlyArray<{ key: K; partial: boolean }>;
+  showOrder: ReadonlyArray<K>;
   /** Link to the run; the footer pointing at it is dropped when absent. */
-  runUrl?: string
+  runUrl?: string;
 }
 
 /**
@@ -90,10 +90,10 @@ export function renderSlackText<K extends string>({
 }: SlackTextParams<K>): string {
   const footerLines = runUrl
     ? ['', `<${runUrl}|See full list with more details>`]
-    : []
+    : [];
   const listed = (Object.values(sections) as Array<Section>).filter(
-    ({ items }) => items.length > 0
-  )
+    ({ items }) => items.length > 0,
+  );
   // Reserve the footer and every section’s count label up front, so
   // each section is guaranteed at least its count. A section gets its
   // own reserve back when its turn comes; what the others leave unspent
@@ -103,35 +103,37 @@ export function renderSlackText<K extends string>({
     measureLines(footerLines) -
     listed.reduce(
       (sum, section) => sum + measureLines(renderCountLabel(section)),
-      0
-    )
-  const filled = {} as Record<K, Array<string>>
+      0,
+    );
+  const filled = {} as Record<K, Array<string>>;
   for (const { key, partial } of fillOrder) {
-    const section = sections[key]
+    const section = sections[key];
     if (section.items.length === 0) {
-      filled[key] = []
+      filled[key] = [];
     } else {
-      const reserve = measureLines(renderCountLabel(section))
-      filled[key] = fillSection(section, budget + reserve, { partial })
-      budget += reserve - measureLines(filled[key])
+      const reserve = measureLines(renderCountLabel(section));
+      filled[key] = fillSection(section, budget + reserve, { partial });
+      budget += reserve - measureLines(filled[key]);
     }
   }
-  return [...showOrder.flatMap((key) => filled[key]), ...footerLines].join('\n')
+  return [...showOrder.flatMap((key) => filled[key]), ...footerLines].join(
+    '\n',
+  );
 }
 
 export interface Outputs {
-  results_json: string
-  slack_text: string
-  should_notify: 'true' | 'false'
-  slack_status: 'warning' | 'failure'
+  results_json: string;
+  slack_text: string;
+  should_notify: 'true' | 'false';
+  slack_status: 'warning' | 'failure';
 }
 
 export interface ReportOptions {
-  repoCount: number
-  dryRun: boolean
+  repoCount: number;
+  dryRun: boolean;
   /** Rendered dry-run PRs, one per repo. */
-  previews: Array<string>
-  runUrl?: string
+  previews: Array<string>;
+  runUrl?: string;
 }
 
 /** Report groups with their headings, in the order they are shown. */
@@ -141,16 +143,16 @@ const HEADINGS = {
   opened: '*🆕 Opened PRs:*',
   fixed: '*🔧 Fixed:*',
   previous: '*🥶 Previously opened PRs:*',
-} satisfies Record<string, string>
+} satisfies Record<string, string>;
 
-type GroupKey = keyof typeof HEADINGS
+type GroupKey = keyof typeof HEADINGS;
 
-const GROUP_ORDER = Object.keys(HEADINGS) as ReadonlyArray<GroupKey>
+const GROUP_ORDER = Object.keys(HEADINGS) as ReadonlyArray<GroupKey>;
 
 const DRY_RUN_HEADINGS: Partial<Record<GroupKey, string>> = {
   opened: '*🆕 Would open PRs (dry run):*',
   fixed: '*🔧 Would fix (dry run):*',
-}
+};
 
 /** Sections that list half their items when short of room; the rest collapse to a count. */
 const PARTIAL: Record<GroupKey, boolean> = {
@@ -159,25 +161,25 @@ const PARTIAL: Record<GroupKey, boolean> = {
   opened: true,
   fixed: true,
   previous: false,
-}
+};
 
-const MAX_DETAILS = 5
+const MAX_DETAILS = 5;
 
 function classifyFinding(finding: Finding): GroupKey | null {
-  const status = finding.outcome?.status ?? 'none'
+  const status = finding.outcome?.status ?? 'none';
   if (status === 'failed' || finding.level === 'error') {
-    return 'failed'
+    return 'failed';
   }
   if (status === 'skipped') {
-    return 'previous'
+    return 'previous';
   }
   if (status === 'fixed' || status === 'would-fix') {
-    return finding.fix?.kind === 'file' ? 'opened' : 'fixed'
+    return finding.fix?.kind === 'file' ? 'opened' : 'fixed';
   }
   if (finding.level === 'warning' || finding.fix) {
-    return 'attention'
+    return 'attention';
   }
-  return null
+  return null;
 }
 
 /**
@@ -185,58 +187,58 @@ function classifyFinding(finding: Finding): GroupKey | null {
  * shares it.
  */
 function formatLocation(finding: Finding): string {
-  const url = finding.outcome?.url ?? finding.url
-  const name = finding.repo.slice(finding.repo.indexOf('/') + 1)
-  return url ? `${name}: <${url}>` : name
+  const url = finding.outcome?.url ?? finding.url;
+  const name = finding.repo.slice(finding.repo.indexOf('/') + 1);
+  return url ? `${name}: <${url}>` : name;
 }
 
 /** At most `MAX_DETAILS` items, then a count of the rest. */
 function formatDetails(details: Array<string>): string {
-  const shown = details.slice(0, MAX_DETAILS)
-  const rest = details.length - shown.length
-  return rest > 0 ? `${shown.join(', ')} and ${rest} more` : shown.join(', ')
+  const shown = details.slice(0, MAX_DETAILS);
+  const rest = details.length - shown.length;
+  return rest > 0 ? `${shown.join(', ')} and ${rest} more` : shown.join(', ');
 }
 
 function formatFindingLine(
   finding: Finding,
-  { summary, details }: { summary: boolean; details: boolean }
+  { summary, details }: { summary: boolean; details: boolean },
 ): string {
-  const parts = [formatLocation(finding)]
+  const parts = [formatLocation(finding)];
   if (summary) {
-    parts.push(finding.summary)
+    parts.push(finding.summary);
   }
   if (finding.outcome?.detail) {
-    parts.push(finding.outcome.detail)
+    parts.push(finding.outcome.detail);
   }
   if (details && finding.details && finding.details.length > 0) {
-    parts.push(formatDetails(finding.details))
+    parts.push(formatDetails(finding.details));
   }
-  return parts.join(' — ')
+  return parts.join(' — ');
 }
 
 /** One item per finding, except Opened PRs, which is one per repo. */
 function renderGroupItems(
   group: GroupKey,
   findings: Array<Finding>,
-  { details }: { details: boolean }
+  { details }: { details: boolean },
 ): Array<string> {
   if (group === 'opened' || group === 'previous') {
-    const seen = new Set<string>()
+    const seen = new Set<string>();
     return findings.flatMap((f) => {
-      const key = group === 'opened' ? f.repo : formatLocation(f)
+      const key = group === 'opened' ? f.repo : formatLocation(f);
       if (seen.has(key)) {
-        return []
+        return [];
       }
-      seen.add(key)
-      return [formatFindingLine(f, { summary: false, details: false })]
-    })
+      seen.add(key);
+      return [formatFindingLine(f, { summary: false, details: false })];
+    });
   }
-  return findings.map((f) => formatFindingLine(f, { summary: true, details }))
+  return findings.map((f) => formatFindingLine(f, { summary: true, details }));
 }
 
 function pickGroupHeading(group: GroupKey, findings: Array<Finding>): string {
-  const dry = findings.some((f) => f.outcome?.status === 'would-fix')
-  return (dry && DRY_RUN_HEADINGS[group]) || HEADINGS[group]
+  const dry = findings.some((f) => f.outcome?.status === 'would-fix');
+  return (dry && DRY_RUN_HEADINGS[group]) || HEADINGS[group];
 }
 
 /** `results_json`’s shape: every field but the fix. */
@@ -250,21 +252,21 @@ function getFindingsNotifyData({
   reviewers,
   outcome,
 }: Finding): Omit<Finding, 'fix'> {
-  return { repo, check, level, summary, url, details, reviewers, outcome }
+  return { repo, check, level, summary, url, details, reviewers, outcome };
 }
 
 /** The action outputs and job summary for `findings`. */
 export function report(
   findings: Array<Finding>,
-  { repoCount, dryRun, previews, runUrl }: ReportOptions
+  { repoCount, dryRun, previews, runUrl }: ReportOptions,
 ): { outputs: Outputs; summary: string } {
   const groups = Object.fromEntries(
-    GROUP_ORDER.map((key) => [key, [] as Array<Finding>])
-  ) as Record<GroupKey, Array<Finding>>
+    GROUP_ORDER.map((key) => [key, [] as Array<Finding>]),
+  ) as Record<GroupKey, Array<Finding>>;
   for (const finding of findings) {
-    const group = classifyFinding(finding)
+    const group = classifyFinding(finding);
     if (group) {
-      groups[group].push(finding)
+      groups[group].push(finding);
     }
   }
 
@@ -272,10 +274,10 @@ export function report(
     groups[key].length > 0
       ? renderList(
           pickGroupHeading(key, groups[key]),
-          renderGroupItems(key, groups[key], { details: true })
+          renderGroupItems(key, groups[key], { details: true }),
         )
-      : []
-  )
+      : [],
+  );
 
   const slackText = renderSlackText({
     sections: Object.fromEntries(
@@ -290,21 +292,21 @@ export function report(
             details: key === 'failed',
           }),
         },
-      ])
+      ]),
     ) as Record<GroupKey, { heading: string; items: Array<string> }>,
     fillOrder: GROUP_ORDER.map((key) => ({ key, partial: PARTIAL[key] })),
     showOrder: GROUP_ORDER,
     runUrl,
-  })
+  });
 
   const notify =
-    groups.failed.length + groups.opened.length + groups.fixed.length > 0
+    groups.failed.length + groups.opened.length + groups.fixed.length > 0;
   const outputs: Outputs = {
     results_json: JSON.stringify(findings.map(getFindingsNotifyData)),
     slack_text: slackText,
     should_notify: notify ? 'true' : 'false',
     slack_status: groups.failed.length > 0 ? 'failure' : 'warning',
-  }
+  };
 
   const summary = [
     '',
@@ -330,25 +332,25 @@ export function report(
           '',
         ]
       : []),
-  ].join('\n')
+  ].join('\n');
 
-  return { outputs, summary }
+  return { outputs, summary };
 }
 
 /** Write the outputs and the job summary for the run. */
 export async function publish(
   findings: Array<Finding>,
-  options: Omit<ReportOptions, 'runUrl'>
+  options: Omit<ReportOptions, 'runUrl'>,
 ): Promise<void> {
   const runUrl = [
     process.env.GITHUB_SERVER_URL,
     process.env.GITHUB_REPOSITORY,
     'actions/runs',
     process.env.GITHUB_RUN_ID,
-  ].join('/')
-  const { outputs, summary } = report(findings, { ...options, runUrl })
+  ].join('/');
+  const { outputs, summary } = report(findings, { ...options, runUrl });
   for (const [name, value] of Object.entries(outputs)) {
-    core.setOutput(name, value)
+    core.setOutput(name, value);
   }
-  await core.summary.addRaw(summary).write()
+  await core.summary.addRaw(summary).write();
 }

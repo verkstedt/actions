@@ -1,7 +1,7 @@
-import type { Logger } from '../types.ts'
+import type { Logger } from '../types.ts';
 
 export interface FakeLog extends Logger {
-  calls: Record<'info' | 'warning' | 'error', Array<string>>
+  calls: Record<'info' | 'warning' | 'error', Array<string>>;
 }
 
 /**
@@ -9,11 +9,11 @@ export interface FakeLog extends Logger {
  * been logged is in `calls`, keyed by level.
  */
 export function fakeLog(): FakeLog {
-  const calls: FakeLog['calls'] = { info: [], warning: [], error: [] }
+  const calls: FakeLog['calls'] = { info: [], warning: [], error: [] };
   return {
     calls,
     info: (message) => calls.info.push(message),
     warning: (message) => calls.warning.push(message),
     error: (message) => calls.error.push(message),
-  }
+  };
 }

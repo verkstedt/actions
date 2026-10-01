@@ -36613,33 +36613,33 @@ function getOctokit(token, options, ...additionalPlugins) {
 const {
   /* context */ "_": index_context,
   /* context */ "_": { payload },
-} = github_namespaceObject
-const pr = payload.pull_request || payload.issue
+} = github_namespaceObject;
+const pr = payload.pull_request || payload.issue;
 
-const githubToken = getInput('github-token')
+const githubToken = getInput('github-token');
 const githubRequireKeywordPrefix =
-  getInput('github-require-keyword-prefix') !== 'false'
+  getInput('github-require-keyword-prefix') !== 'false';
 
-const jiraDomainInput = getInput('jira-domain', { required: true })
-const jiraUser = getInput('jira-user', { required: true })
-const jiraApiToken = getInput('jira-api-token', { required: true })
-const jiraStatusPrDraft = getInput('jira-status-pr-draft')
-const jiraStatusPrReady = getInput('jira-status-pr-ready')
-const jiraStatusPrMerged = getInput('jira-status-pr-merged')
+const jiraDomainInput = getInput('jira-domain', { required: true });
+const jiraUser = getInput('jira-user', { required: true });
+const jiraApiToken = getInput('jira-api-token', { required: true });
+const jiraStatusPrDraft = getInput('jira-status-pr-draft');
+const jiraStatusPrReady = getInput('jira-status-pr-ready');
+const jiraStatusPrMerged = getInput('jira-status-pr-merged');
 
-const timeoutMs = 10_000
+const timeoutMs = 10_000;
 
-const authHeader = `Basic ${Buffer.from(`${jiraUser}:${jiraApiToken}`).toString('base64')}`
+const authHeader = `Basic ${Buffer.from(`${jiraUser}:${jiraApiToken}`).toString('base64')}`;
 
 /**
  * @param {URL} baseUrl
  */
 function createJiraClient(baseUrl) {
   async function request(method, path, { params, body } = {}) {
-    const url = new URL(path, baseUrl)
+    const url = new URL(path, baseUrl);
     if (params) {
       for (const [key, value] of Object.entries(params)) {
-        url.searchParams.set(key, value)
+        url.searchParams.set(key, value);
       }
     }
     const response = await fetch(url, {
@@ -36651,46 +36651,46 @@ function createJiraClient(baseUrl) {
       },
       body: body == null ? undefined : JSON.stringify(body),
       signal: AbortSignal.timeout(timeoutMs),
-    })
-    const responseText = await response.text()
-    const data = responseText ? JSON.parse(responseText) : undefined
+    });
+    const responseText = await response.text();
+    const data = responseText ? JSON.parse(responseText) : undefined;
     if (!response.ok) {
       core_error(
-        `Error ${response.status} ${response.statusText} ${url.pathname}`
-      )
+        `Error ${response.status} ${response.statusText} ${url.pathname}`,
+      );
       if (data !== undefined) {
-        core_error(JSON.stringify(data))
+        core_error(JSON.stringify(data));
       }
       throw new Error(
-        `Jira request failed: ${method} ${url.pathname} → ${response.status} ${response.statusText}`
-      )
+        `Jira request failed: ${method} ${url.pathname} → ${response.status} ${response.statusText}`,
+      );
     }
-    return { data }
+    return { data };
   }
 
   return {
     get: (path, options) => request('GET', path, options),
     post: (path, body) => request('POST', path, { body }),
     put: (path, body) => request('PUT', path, { body }),
-  }
+  };
 }
 
 // https://developer.atlassian.com/cloud/jira/platform/rest/v3/
-const jiraApiBaseUrl = new URL('/rest/api/3/', `https://${jiraDomainInput}`)
-const jiraApi = createJiraClient(jiraApiBaseUrl)
+const jiraApiBaseUrl = new URL('/rest/api/3/', `https://${jiraDomainInput}`);
+const jiraApi = createJiraClient(jiraApiBaseUrl);
 
 // https://developer.atlassian.com/cloud/jira/software/rest/
 const jiraAgileApiBaseUrl = new URL(
   '/rest/agile/1.0/',
-  `https://${jiraDomainInput}`
-)
-const jiraAgileApi = createJiraClient(jiraAgileApiBaseUrl)
+  `https://${jiraDomainInput}`,
+);
+const jiraAgileApi = createJiraClient(jiraAgileApiBaseUrl);
 
-const octokit = getOctokit(githubToken)
-const repoOwner = (payload.organization || payload.repository.owner).login
-const issueNumber = (payload.pull_request || payload.issue).number
+const octokit = getOctokit(githubToken);
+const repoOwner = (payload.organization || payload.repository.owner).login;
+const issueNumber = (payload.pull_request || payload.issue).number;
 
-const tipCommentMarker = '<!-- JIRA_INTEGRATION_NAG -->'
+const tipCommentMarker = '<!-- JIRA_INTEGRATION_NAG -->';
 
 /**
  * GitHub data
@@ -36718,7 +36718,7 @@ const tipCommentMarker = '<!-- JIRA_INTEGRATION_NAG -->'
  * @return {StatusName}
  */
 function normaliseStatusName(name) {
-  return name.trim().toLowerCase().replace(/\s+/g, ' ')
+  return name.trim().toLowerCase().replace(/\s+/g, ' ');
 }
 
 /**
@@ -36733,7 +36733,7 @@ async function getIssues(issuesKeys) {
       fields: 'status',
       expand: 'transitions',
     },
-  })
+  });
 
   return response.data.issues.map((jiraIssueData) => ({
     issueKey: jiraIssueData.key,
@@ -36741,9 +36741,9 @@ async function getIssues(issuesKeys) {
     availableTransitions: new Map(
       jiraIssueData.transitions
         .filter((t) => t.isAvailable)
-        .map((t) => [normaliseStatusName(t.name), Number.parseInt(t.id, 10)])
+        .map((t) => [normaliseStatusName(t.name), Number.parseInt(t.id, 10)]),
     ),
-  }))
+  }));
 }
 
 const keywords = [
@@ -36756,7 +36756,7 @@ const keywords = [
   'resolve',
   'resolves',
   'resolved',
-]
+];
 
 /**
  * @param {string} prBody
@@ -36769,41 +36769,41 @@ function extractResolvedIssueKeys(prBody, comments) {
     ...comments
       .filter((comment) => !comment.isMinimized)
       .map((comment) => comment.body),
-  ].join('\0')
+  ].join('\0');
 
   const keywordsRegExp = githubRequireKeywordPrefix
     ? `(?:${keywords.join('|')})\\s+`
-    : ''
+    : '';
   // Warning:
   // It’s extremely important for this regexp to match only simple
   // jira keys as extracted keys will be used in JQL queries.
-  const issueKeyRegExp = '[A-Z][A-Z0-9]+-[0-9]+'
-  const urlRegExp = `${RegExp.escape(jiraApiBaseUrl.origin)}/browse/(${issueKeyRegExp})`
-  const closesRegExp = `${keywordsRegExp}<?${urlRegExp}>?(?:\\s*,\\s*<?${urlRegExp}>?)*`
+  const issueKeyRegExp = '[A-Z][A-Z0-9]+-[0-9]+';
+  const urlRegExp = `${RegExp.escape(jiraApiBaseUrl.origin)}/browse/(${issueKeyRegExp})`;
+  const closesRegExp = `${keywordsRegExp}<?${urlRegExp}>?(?:\\s*,\\s*<?${urlRegExp}>?)*`;
 
   // Find all “Closes URL, URL…”
-  const matches = text.match(new RegExp(closesRegExp, 'gi')) || []
+  const matches = text.match(new RegExp(closesRegExp, 'gi')) || [];
 
   return Array.from(
     new Set(
       matches.flatMap((match) => {
         // Find URLs
-        const urlMatches = match.match(new RegExp(urlRegExp, 'gi'))
+        const urlMatches = match.match(new RegExp(urlRegExp, 'gi'));
         // Find issueId in the URL (only capture group in urlRegExp)
         const issueKeys = urlMatches.map((url) =>
-          url.match(new RegExp(urlRegExp, 'i'))[1].toUpperCase()
-        )
-        return issueKeys
-      })
-    )
-  )
+          new RegExp(urlRegExp, 'i').exec(url)[1].toUpperCase(),
+        );
+        return issueKeys;
+      }),
+    ),
+  );
 }
 
 /**
  * @return {Promise<Array<PullRequestComment>>}
  */
 async function getPullRequestComments() {
-  info('Requesting pull request comments')
+  info('Requesting pull request comments');
 
   const query = `
     query ($owner: String!, $repo: String!, $number: Int!, $cursor: String) {
@@ -36824,24 +36824,24 @@ async function getPullRequestComments() {
         }
       }
     }
-  `
+  `;
 
-  const comments = []
-  let cursor = null
-  let hasNextPage = true
+  const comments = [];
+  let cursor = null;
+  let hasNextPage = true;
   while (hasNextPage) {
     const result = await octokit.graphql(query, {
       owner: repoOwner,
       repo: payload.repository.name,
       number: issueNumber,
       cursor,
-    })
-    const page = result.repository.issueOrPullRequest.comments
-    comments.push(...page.nodes)
-    hasNextPage = page.pageInfo.hasNextPage
-    cursor = page.pageInfo.endCursor
+    });
+    const page = result.repository.issueOrPullRequest.comments;
+    comments.push(...page.nodes);
+    hasNextPage = page.pageInfo.hasNextPage;
+    cursor = page.pageInfo.endCursor;
   }
-  return comments
+  return comments;
 }
 
 /**
@@ -36849,9 +36849,9 @@ async function getPullRequestComments() {
  * @return {Promise<void>}
  */
 async function minimiseTipComments(tipComments) {
-  if (tipComments.length === 0) return
+  if (tipComments.length === 0) return;
 
-  info('Issues found — minimising stale tip comment(s).')
+  info('Issues found — minimising stale tip comment(s).');
   await Promise.all(
     tipComments.map(async (tip) => {
       try {
@@ -36861,13 +36861,13 @@ async function minimiseTipComments(tipComments) {
               minimizedComment { isMinimized }
             }
           }`,
-          { id: tip.id }
-        )
+          { id: tip.id },
+        );
       } catch (error) {
-        core_error(`Failed to minimise tip comment: ${error}`)
+        core_error(`Failed to minimise tip comment: ${error}`);
       }
-    })
-  )
+    }),
+  );
 }
 
 async function postTipCommentLinkJiraIssue(tipComments) {
@@ -36882,23 +36882,23 @@ async function postTipCommentLinkJiraIssue(tipComments) {
   ) {
     try {
       if (tipComments.length > 0) {
-        info('No issues found, but tip comment already present.')
+        info('No issues found, but tip comment already present.');
       } else {
-        info('No issues found — posting a tip comment.')
+        info('No issues found — posting a tip comment.');
 
         const keyword =
-          keywords[0].slice(0, 1).toUpperCase() + keywords[0].slice(1)
-        const body = `${tipCommentMarker}\n> [!TIP]\n> Include “${keyword} <var>JIRA_ISSUE_URL</var>” in the PR body to associate it with an issue.`
+          keywords[0].slice(0, 1).toUpperCase() + keywords[0].slice(1);
+        const body = `${tipCommentMarker}\n> [!TIP]\n> Include “${keyword} <var>JIRA_ISSUE_URL</var>” in the PR body to associate it with an issue.`;
 
         await octokit.rest.issues.createComment({
           issue_number: pr.number,
           owner: repoOwner,
           repo: payload.repository.name,
           body,
-        })
+        });
       }
     } catch (error) {
-      core_error(`Failed to post tip comment: ${error}`)
+      core_error(`Failed to post tip comment: ${error}`);
     }
   }
 }
@@ -36910,36 +36910,36 @@ async function postTipCommentLinkJiraIssue(tipComments) {
 async function assignPrToIssues(issueKeys) {
   await Promise.all(
     issueKeys.map(async (issueKey) => {
-      info(`Assigning PR #${pr.number} to issue ${issueKey}`)
+      info(`Assigning PR #${pr.number} to issue ${issueKey}`);
 
       const prLinkObject = {
         url: pr.html_url,
         // Using URL as title will make JIRA fetch the title itself
         title: pr.html_url,
         icon: { url16x16: 'https://github.com/favicon.ico' },
-      }
+      };
 
       const { data: links } = await jiraApi.get(
-        `issue/${encodeURIComponent(issueKey)}/remotelink`
-      )
+        `issue/${encodeURIComponent(issueKey)}/remotelink`,
+      );
 
       const alreadyAssigned = links.some(
-        (link) => link.object.url === prLinkObject.url
-      )
+        (link) => link.object.url === prLinkObject.url,
+      );
       if (!alreadyAssigned) {
         await jiraApi.post(`issue/${encodeURIComponent(issueKey)}/remotelink`, {
           application: {},
           object: prLinkObject,
-        })
+        });
       }
-    })
-  )
+    }),
+  );
 
-  info(`Assigned PR #${pr.number} to ${issueKeys.length} issue(s)`)
+  info(`Assigned PR #${pr.number} to ${issueKeys.length} issue(s)`);
 }
 
 function escapeJqlString(str) {
-  return str.replace(/(["\\])/g, '\\$1')
+  return str.replace(/(["\\])/g, '\\$1');
 }
 
 /**
@@ -36947,17 +36947,17 @@ function escapeJqlString(str) {
  * @return {Promise<IssueKey|undefined>}
  */
 async function getLastIssueInStatusKey(statusName) {
-  const statusNameNormalised = normaliseStatusName(statusName)
+  const statusNameNormalised = normaliseStatusName(statusName);
   const response = await jiraApi.get('search/jql', {
     params: {
       maxResults: 1,
       jql: `status="${escapeJqlString(statusNameNormalised)}" ORDER BY Rank DESC`,
       fields: 'key',
     },
-  })
-  const key = response.data.issues.at(0)?.key
-  info(`Last issue in ${statusName} is ${key}`)
-  return key
+  });
+  const key = response.data.issues.at(0)?.key;
+  info(`Last issue in ${statusName} is ${key}`);
+  return key;
 }
 
 /**
@@ -36966,50 +36966,50 @@ async function getLastIssueInStatusKey(statusName) {
  * @return {Promise<void>}
  */
 async function transitionIssues(issueKeys, newStatusNames) {
-  const newStatusNamesNormalised = newStatusNames.map(normaliseStatusName)
+  const newStatusNamesNormalised = newStatusNames.map(normaliseStatusName);
 
-  const issuesData = await getIssues(issueKeys)
+  const issuesData = await getIssues(issueKeys);
 
   /** @type {Map<StatusName, Array<IssueData>}>} */
-  const issuesByNewStatusName = new Map()
+  const issuesByNewStatusName = new Map();
   issuesData.forEach((issueData) => {
     const newStatusName = newStatusNamesNormalised.find((statusName) =>
-      issueData.availableTransitions.has(statusName)
-    )
+      issueData.availableTransitions.has(statusName),
+    );
     if (!newStatusName) {
       throw new Error(
-        `Failed to find a valid transition for issue ${issueData.issueKey}. Looked for statuses: ${newStatusNames.join(', ')}. Available transitions: ${Array.from(issueData.availableTransitions.keys()).join(', ')}`
-      )
+        `Failed to find a valid transition for issue ${issueData.issueKey}. Looked for statuses: ${newStatusNames.join(', ')}. Available transitions: ${Array.from(issueData.availableTransitions.keys()).join(', ')}`,
+      );
     }
 
     if (issuesByNewStatusName.has(newStatusName)) {
-      issuesByNewStatusName.get(newStatusName).push(issueData)
+      issuesByNewStatusName.get(newStatusName).push(issueData);
     } else {
-      issuesByNewStatusName.set(newStatusName, [issueData])
+      issuesByNewStatusName.set(newStatusName, [issueData]);
     }
-  })
+  });
 
   await Promise.all(
     Array.from(issuesByNewStatusName.entries()).map(
       async ([newStatusName, issues]) => {
         const lastIssueInStatusKey =
-          await getLastIssueInStatusKey(newStatusName)
+          await getLastIssueInStatusKey(newStatusName);
 
         const transitionedIssueKeys = (
           await Promise.all(
             issues.map(async (issue) => {
               if (issue.currentStatusName === newStatusName) {
                 info(
-                  `Did not transition ${issue.issueKey} — already in ${newStatusName}`
-                )
-                return null
+                  `Did not transition ${issue.issueKey} — already in ${newStatusName}`,
+                );
+                return null;
               } else {
                 const newStatusId =
-                  issue.availableTransitions.get(newStatusName)
+                  issue.availableTransitions.get(newStatusName);
                 if (newStatusId == null) {
                   throw new Error(
-                    `List name “${newStatusName}” not found in JIRA. Available statuses: ${Array.from(issue.availableTransitions.keys()).join(', ')}`
-                  )
+                    `List name “${newStatusName}” not found in JIRA. Available statuses: ${Array.from(issue.availableTransitions.keys()).join(', ')}`,
+                  );
                 }
 
                 await jiraApi.post(
@@ -37018,102 +37018,102 @@ async function transitionIssues(issueKeys, newStatusNames) {
                     transition: {
                       id: newStatusId,
                     },
-                  }
-                )
+                  },
+                );
 
-                info(`Transitioned ${issue.issueKey} to ${newStatusName}`)
+                info(`Transitioned ${issue.issueKey} to ${newStatusName}`);
 
-                return issue.issueKey
+                return issue.issueKey;
               }
-            })
+            }),
           )
-        ).filter(Boolean)
+        ).filter(Boolean);
 
         // Move all newly transitioned issues to the end of the list
         if (transitionedIssueKeys.length > 0 && lastIssueInStatusKey) {
           await jiraAgileApi.put('issue/rank', {
             issues: transitionedIssueKeys,
             rankAfterIssue: lastIssueInStatusKey,
-          })
+          });
           info(
-            `Moved issues to the end of column '${newStatusName}': ${transitionedIssueKeys.join(', ')}`
-          )
+            `Moved issues to the end of column '${newStatusName}': ${transitionedIssueKeys.join(', ')}`,
+          );
         }
-      }
-    )
-  )
+      },
+    ),
+  );
 }
 
 /* eslint complexity: ["error", 20] -- TODO Refactor */
 async function main() {
   try {
-    const comments = await getPullRequestComments()
+    const comments = await getPullRequestComments();
     const tipComments = comments.filter(
       (comment) =>
-        !comment.isMinimized && comment.body?.includes(tipCommentMarker)
-    )
-    const issueIds = extractResolvedIssueKeys(pr.body, comments)
+        !comment.isMinimized && comment.body?.includes(tipCommentMarker),
+    );
+    const issueIds = extractResolvedIssueKeys(pr.body, comments);
 
     if (!issueIds.length) {
-      info('Could not find issue IDs')
+      info('Could not find issue IDs');
       // Only post a tip comment when the PR body could have changed
-      await postTipCommentLinkJiraIssue(tipComments)
-      return
+      await postTipCommentLinkJiraIssue(tipComments);
+      return;
     }
-    info('Found issue IDs:', issueIds.join(', '))
+    info('Found issue IDs:', issueIds.join(', '));
 
-    await minimiseTipComments(tipComments)
+    await minimiseTipComments(tipComments);
 
     // Treat PRs with “draft” or “wip” in brackets at the start or
     // end of the titles like drafts. Useful for orgs on unpaid
     // plans which doesn’t support PR drafts.
     const titleDraftRegExp =
-      /^(?:\s*[[(](?:wip|draft)[\])]\s+)|(?:\s+[[(](?:wip|draft)[\])]\s*)$/i
-    const isRealDraft = pr.draft === true
-    const isFauxDraft = Boolean(pr.title.match(titleDraftRegExp))
-    const isDraft = isRealDraft || isFauxDraft
+      /^(?:\s*[[(](?:wip|draft)[\])]\s+)|(?:\s+[[(](?:wip|draft)[\])]\s*)$/i;
+    const isRealDraft = pr.draft === true;
+    const isFauxDraft = Boolean(pr.title.match(titleDraftRegExp));
+    const isDraft = isRealDraft || isFauxDraft;
 
-    await assignPrToIssues(issueIds)
+    await assignPrToIssues(issueIds);
 
     if (pr.state === 'open' && isDraft) {
       if (!jiraStatusPrDraft) {
         info(
-          'No draft PR status name provided, skipping transitioning issues'
-        )
+          'No draft PR status name provided, skipping transitioning issues',
+        );
       } else {
-        await transitionIssues(issueIds, jiraStatusPrDraft.split('|'))
+        await transitionIssues(issueIds, jiraStatusPrDraft.split('|'));
       }
     } else if (pr.state === 'open' && !isDraft) {
       if (!jiraStatusPrReady) {
         info(
-          'No ready PR status name provided, skipping transitioning issues'
-        )
+          'No ready PR status name provided, skipping transitioning issues',
+        );
       } else {
-        await transitionIssues(issueIds, jiraStatusPrReady.split('|'))
+        await transitionIssues(issueIds, jiraStatusPrReady.split('|'));
       }
     } else if (pr.state === 'closed') {
       if (!jiraStatusPrMerged) {
         info(
-          'No merged PR status name provided, skipping transitioning issues'
-        )
+          'No merged PR status name provided, skipping transitioning issues',
+        );
       } else {
-        await transitionIssues(issueIds, jiraStatusPrMerged.split('|'))
+        await transitionIssues(issueIds, jiraStatusPrMerged.split('|'));
       }
     } else {
-      let type = 'not draft'
+      let type = 'not draft';
       if (isFauxDraft) {
-        type = 'faux draft'
+        type = 'faux draft';
       } else if (pr.draft) {
-        type = 'draft'
+        type = 'draft';
       }
       info(
-        `Skipping transitioning the issues: pr.state=${pr.state}, ${type}`
-      )
+        `Skipping transitioning the issues: pr.state=${pr.state}, ${type}`,
+      );
     }
   } catch (error) {
-    setFailed(error)
+    setFailed(error);
   }
 }
 
-main()
+main();
 

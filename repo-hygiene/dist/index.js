@@ -47843,7 +47843,9 @@ function isContextLogger(log) {
 }
 /** A plain logger, such as the recording one in tests, as a sink. */
 function sinkFor(base) {
-    return (entry) => base[entry.level](formatLogLine(entry));
+    return (entry) => {
+        base[entry.level](formatLogLine(entry));
+    };
 }
 /**
  * A logger whose entries carry `context`. Built from a sink, it feeds
@@ -47864,7 +47866,9 @@ function log_createLogger(context, base) {
     else {
         sink = sinkFor(base);
     }
-    const log = (level) => (message) => sink({ ...merged, level, message });
+    const log = (level) => (message) => {
+        sink({ ...merged, level, message });
+    };
     const logger = {
         context: merged,
         sink,
@@ -48351,7 +48355,9 @@ const MAX_REVIEWERS = 15;
  * slugs, without the `@` and org prefixes.
  */
 function splitReviewers(ownerTokens) {
-    const logins = ownerTokens.map((tok) => tok.replace(/^@/, '')).filter(Boolean);
+    const logins = ownerTokens
+        .map((tok) => tok.replace(/^@/, ''))
+        .filter(Boolean);
     const { users = [], teams = [] } = Object.groupBy(logins, (login) => login.includes('/') ? 'teams' : 'users');
     const slugs = teams.map((team) => team.split('/')[1]).filter(Boolean);
     return { users: [...new Set(users)], teams: [...new Set(slugs)] };
@@ -48374,7 +48380,7 @@ async function listHumanContributors(octokit, { org, repo }) {
     }
     return contribs.filter((c) => c.type === 'User' &&
         typeof c.login === 'string' &&
-        !/\[bot\]$/.test(c.login) &&
+        !c.login.endsWith('[bot]') &&
         !KNOWN_BOTS.has(c.login));
 }
 /**
@@ -48521,7 +48527,7 @@ function composePrBody(reviewerSource, describes) {
     if (paragraph) {
         parts.push(paragraph);
     }
-    parts.push('## What?', `${describes.map((d) => `- ${d}`).join('\n')}`);
+    parts.push('## What?', describes.map((d) => `- ${d}`).join('\n'));
     return parts.join('\n\n');
 }
 async function readCommittedCodeowners(snapshot) {
@@ -48744,7 +48750,6 @@ function acceptFileFix(finding, check, snapshot, fixedByThisCheck) {
     const { pending, reads } = snapshot.workingCopy;
     const blind = pending.has(path) && !reads.has(path);
     if (blind || fixedByThisCheck.has(path)) {
-        // eslint-disable-next-line no-param-reassign -- stamping the outcome onto the finding is the point
         finding.outcome = {
             status: 'failed',
             detail: `${check.name} check changed ${path} without reading the pending fix for it`,
@@ -49009,7 +49014,6 @@ function clearScalarQuoting(node) {
     dist.visit(node, {
         Scalar(_, scalar) {
             if (typeof scalar.value === 'string') {
-                // eslint-disable-next-line no-param-reassign -- mutating the visited node is the point
                 scalar.type = undefined;
             }
         },
@@ -49745,7 +49749,9 @@ async function runAudit(octokit, { org, dryRun, reposFilter, runId, runAttempt, 
 
 
 /** Logs through the workflow commands GitHub Actions renders. */
-const actionsLog = (entry) => core_namespaceObject[entry.level](formatLogLine(entry));
+const actionsLog = (entry) => {
+    core_namespaceObject[entry.level](formatLogLine(entry));
+};
 const DRY_RUN_NOTE = '> [!NOTE]\n> This is a **dry run**. No pull requests will be created and no reviewers will be requested. Will show info about ones that would, here in the summary.\n\n';
 function readInputs() {
     const { /* context */ "_": context } = github_namespaceObject;
@@ -49785,5 +49791,7 @@ async function main() {
     });
     await publish(findings, { repoCount, dryRun: inputs.dryRun, previews });
 }
-main().catch((error) => setFailed(getErrorMessage(error)));
+main().catch((error) => {
+    setFailed(getErrorMessage(error));
+});
 

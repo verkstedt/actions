@@ -1,25 +1,26 @@
-import { takeSnapshot, type RepoSnapshot } from '../snapshot.ts'
-import { fakeLog } from './log.ts'
+import { takeSnapshot, type RepoSnapshot } from '../snapshot.ts';
+import type { GitHub, Logger } from '../types.ts';
+
+import { fakeLog } from './log.ts';
 import {
   createFileResponse,
   createHttpError,
   fakeOctokit,
   type FakeOctokit,
   type Handler,
-} from './octokit.ts'
-import type { GitHub, Logger } from '../types.ts'
+} from './octokit.ts';
 
 export interface FakeRepoOptions {
   /** Tree paths without a leading `/`. */
-  paths?: Array<string>
+  paths?: Array<string>;
   /** Committed files, path → content. */
-  files?: Record<string, string>
-  openPrs?: Array<unknown>
-  contributors?: Array<unknown>
+  files?: Record<string, string>;
+  openPrs?: Array<unknown>;
+  contributors?: Array<unknown>;
   /** Repository settings, over a public repo with everything enabled. */
-  repository?: Partial<GitHub.Repository>
+  repository?: Partial<GitHub.Repository>;
   /** Extra or overriding handlers, keyed like `'pulls.listFiles'`. */
-  handlers?: Record<string, Handler>
+  handlers?: Record<string, Handler>;
 }
 
 /**
@@ -56,9 +57,9 @@ export function fakeRepo({
     }),
     'repos.getContent': ({ path }: { path: string }) => {
       if (path in files) {
-        return createFileResponse(path, files[path])
+        return createFileResponse(path, files[path]);
       }
-      throw createHttpError(404)
+      throw createHttpError(404);
     },
     'repos.listContributors': () =>
       contributors ?? [{ type: 'User', login: 'alice' }],
@@ -75,17 +76,17 @@ export function fakeRepo({
     'pulls.listReviews': () => [],
     'pulls.listFiles': () => [],
     ...handlers,
-  })
+  });
 }
 
 /** A real snapshot over a `fakeRepo`, for check and runner tests. */
 export function fakeSnapshot(
-  options: FakeRepoOptions & { log?: Logger; octokit?: FakeOctokit } = {}
+  options: FakeRepoOptions & { log?: Logger; octokit?: FakeOctokit } = {},
 ): Promise<RepoSnapshot> {
-  const octokit = options.octokit ?? fakeRepo(options)
+  const octokit = options.octokit ?? fakeRepo(options);
   return takeSnapshot(
     octokit,
     { name: 'r', default_branch: 'main' },
-    { org: 'org', log: options.log ?? fakeLog() }
-  )
+    { org: 'org', log: options.log ?? fakeLog() },
+  );
 }
