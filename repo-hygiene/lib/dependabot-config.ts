@@ -105,6 +105,61 @@ export async function loadDependabotTemplate(
   return parseDependabotTemplate(file.content)
 }
 
+/** An ecosystem a repo uses and the CODEOWNERS patterns it requires. */
+interface DetectedEcosystem {
+  ecosystem: string
+  requiredCodeowners: Array<string>
+}
+
+/**
+ * `ecosystem` when the repo has a `manifest` file, requiring an owner
+ * for each of `lockfiles` that exists.
+ */
+function detectManifestEcosystem(
+  paths: Array<string>,
+  ecosystem: string,
+  manifest: string,
+  lockfiles: Array<string>
+): DetectedEcosystem | null {
+  const hasFile = (name: string) => paths.some((p) => p.endsWith(`/${name}`))
+  if (!hasFile(manifest)) {
+    return null
+  }
+  return { ecosystem, requiredCodeowners: lockfiles.filter(hasFile) }
+}
+
+/** `npm`, when the repo has a `package.json`. */
+function detectNpmEcosystem(paths: Array<string>): DetectedEcosystem | null {
+  return detectManifestEcosystem(paths, 'npm', 'package.json', [
+    'package-lock.json',
+    'yarn.lock',
+    'pnpm-lock.yaml',
+  ])
+}
+
+/** `cargo`, when the repo has a `Cargo.toml`. */
+function detectCargoEcosystem(paths: Array<string>): DetectedEcosystem | null {
+  return detectManifestEcosystem(paths, 'cargo', 'Cargo.toml', ['Cargo.lock'])
+}
+
+/**
+ * `pip`, when the repo has `requirements*.txt` or `.in` files.
+ *
+ * Dependabot’s `pip` ecosystem also understands other manifests and
+ * lockfiles (Pipenv, Poetry, `pyproject.toml`, `setup.py`, …); only this
+ * subset is supported, to keep things simple.
+ */
+function detectPipEcosystem(paths: Array<string>): DetectedEcosystem | null {
+  const requirementsNames = collectBasenamesMatching(
+    paths,
+    /^requirements.*\.(txt|in)$/
+  )
+  if (requirementsNames.length === 0) {
+    return null
+  }
+  return { ecosystem: 'pip', requiredCodeowners: requirementsNames }
+}
+
 /**
  * Which dependabot ecosystems a repo uses, judged from the paths in
  * its tree (each prefixed with `/`), and the CODEOWNERS patterns that
@@ -120,16 +175,14 @@ export function detectEcosystems(paths: Array<string>): {
   const detected = new Set<string>()
   const requiredCodeowners: Array<string> = []
 
-  if (hasFile((p) => p.endsWith('/package.json'))) {
-    detected.add('npm')
-    if (hasFile((p) => p.endsWith('/package-lock.json'))) {
-      requiredCodeowners.push('package-lock.json')
-    }
-    if (hasFile((p) => p.endsWith('/yarn.lock'))) {
-      requiredCodeowners.push('yarn.lock')
-    }
-    if (hasFile((p) => p.endsWith('/pnpm-lock.yaml'))) {
-      requiredCodeowners.push('pnpm-lock.yaml')
+  for (const found of [
+    detectNpmEcosystem(paths),
+    detectCargoEcosystem(paths),
+    detectPipEcosystem(paths),
+  ]) {
+    if (found) {
+      detected.add(found.ecosystem)
+      requiredCodeowners.push(...found.requiredCodeowners)
     }
   }
   // Dependabot matches “dockerfile” or “containerfile” anywhere in the

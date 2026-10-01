@@ -7,7 +7,8 @@
  * - has a cooldown
  *
  * Entries are built from the org-wide template in `verkstedt/.github`
- * and written in the hygiene PR.
+ * and written in the hygiene PR. Ecosystems the template has no entry
+ * for are left out.
  */
 
 import {
