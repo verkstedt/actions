@@ -1,0 +1,5 @@
+{
+  "extends": "@verkstedt/lint/tsconfig",
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "files": []
+}
