@@ -146,7 +146,7 @@ export async function listTargetRepos(
     (r): r is typeof r & GitHub.RepoMeta =>
       !r.archived &&
       !r.disabled &&
-      (r.size || 0) > 0 &&
+      (r.size ?? 0) > 0 &&
       typeof r.default_branch === 'string',
   );
   if (reposFilter.length === 0) {

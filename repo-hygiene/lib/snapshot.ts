@@ -119,7 +119,7 @@ export async function takeSnapshot(
     if (tree.data.truncated) {
       log.warning('tree response truncated; detection may be incomplete');
     }
-    return (tree.data.tree || []).map((entry) => `/${entry.path}`);
+    return tree.data.tree.map((entry) => `/${entry.path}`);
   });
   const listPaths = async () => {
     const paths = await treePaths();

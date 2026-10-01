@@ -91,7 +91,7 @@ export function renderSlackText<K extends string>({
   const footerLines = runUrl
     ? ['', `<${runUrl}|See full list with more details>`]
     : [];
-  const listed = (Object.values(sections) as Array<Section>).filter(
+  const listed = Object.values<Section>(sections).filter(
     ({ items }) => items.length > 0,
   );
   // Reserve the footer and every section’s count label up front, so
@@ -165,6 +165,10 @@ const PARTIAL: Record<GroupKey, boolean> = {
 
 const MAX_DETAILS = 5;
 
+function classifyFixedFinding(finding: Finding): GroupKey {
+  return finding.fix?.kind === 'file' ? 'opened' : 'fixed';
+}
+
 function classifyFinding(finding: Finding): GroupKey | null {
   const status = finding.outcome?.status ?? 'none';
   if (status === 'failed' || finding.level === 'error') {
@@ -174,7 +178,7 @@ function classifyFinding(finding: Finding): GroupKey | null {
     return 'previous';
   }
   if (status === 'fixed' || status === 'would-fix') {
-    return finding.fix?.kind === 'file' ? 'opened' : 'fixed';
+    return classifyFixedFinding(finding);
   }
   if (finding.level === 'warning' || finding.fix) {
     return 'attention';
@@ -238,7 +242,7 @@ function renderGroupItems(
 
 function pickGroupHeading(group: GroupKey, findings: Array<Finding>): string {
   const dry = findings.some((f) => f.outcome?.status === 'would-fix');
-  return (dry && DRY_RUN_HEADINGS[group]) || HEADINGS[group];
+  return (dry ? DRY_RUN_HEADINGS[group] : undefined) ?? HEADINGS[group];
 }
 
 /** `results_json`’s shape: every field but the fix. */

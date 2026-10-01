@@ -242,9 +242,10 @@ function createActionOutcome(
   fix: ActionFix,
   result: Awaited<ReturnType<ActionFix['run']>>,
 ): Finding['outcome'] {
-  if (typeof result === 'object' && result !== null) {
+  if (typeof result === 'object') {
     return { status: 'none', detail: result.detail };
   }
+  // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing -- An empty detail also falls back to the description.
   return { status: 'fixed', detail: result || fix.describe };
 }
 

@@ -34,8 +34,8 @@ import type {
 function isReviewerless(pr: GitHub.PullRequest): boolean {
   return (
     pr.user?.login === 'dependabot[bot]' &&
-    (pr.requested_reviewers || []).length === 0 &&
-    (pr.requested_teams || []).length === 0
+    (pr.requested_reviewers ?? []).length === 0 &&
+    (pr.requested_teams ?? []).length === 0
   );
 }
 

@@ -256,7 +256,7 @@ describe('applyFixes', () => {
     });
     const passed = seen as { pr: { number: number }; files: unknown } | null;
     assert.equal(passed?.pr.number, 42);
-    assert.deepEqual(passed?.files, { CODEOWNERS: 'a  @OWNER\n' });
+    assert.deepEqual(passed.files, { CODEOWNERS: 'a  @OWNER\n' });
 
     const withoutPr = await applyFixes(
       [finding({ fix: afterPr })],

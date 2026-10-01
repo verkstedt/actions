@@ -112,7 +112,7 @@ describe('auditRepo', () => {
       options(checks),
     );
     assert.equal(findings[0].outcome?.status, 'fixed');
-    assert.equal(findings[0].outcome?.url, 'https://p/42');
+    assert.equal(findings[0].outcome.url, 'https://p/42');
     assert.equal(preview, null);
     assert.equal(listCallsTo(octokit, 'pulls.create').length, 1);
   });

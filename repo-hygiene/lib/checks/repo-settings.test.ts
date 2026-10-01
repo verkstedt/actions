@@ -57,7 +57,7 @@ describe('repoSettings', () => {
     if (finding.fix?.kind !== 'action') {
       throw new Error('expected action');
     }
-    assert.equal(finding.fix.describe, finding.details?.join(', '));
+    assert.equal(finding.fix.describe, finding.details.join(', '));
 
     const result = await finding.fix.run(actionContext(octokit));
     assert.equal(result, 'updated repository settings');

@@ -47800,7 +47800,7 @@ async function listTargetRepos(octokit, { org, reposFilter }) {
     });
     const targets = allRepos.filter((r) => !r.archived &&
         !r.disabled &&
-        (r.size || 0) > 0 &&
+        (r.size ?? 0) > 0 &&
         typeof r.default_branch === 'string');
     if (reposFilter.length === 0) {
         return targets;
@@ -47987,6 +47987,9 @@ const PARTIAL = {
     previous: false,
 };
 const MAX_DETAILS = 5;
+function classifyFixedFinding(finding) {
+    return finding.fix?.kind === 'file' ? 'opened' : 'fixed';
+}
 function classifyFinding(finding) {
     const status = finding.outcome?.status ?? 'none';
     if (status === 'failed' || finding.level === 'error') {
@@ -47996,7 +47999,7 @@ function classifyFinding(finding) {
         return 'previous';
     }
     if (status === 'fixed' || status === 'would-fix') {
-        return finding.fix?.kind === 'file' ? 'opened' : 'fixed';
+        return classifyFixedFinding(finding);
     }
     if (finding.level === 'warning' || finding.fix) {
         return 'attention';
@@ -48048,7 +48051,7 @@ function renderGroupItems(group, findings, { details }) {
 }
 function pickGroupHeading(group, findings) {
     const dry = findings.some((f) => f.outcome?.status === 'would-fix');
-    return (dry && DRY_RUN_HEADINGS[group]) || HEADINGS[group];
+    return (dry ? DRY_RUN_HEADINGS[group] : undefined) ?? HEADINGS[group];
 }
 /** `results_json`’s shape: every field but the fix. */
 function getFindingsNotifyData({ repo, check, level, summary, url, details, reviewers, outcome, }) {
@@ -48251,7 +48254,7 @@ function findCodeownersFor(file, parsedLines) {
 function collectCodeownersForFiles(files, parsedLines) {
     const owners = new Set();
     for (const file of files) {
-        for (const owner of findCodeownersFor(file, parsedLines) || []) {
+        for (const owner of findCodeownersFor(file, parsedLines) ?? []) {
             owners.add(owner);
         }
     }
@@ -48643,9 +48646,10 @@ async function openPr(plan, snapshot, run) {
     return { pr: pr.data, requested };
 }
 function createActionOutcome(fix, result) {
-    if (typeof result === 'object' && result !== null) {
+    if (typeof result === 'object') {
         return { status: 'none', detail: result.detail };
     }
+    // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing -- An empty detail also falls back to the description.
     return { status: 'fixed', detail: result || fix.describe };
 }
 async function runAction(finding, snapshot, pr, files) {
@@ -48892,7 +48896,7 @@ async function takeSnapshot(octokit, repoMeta, { org, log }) {
         if (tree.data.truncated) {
             log.warning('tree response truncated; detection may be incomplete');
         }
-        return (tree.data.tree || []).map((entry) => `/${entry.path}`);
+        return tree.data.tree.map((entry) => `/${entry.path}`);
     });
     const listPaths = async () => {
         const paths = await treePaths();
@@ -48934,12 +48938,12 @@ async function takeSnapshot(octokit, repoMeta, { org, log }) {
 function findExistingHygienePrs(openPrs, repoSlug) {
     return openPrs.filter((pr) => pr.user?.type === 'Bot' &&
         pr.head.ref.startsWith(BRANCH_PREFIX) &&
-        pr.head.repo?.full_name?.toLowerCase() === repoSlug.toLowerCase());
+        pr.head.repo?.full_name.toLowerCase() === repoSlug.toLowerCase());
 }
 function createSkippedFinding(pr, org, repoSlug) {
     const reviewers = [
-        ...(pr.requested_reviewers || []).map((u) => `@${u.login}`),
-        ...(pr.requested_teams || []).map((t) => `@${org}/${t.slug}`),
+        ...(pr.requested_reviewers ?? []).map((u) => `@${u.login}`),
+        ...(pr.requested_teams ?? []).map((t) => `@${org}/${t.slug}`),
     ];
     return {
         repo: repoSlug,
@@ -49489,8 +49493,8 @@ const dependabotConfig = {
  */
 function isReviewerless(pr) {
     return (pr.user?.login === 'dependabot[bot]' &&
-        (pr.requested_reviewers || []).length === 0 &&
-        (pr.requested_teams || []).length === 0);
+        (pr.requested_reviewers ?? []).length === 0 &&
+        (pr.requested_teams ?? []).length === 0);
 }
 async function hasReviews(octokit, { org, repo, pr }) {
     const reviews = await octokit.paginate(octokit.rest.pulls.listReviews, {
@@ -49750,6 +49754,7 @@ async function runAudit(octokit, { org, dryRun, reposFilter, runId, runAttempt, 
 
 /** Logs through the workflow commands GitHub Actions renders. */
 const actionsLog = (entry) => {
+    // eslint-disable-next-line import-x/namespace -- TypeScript ensures every `LogLevel` is a `core` export.
     core_namespaceObject[entry.level](formatLogLine(entry));
 };
 const DRY_RUN_NOTE = '> [!NOTE]\n> This is a **dry run**. No pull requests will be created and no reviewers will be requested. Will show info about ones that would, here in the summary.\n\n';
