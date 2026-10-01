@@ -1,8 +1,7 @@
 import * as core from '@actions/core';
 import * as github from '@actions/github';
 
-const context = github.context ?? {};
-const { payload } = context;
+const { payload } = github.context;
 
 const token = core.getInput('token');
 
@@ -116,10 +115,12 @@ function getPullRequestThreads({ owner, repo, prNumber }) {
       key,
       // Only successful fetches are worth keeping, so that a commit is not
       // dropped because of a failure another commit ran into.
-      fetchPullRequestThreads({ owner, repo, prNumber }).catch((error) => {
-        pullRequestThreads.delete(key);
-        throw error;
-      }),
+      fetchPullRequestThreads({ owner, repo, prNumber }).catch(
+        (/** @type {unknown} */ error) => {
+          pullRequestThreads.delete(key);
+          throw error;
+        },
+      ),
     );
   }
   return pullRequestThreads.get(key);
@@ -212,7 +213,7 @@ if (!commits?.length) {
       const urls =
         message.match(
           /https:\/\/github.com\/([^\s/]+\/){2}pull\/\d+#discussion_r\d+/gi,
-        ) || [];
+        ) ?? [];
 
       core.debug(`Discussion URLs: ${urls.length}`);
 
@@ -252,7 +253,7 @@ if (!commits?.length) {
                 });
               } catch (error) {
                 core.error(
-                  `Failed to read the thread of ${url.toString()}, replying without checking for duplicates: ${error}`,
+                  `Failed to read the thread of ${url.toString()}, replying without checking for duplicates: ${String(error)}`,
                 );
               }
 

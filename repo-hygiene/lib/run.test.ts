@@ -86,7 +86,7 @@ describe('runAudit', () => {
       runId: 0,
       runAttempt: 0,
       requireAppAccess: false,
-      log: () => {},
+      log: () => undefined,
       checks: [],
     });
     assert.deepEqual(

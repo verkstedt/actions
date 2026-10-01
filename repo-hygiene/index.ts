@@ -9,6 +9,7 @@ import type { LogSink } from './lib/types.ts';
 
 /** Logs through the workflow commands GitHub Actions renders. */
 const actionsLog: LogSink = (entry) => {
+  // eslint-disable-next-line import-x/namespace -- TypeScript ensures every `LogLevel` is a `core` export.
   core[entry.level](formatLogLine(entry));
 };
 

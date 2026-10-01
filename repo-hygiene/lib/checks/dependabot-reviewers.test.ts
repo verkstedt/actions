@@ -47,13 +47,10 @@ describe('dependabotReviewers', () => {
     assert.equal(finding.url, 'https://p/1');
     assert.equal(finding.fix?.kind, 'action');
     assert.equal(
-      finding.fix?.describe,
+      finding.fix.describe,
       'request @alice, @org/devs as reviewers',
     );
 
-    if (finding.fix?.kind !== 'action') {
-      throw new Error('expected action');
-    }
     const result = await finding.fix.run(actionContext(octokit));
     assert.equal(result, 'requested @alice, @org/devs');
     assert.deepEqual(

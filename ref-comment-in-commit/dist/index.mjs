@@ -36583,8 +36583,7 @@ __nccwpck_require__.a(__webpack_module__, async (__webpack_handle_async_dependen
 
 
 
-const context = _actions_github__WEBPACK_IMPORTED_MODULE_1__/* .context */ ._ ?? {};
-const { payload } = context;
+const { payload } = _actions_github__WEBPACK_IMPORTED_MODULE_1__/* .context */ ._;
 
 const token = _actions_core__WEBPACK_IMPORTED_MODULE_0__/* .getInput */ .V4('token');
 
@@ -36698,10 +36697,12 @@ function getPullRequestThreads({ owner, repo, prNumber }) {
       key,
       // Only successful fetches are worth keeping, so that a commit is not
       // dropped because of a failure another commit ran into.
-      fetchPullRequestThreads({ owner, repo, prNumber }).catch((error) => {
-        pullRequestThreads.delete(key);
-        throw error;
-      }),
+      fetchPullRequestThreads({ owner, repo, prNumber }).catch(
+        (/** @type {unknown} */ error) => {
+          pullRequestThreads.delete(key);
+          throw error;
+        },
+      ),
     );
   }
   return pullRequestThreads.get(key);
@@ -36794,7 +36795,7 @@ if (!commits?.length) {
       const urls =
         message.match(
           /https:\/\/github.com\/([^\s/]+\/){2}pull\/\d+#discussion_r\d+/gi,
-        ) || [];
+        ) ?? [];
 
       _actions_core__WEBPACK_IMPORTED_MODULE_0__/* .debug */ .Yz(`Discussion URLs: ${urls.length}`);
 
@@ -36834,7 +36835,7 @@ if (!commits?.length) {
                 });
               } catch (error) {
                 _actions_core__WEBPACK_IMPORTED_MODULE_0__/* .error */ .z3(
-                  `Failed to read the thread of ${url.toString()}, replying without checking for duplicates: ${error}`,
+                  `Failed to read the thread of ${url.toString()}, replying without checking for duplicates: ${String(error)}`,
                 );
               }
 

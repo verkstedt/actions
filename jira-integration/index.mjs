@@ -13,7 +13,7 @@ const {
   context,
   context: { payload },
 } = github;
-const pr = payload.pull_request || payload.issue;
+const pr = payload.pull_request ?? payload.issue;
 
 const githubToken = core.getInput('github-token');
 const githubRequireKeywordPrefix =
@@ -86,8 +86,8 @@ const jiraAgileApiBaseUrl = new URL(
 const jiraAgileApi = createJiraClient(jiraAgileApiBaseUrl);
 
 const octokit = github.getOctokit(githubToken);
-const repoOwner = (payload.organization || payload.repository.owner).login;
-const issueNumber = (payload.pull_request || payload.issue).number;
+const repoOwner = (payload.organization ?? payload.repository.owner).login;
+const issueNumber = (payload.pull_request ?? payload.issue).number;
 
 const tipCommentMarker = '<!-- JIRA_INTEGRATION_NAG -->';
 
@@ -181,7 +181,7 @@ function extractResolvedIssueKeys(prBody, comments) {
   const closesRegExp = `${keywordsRegExp}<?${urlRegExp}>?(?:\\s*,\\s*<?${urlRegExp}>?)*`;
 
   // Find all “Closes URL, URL…”
-  const matches = text.match(new RegExp(closesRegExp, 'gi')) || [];
+  const matches = text.match(new RegExp(closesRegExp, 'gi')) ?? [];
 
   return Array.from(
     new Set(
@@ -263,7 +263,7 @@ async function minimiseTipComments(tipComments) {
           { id: tip.id },
         );
       } catch (error) {
-        core.error(`Failed to minimise tip comment: ${error}`);
+        core.error(`Failed to minimise tip comment: ${String(error)}`);
       }
     }),
   );
@@ -297,7 +297,7 @@ async function postTipCommentLinkJiraIssue(tipComments) {
         });
       }
     } catch (error) {
-      core.error(`Failed to post tip comment: ${error}`);
+      core.error(`Failed to post tip comment: ${String(error)}`);
     }
   }
 }
@@ -449,7 +449,7 @@ async function main() {
     const comments = await getPullRequestComments();
     const tipComments = comments.filter(
       (comment) =>
-        !comment.isMinimized && comment.body?.includes(tipCommentMarker),
+        !comment.isMinimized && comment.body.includes(tipCommentMarker),
     );
     const issueIds = extractResolvedIssueKeys(pr.body, comments);
 
@@ -514,4 +514,4 @@ async function main() {
   }
 }
 
-main();
+await main();

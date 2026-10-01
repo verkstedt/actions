@@ -24,7 +24,7 @@ function findExistingHygienePrs(
     (pr) =>
       pr.user?.type === 'Bot' &&
       pr.head.ref.startsWith(BRANCH_PREFIX) &&
-      pr.head.repo?.full_name?.toLowerCase() === repoSlug.toLowerCase(),
+      pr.head.repo?.full_name.toLowerCase() === repoSlug.toLowerCase(),
   );
 }
 
@@ -34,8 +34,8 @@ function createSkippedFinding(
   repoSlug: string,
 ): Finding {
   const reviewers = [
-    ...(pr.requested_reviewers || []).map((u) => `@${u.login}`),
-    ...(pr.requested_teams || []).map((t) => `@${org}/${t.slug}`),
+    ...(pr.requested_reviewers ?? []).map((u) => `@${u.login}`),
+    ...(pr.requested_teams ?? []).map((t) => `@${org}/${t.slug}`),
   ];
   return {
     repo: repoSlug,

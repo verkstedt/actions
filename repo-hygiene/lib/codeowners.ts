@@ -143,7 +143,7 @@ export function collectCodeownersForFiles(
 ): Array<string> {
   const owners = new Set<string>();
   for (const file of files) {
-    for (const owner of findCodeownersFor(file, parsedLines) || []) {
+    for (const owner of findCodeownersFor(file, parsedLines) ?? []) {
       owners.add(owner);
     }
   }

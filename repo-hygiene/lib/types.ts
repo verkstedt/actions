@@ -66,6 +66,7 @@ export type ReviewerSource =
  * The parts of GitHub API objects the audit reads. Structural so the
  * tests can pass literals; the real API objects are assignable.
  */
+// eslint-disable-next-line @typescript-eslint/no-namespace -- Type-only, so erased at build time.
 export namespace GitHub {
   export interface RepoMeta {
     name: string;

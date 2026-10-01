@@ -56,6 +56,7 @@ function readGhToken(): string | undefined {
   }
 }
 
+// eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing -- An empty GITHUB_TOKEN also falls back to gh.
 const token = process.env.GITHUB_TOKEN || readGhToken();
 if (!token) {
   process.stderr.write(
