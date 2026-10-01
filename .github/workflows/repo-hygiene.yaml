@@ -30,7 +30,7 @@ on:
         description: >
           ID of a dedicated GitHub App installed on ALL org repos with
           read/write access to Contents, Pull requests and
-          Administration, and read access to Members.
+          Administration, and read access to Members and Actions.
           Typically passed from `vars.GH_AUTH_APP_ID`.
         required: true
         type: string
@@ -131,3 +131,19 @@ jobs:
           slack-bot-token: ${{ secrets.slack-bot-token }}
           slack-channel-id: ${{ inputs.slack-channel-id }}
           text: '`repo-hygiene` run failed before summary — see workflow logs'
+
+      - name: Fail on failed repository checks
+        if: inputs.notify-slack && !inputs.dry-run && steps.audit.outputs.slack_status == 'failure'
+        shell: sh
+        run: exit 1
+
+      - name: Notify Slack (back to normal)
+        if: inputs.notify-slack && !inputs.dry-run && steps.audit.conclusion == 'success'
+        uses: verkstedt/actions/notify-status@v1
+        with:
+          status: success
+          slack-bot-token: ${{ secrets.slack-bot-token }}
+          slack-channel-id: ${{ inputs.slack-channel-id }}
+          text: '`repo-hygiene` is back to normal after previous failure'
+          only-after-failure: true
+          github-token: ${{ steps.app-token.outputs.token }}
