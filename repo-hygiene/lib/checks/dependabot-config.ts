@@ -15,19 +15,19 @@ import {
   detectEcosystems,
   loadDependabotTemplate,
   planDependabotChange,
-} from '../dependabot-config.ts'
-import type { Check, DependabotTemplate } from '../types.ts'
+} from '../dependabot-config.ts';
+import type { Check, DependabotTemplate } from '../types.ts';
 
 /** Where dependabot looks for its config, in order of precedence. */
-const DEPENDABOT_PATHS = ['.github/dependabot.yaml', '.github/dependabot.yml']
+const DEPENDABOT_PATHS = ['.github/dependabot.yaml', '.github/dependabot.yml'];
 
-let template: DependabotTemplate | null = null
+let template: DependabotTemplate | null = null;
 
 function requireLoadedTemplate(): DependabotTemplate {
   if (!template) {
-    throw new Error('dependabot-config check used before setup')
+    throw new Error('dependabot-config check used before setup');
   }
-  return template
+  return template;
 }
 
 /**
@@ -39,19 +39,19 @@ export const dependabotConfig: Check = {
   name: 'dependabot-config',
   opensPr: true,
   setup: async (octokit) => {
-    template = await loadDependabotTemplate(octokit)
+    template = await loadDependabotTemplate(octokit);
   },
   run: async (snapshot) => {
-    const { detected } = detectEcosystems(await snapshot.listPaths())
-    const existing = await snapshot.readFirstExistingFile(DEPENDABOT_PATHS)
+    const { detected } = detectEcosystems(await snapshot.listPaths());
+    const existing = await snapshot.readFirstExistingFile(DEPENDABOT_PATHS);
     const change = planDependabotChange({
       detected,
       existing,
       template: requireLoadedTemplate(),
       log: snapshot.log,
-    })
+    });
     if (!change) {
-      return [{ level: 'info', summary: 'dependabot config is complete' }]
+      return [{ level: 'info', summary: 'dependabot config is complete' }];
     }
     return [
       {
@@ -67,6 +67,6 @@ export const dependabotConfig: Check = {
           describe: change.summary,
         },
       },
-    ]
+    ];
   },
-}
+};

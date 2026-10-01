@@ -1,113 +1,113 @@
-import { describe, it } from 'node:test'
-import assert from 'node:assert/strict'
+import assert from 'node:assert/strict';
+import { describe, it } from 'node:test';
 
-import {
-  tryGetContent,
-  commitChange,
-  createLineComment,
-  assertAppSeesAllRepos,
-  listTargetRepos,
-} from './github.ts'
 import {
   createFileResponse,
   createHttpError,
   fakeOctokit,
-} from './__fixtures__/octokit.ts'
+} from './__fixtures__/octokit.ts';
+import {
+  assertAppSeesAllRepos,
+  commitChange,
+  createLineComment,
+  listTargetRepos,
+  tryGetContent,
+} from './github.ts';
 
 describe('tryGetContent', () => {
   it('returns the first path that exists, decoded', async () => {
     const octokit = fakeOctokit({
       'repos.getContent': ({ path }) => {
         if (path === 'CODEOWNERS') {
-          return createFileResponse(path, '* @a\n', 'sha1')
+          return createFileResponse(path, '* @a\n', 'sha1');
         }
-        throw createHttpError(404)
+        throw createHttpError(404);
       },
-    })
+    });
     const found = await tryGetContent(octokit, {
       owner: 'org',
       repo: 'r',
       ref: 'main',
       paths: ['.github/CODEOWNERS', 'CODEOWNERS', 'docs/CODEOWNERS'],
-    })
+    });
     assert.deepEqual(found, {
       sha: 'sha1',
       path: 'CODEOWNERS',
       content: '* @a\n',
-    })
+    });
     assert.deepEqual(
       octokit.calls.map((c) => c.params.path),
-      ['.github/CODEOWNERS', 'CODEOWNERS']
-    )
-    assert.equal(octokit.calls[0].params.ref, 'main')
-  })
+      ['.github/CODEOWNERS', 'CODEOWNERS'],
+    );
+    assert.equal(octokit.calls[0].params.ref, 'main');
+  });
 
   it('returns null when every path is missing', async () => {
     const octokit = fakeOctokit({
       'repos.getContent': () => {
-        throw createHttpError(404)
+        throw createHttpError(404);
       },
-    })
+    });
     assert.equal(
       await tryGetContent(octokit, {
         owner: 'org',
         repo: 'r',
         paths: ['a', 'b'],
       }),
-      null
-    )
-  })
+      null,
+    );
+  });
 
   it('skips directories', async () => {
-    const octokit = fakeOctokit({ 'repos.getContent': () => [] })
+    const octokit = fakeOctokit({ 'repos.getContent': () => [] });
     assert.equal(
       await tryGetContent(octokit, {
         owner: 'org',
         repo: 'r',
         paths: ['docs'],
       }),
-      null
-    )
-  })
+      null,
+    );
+  });
 
   it('rethrows other errors', async () => {
     const octokit = fakeOctokit({
       'repos.getContent': () => {
-        throw createHttpError(500)
+        throw createHttpError(500);
       },
-    })
+    });
     await assert.rejects(
       tryGetContent(octokit, { owner: 'org', repo: 'r', paths: ['a'] }),
       {
         status: 500,
-      }
-    )
-  })
-})
+      },
+    );
+  });
+});
 
 describe('commitChange', () => {
   it('adds a new file', async () => {
     const octokit = fakeOctokit({
       'repos.createOrUpdateFileContents': () => ({}),
-    })
+    });
     await commitChange(octokit, {
       org: 'org',
       repo: 'r',
       branch: 'b',
       path: 'CODEOWNERS',
       content: 'x @a\n',
-    })
-    const { params } = octokit.calls[0]
-    assert.equal(params.message, 'chore: Add CODEOWNERS')
-    assert.equal(params.sha, undefined)
-    assert.equal(Buffer.from(params.content, 'base64').toString(), 'x @a\n')
-    assert.equal(params.branch, 'b')
-  })
+    });
+    const { params } = octokit.calls[0];
+    assert.equal(params.message, 'chore: Add CODEOWNERS');
+    assert.equal(params.sha, undefined);
+    assert.equal(Buffer.from(params.content, 'base64').toString(), 'x @a\n');
+    assert.equal(params.branch, 'b');
+  });
 
   it('updates an existing file when the change carries a sha', async () => {
     const octokit = fakeOctokit({
       'repos.createOrUpdateFileContents': () => ({}),
-    })
+    });
     await commitChange(octokit, {
       org: 'org',
       repo: 'r',
@@ -115,18 +115,18 @@ describe('commitChange', () => {
       path: '.github/dependabot.yaml',
       content: '',
       sha: 'old',
-    })
-    const { params } = octokit.calls[0]
-    assert.equal(params.message, 'chore: Update .github/dependabot.yaml')
-    assert.equal(params.sha, 'old')
-  })
-})
+    });
+    const { params } = octokit.calls[0];
+    assert.equal(params.message, 'chore: Update .github/dependabot.yaml');
+    assert.equal(params.sha, 'old');
+  });
+});
 
 describe('createLineComment', () => {
-  const pr = { number: 7, head: { sha: 'prhead' } }
+  const pr = { number: 7, head: { sha: 'prhead' } };
 
   it('comments on a single line', async () => {
-    const octokit = fakeOctokit({ 'pulls.createReview': () => ({}) })
+    const octokit = fakeOctokit({ 'pulls.createReview': () => ({}) });
     await createLineComment(octokit, {
       org: 'org',
       repo: 'r',
@@ -134,18 +134,18 @@ describe('createLineComment', () => {
       path: 'CODEOWNERS',
       lineNumbers: [4],
       body: 'fix me',
-    })
-    const { params } = octokit.calls[0]
-    assert.equal(params.pull_number, 7)
-    assert.equal(params.commit_id, 'prhead')
-    assert.equal(params.event, 'COMMENT')
+    });
+    const { params } = octokit.calls[0];
+    assert.equal(params.pull_number, 7);
+    assert.equal(params.commit_id, 'prhead');
+    assert.equal(params.event, 'COMMENT');
     assert.deepEqual(params.comments, [
       { path: 'CODEOWNERS', body: 'fix me', side: 'RIGHT', line: 4 },
-    ])
-  })
+    ]);
+  });
 
   it('spans a range of lines', async () => {
-    const octokit = fakeOctokit({ 'pulls.createReview': () => ({}) })
+    const octokit = fakeOctokit({ 'pulls.createReview': () => ({}) });
     await createLineComment(octokit, {
       org: 'org',
       repo: 'r',
@@ -153,19 +153,19 @@ describe('createLineComment', () => {
       path: 'CODEOWNERS',
       lineNumbers: [6, 4, 5],
       body: 'fix me',
-    })
-    const [comment] = octokit.calls[0].params.comments
-    assert.equal(comment.start_line, 4)
-    assert.equal(comment.start_side, 'RIGHT')
-    assert.equal(comment.line, 6)
-  })
+    });
+    const [comment] = octokit.calls[0].params.comments;
+    assert.equal(comment.start_line, 4);
+    assert.equal(comment.start_side, 'RIGHT');
+    assert.equal(comment.line, 6);
+  });
 
   it('throws when the review cannot be created', async () => {
     const octokit = fakeOctokit({
       'pulls.createReview': () => {
-        throw createHttpError(422, 'Unprocessable')
+        throw createHttpError(422, 'Unprocessable');
       },
-    })
+    });
     await assert.rejects(
       createLineComment(octokit, {
         org: 'org',
@@ -175,30 +175,30 @@ describe('createLineComment', () => {
         lineNumbers: [2, 3],
         body: 'x',
       }),
-      { message: 'Unprocessable' }
-    )
-  })
-})
+      { message: 'Unprocessable' },
+    );
+  });
+});
 
 describe('assertAppSeesAllRepos', () => {
   it('passes for an App installed on all repos', async () => {
     const octokit = fakeOctokit({
       'GET /installation/repositories': () => ({ repository_selection: 'all' }),
-    })
-    await assertAppSeesAllRepos(octokit)
-  })
+    });
+    await assertAppSeesAllRepos(octokit);
+  });
 
   it('throws otherwise', async () => {
     const octokit = fakeOctokit({
       'GET /installation/repositories': () => ({
         repository_selection: 'selected',
       }),
-    })
+    });
     await assert.rejects(assertAppSeesAllRepos(octokit), {
       message: /repository_selection='selected'/,
-    })
-  })
-})
+    });
+  });
+});
 
 describe('listTargetRepos', () => {
   const repos = [
@@ -206,32 +206,32 @@ describe('listTargetRepos', () => {
     { name: 'b-old', default_branch: 'main', size: 1, archived: true },
     { name: 'b-new', default_branch: 'main', size: 1 },
     { name: 'empty', default_branch: 'main', size: 0 },
-  ]
-  const octokit = () => fakeOctokit({ 'repos.listForOrg': () => repos })
+  ];
+  const octokit = () => fakeOctokit({ 'repos.listForOrg': () => repos });
 
   it('skips archived, disabled and empty repos', async () => {
     const targets = await listTargetRepos(octokit(), {
       org: 'org',
       reposFilter: [],
-    })
+    });
     assert.deepEqual(
       targets.map((r) => r.name),
-      ['a', 'b-new']
-    )
-  })
+      ['a', 'b-new'],
+    );
+  });
 
   it('narrows by glob and throws when a pattern matches nothing', async () => {
     const targets = await listTargetRepos(octokit(), {
       org: 'org',
       reposFilter: ['b-*'],
-    })
+    });
     assert.deepEqual(
       targets.map((r) => r.name),
-      ['b-new']
-    )
+      ['b-new'],
+    );
     await assert.rejects(
       listTargetRepos(octokit(), { org: 'org', reposFilter: ['a', 'zzz'] }),
-      { message: /"zzz" matched no repos/ }
-    )
-  })
-})
+      { message: /"zzz" matched no repos/ },
+    );
+  });
+});

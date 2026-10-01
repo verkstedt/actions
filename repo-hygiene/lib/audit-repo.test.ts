@@ -1,13 +1,13 @@
-import { describe, it } from 'node:test'
-import assert from 'node:assert/strict'
+import assert from 'node:assert/strict';
+import { describe, it } from 'node:test';
 
-import { auditRepo } from './audit-repo.ts'
-import { fakeLog } from './__fixtures__/log.ts'
-import { createHttpError, listCallsTo } from './__fixtures__/octokit.ts'
-import { fakeRepo } from './__fixtures__/repo.ts'
-import type { Check } from './types.ts'
+import { fakeLog } from './__fixtures__/log.ts';
+import { createHttpError, listCallsTo } from './__fixtures__/octokit.ts';
+import { fakeRepo } from './__fixtures__/repo.ts';
+import { auditRepo } from './audit-repo.ts';
+import type { Check } from './types.ts';
 
-const repoMeta = { name: 'r', default_branch: 'main' }
+const repoMeta = { name: 'r', default_branch: 'main' };
 const options = (checks: Array<Check>) => ({
   org: 'org',
   checks,
@@ -15,7 +15,7 @@ const options = (checks: Array<Check>) => ({
   runId: 1,
   runAttempt: 1,
   log: fakeLog(),
-})
+});
 const hygienePr = (url: string, fullName: string, userType = 'Bot') => ({
   number: 9,
   html_url: url,
@@ -27,28 +27,28 @@ const hygienePr = (url: string, fullName: string, userType = 'Bot') => ({
   },
   requested_reviewers: [{ login: 'alice' }],
   requested_teams: [{ slug: 'devs' }],
-})
+});
 
 describe('auditRepo', () => {
   it('skips PR-opening checks when a hygiene PR is open, one finding per PR', async () => {
-    const ran: Array<string> = []
+    const ran: Array<string> = [];
     const checks: Array<Check> = [
       {
         name: 'plain',
         run: async () => {
-          ran.push('plain')
-          return []
+          ran.push('plain');
+          return [];
         },
       },
       {
         name: 'pr',
         opensPr: true,
         run: async () => {
-          ran.push('pr')
-          return []
+          ran.push('pr');
+          return [];
         },
       },
-    ]
+    ];
     const octokit = fakeRepo({
       openPrs: [
         hygienePr('https://p/1', 'Org/R'),
@@ -56,9 +56,9 @@ describe('auditRepo', () => {
         hygienePr('https://p/3', 'someone/r'),
         hygienePr('https://p/4', 'org/r', 'User'),
       ],
-    })
-    const { findings } = await auditRepo(octokit, repoMeta, options(checks))
-    assert.deepEqual(ran, ['plain'])
+    });
+    const { findings } = await auditRepo(octokit, repoMeta, options(checks));
+    assert.deepEqual(ran, ['plain']);
     assert.deepEqual(findings, [
       {
         repo: 'org/r',
@@ -82,11 +82,11 @@ describe('auditRepo', () => {
           detail: 'reviewers: @alice, @org/devs',
         },
       },
-    ])
-  })
+    ]);
+  });
 
   it('runs all checks and applies their fixes otherwise', async () => {
-    const octokit = fakeRepo()
+    const octokit = fakeRepo();
     const checks: Array<Check> = [
       {
         name: 'writer',
@@ -105,26 +105,26 @@ describe('auditRepo', () => {
           },
         ],
       },
-    ]
+    ];
     const { findings, preview } = await auditRepo(
       octokit,
       repoMeta,
-      options(checks)
-    )
-    assert.equal(findings[0].outcome?.status, 'fixed')
-    assert.equal(findings[0].outcome?.url, 'https://p/42')
-    assert.equal(preview, null)
-    assert.equal(listCallsTo(octokit, 'pulls.create').length, 1)
-  })
+      options(checks),
+    );
+    assert.equal(findings[0].outcome?.status, 'fixed');
+    assert.equal(findings[0].outcome.url, 'https://p/42');
+    assert.equal(preview, null);
+    assert.equal(listCallsTo(octokit, 'pulls.create').length, 1);
+  });
 
   it('lets checks that do not list paths run when the tree cannot be fetched', async () => {
     const octokit = fakeRepo({
       handlers: {
         'git.getTree': () => {
-          throw createHttpError(500, 'tree down')
+          throw createHttpError(500, 'tree down');
         },
       },
-    })
+    });
     const checks: Array<Check> = [
       {
         name: 'no tree',
@@ -134,31 +134,31 @@ describe('auditRepo', () => {
         name: 'tree',
         opensPr: true,
         run: async (s) => {
-          await s.listPaths()
-          return []
+          await s.listPaths();
+          return [];
         },
       },
-    ]
-    const { findings } = await auditRepo(octokit, repoMeta, options(checks))
+    ];
+    const { findings } = await auditRepo(octokit, repoMeta, options(checks));
     assert.deepEqual(
       findings.map((f) => [f.level, f.summary]),
       [
         ['info', 'fine'],
         ['error', 'tree check failed'],
-      ]
-    )
-  })
+      ],
+    );
+  });
 
   it('throws when the head SHA cannot be fetched', async () => {
     const octokit = fakeRepo({
       handlers: {
         'git.getRef': () => {
-          throw createHttpError(404, 'no branch')
+          throw createHttpError(404, 'no branch');
         },
       },
-    })
+    });
     await assert.rejects(auditRepo(octokit, repoMeta, options([])), {
       message: 'no branch',
-    })
-  })
-})
+    });
+  });
+});

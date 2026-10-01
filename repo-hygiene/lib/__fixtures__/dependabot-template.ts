@@ -20,4 +20,4 @@ updates:
       interval: 'weekly'
     cooldown:
       default-days: 7
-`
+`;

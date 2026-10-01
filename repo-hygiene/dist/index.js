@@ -47800,7 +47800,7 @@ async function listTargetRepos(octokit, { org, reposFilter }) {
     });
     const targets = allRepos.filter((r) => !r.archived &&
         !r.disabled &&
-        (r.size || 0) > 0 &&
+        (r.size ?? 0) > 0 &&
         typeof r.default_branch === 'string');
     if (reposFilter.length === 0) {
         return targets;
@@ -47843,7 +47843,9 @@ function isContextLogger(log) {
 }
 /** A plain logger, such as the recording one in tests, as a sink. */
 function sinkFor(base) {
-    return (entry) => base[entry.level](formatLogLine(entry));
+    return (entry) => {
+        base[entry.level](formatLogLine(entry));
+    };
 }
 /**
  * A logger whose entries carry `context`. Built from a sink, it feeds
@@ -47864,7 +47866,9 @@ function log_createLogger(context, base) {
     else {
         sink = sinkFor(base);
     }
-    const log = (level) => (message) => sink({ ...merged, level, message });
+    const log = (level) => (message) => {
+        sink({ ...merged, level, message });
+    };
     const logger = {
         context: merged,
         sink,
@@ -47983,6 +47987,9 @@ const PARTIAL = {
     previous: false,
 };
 const MAX_DETAILS = 5;
+function classifyFixedFinding(finding) {
+    return finding.fix?.kind === 'file' ? 'opened' : 'fixed';
+}
 function classifyFinding(finding) {
     const status = finding.outcome?.status ?? 'none';
     if (status === 'failed' || finding.level === 'error') {
@@ -47992,7 +47999,7 @@ function classifyFinding(finding) {
         return 'previous';
     }
     if (status === 'fixed' || status === 'would-fix') {
-        return finding.fix?.kind === 'file' ? 'opened' : 'fixed';
+        return classifyFixedFinding(finding);
     }
     if (finding.level === 'warning' || finding.fix) {
         return 'attention';
@@ -48044,7 +48051,7 @@ function renderGroupItems(group, findings, { details }) {
 }
 function pickGroupHeading(group, findings) {
     const dry = findings.some((f) => f.outcome?.status === 'would-fix');
-    return (dry && DRY_RUN_HEADINGS[group]) || HEADINGS[group];
+    return (dry ? DRY_RUN_HEADINGS[group] : undefined) ?? HEADINGS[group];
 }
 /** `results_json`’s shape: every field but the fix. */
 function getFindingsNotifyData({ repo, check, level, summary, url, details, reviewers, outcome, }) {
@@ -48247,7 +48254,7 @@ function findCodeownersFor(file, parsedLines) {
 function collectCodeownersForFiles(files, parsedLines) {
     const owners = new Set();
     for (const file of files) {
-        for (const owner of findCodeownersFor(file, parsedLines) || []) {
+        for (const owner of findCodeownersFor(file, parsedLines) ?? []) {
             owners.add(owner);
         }
     }
@@ -48351,7 +48358,9 @@ const MAX_REVIEWERS = 15;
  * slugs, without the `@` and org prefixes.
  */
 function splitReviewers(ownerTokens) {
-    const logins = ownerTokens.map((tok) => tok.replace(/^@/, '')).filter(Boolean);
+    const logins = ownerTokens
+        .map((tok) => tok.replace(/^@/, ''))
+        .filter(Boolean);
     const { users = [], teams = [] } = Object.groupBy(logins, (login) => login.includes('/') ? 'teams' : 'users');
     const slugs = teams.map((team) => team.split('/')[1]).filter(Boolean);
     return { users: [...new Set(users)], teams: [...new Set(slugs)] };
@@ -48374,7 +48383,7 @@ async function listHumanContributors(octokit, { org, repo }) {
     }
     return contribs.filter((c) => c.type === 'User' &&
         typeof c.login === 'string' &&
-        !/\[bot\]$/.test(c.login) &&
+        !c.login.endsWith('[bot]') &&
         !KNOWN_BOTS.has(c.login));
 }
 /**
@@ -48521,7 +48530,7 @@ function composePrBody(reviewerSource, describes) {
     if (paragraph) {
         parts.push(paragraph);
     }
-    parts.push('## What?', `${describes.map((d) => `- ${d}`).join('\n')}`);
+    parts.push('## What?', describes.map((d) => `- ${d}`).join('\n'));
     return parts.join('\n\n');
 }
 async function readCommittedCodeowners(snapshot) {
@@ -48637,9 +48646,10 @@ async function openPr(plan, snapshot, run) {
     return { pr: pr.data, requested };
 }
 function createActionOutcome(fix, result) {
-    if (typeof result === 'object' && result !== null) {
+    if (typeof result === 'object') {
         return { status: 'none', detail: result.detail };
     }
+    // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing -- An empty detail also falls back to the description.
     return { status: 'fixed', detail: result || fix.describe };
 }
 async function runAction(finding, snapshot, pr, files) {
@@ -48744,7 +48754,6 @@ function acceptFileFix(finding, check, snapshot, fixedByThisCheck) {
     const { pending, reads } = snapshot.workingCopy;
     const blind = pending.has(path) && !reads.has(path);
     if (blind || fixedByThisCheck.has(path)) {
-        // eslint-disable-next-line no-param-reassign -- stamping the outcome onto the finding is the point
         finding.outcome = {
             status: 'failed',
             detail: `${check.name} check changed ${path} without reading the pending fix for it`,
@@ -48887,7 +48896,7 @@ async function takeSnapshot(octokit, repoMeta, { org, log }) {
         if (tree.data.truncated) {
             log.warning('tree response truncated; detection may be incomplete');
         }
-        return (tree.data.tree || []).map((entry) => `/${entry.path}`);
+        return tree.data.tree.map((entry) => `/${entry.path}`);
     });
     const listPaths = async () => {
         const paths = await treePaths();
@@ -48929,12 +48938,12 @@ async function takeSnapshot(octokit, repoMeta, { org, log }) {
 function findExistingHygienePrs(openPrs, repoSlug) {
     return openPrs.filter((pr) => pr.user?.type === 'Bot' &&
         pr.head.ref.startsWith(BRANCH_PREFIX) &&
-        pr.head.repo?.full_name?.toLowerCase() === repoSlug.toLowerCase());
+        pr.head.repo?.full_name.toLowerCase() === repoSlug.toLowerCase());
 }
 function createSkippedFinding(pr, org, repoSlug) {
     const reviewers = [
-        ...(pr.requested_reviewers || []).map((u) => `@${u.login}`),
-        ...(pr.requested_teams || []).map((t) => `@${org}/${t.slug}`),
+        ...(pr.requested_reviewers ?? []).map((u) => `@${u.login}`),
+        ...(pr.requested_teams ?? []).map((t) => `@${org}/${t.slug}`),
     ];
     return {
         repo: repoSlug,
@@ -49009,7 +49018,6 @@ function clearScalarQuoting(node) {
     dist.visit(node, {
         Scalar(_, scalar) {
             if (typeof scalar.value === 'string') {
-                // eslint-disable-next-line no-param-reassign -- mutating the visited node is the point
                 scalar.type = undefined;
             }
         },
@@ -49485,8 +49493,8 @@ const dependabotConfig = {
  */
 function isReviewerless(pr) {
     return (pr.user?.login === 'dependabot[bot]' &&
-        (pr.requested_reviewers || []).length === 0 &&
-        (pr.requested_teams || []).length === 0);
+        (pr.requested_reviewers ?? []).length === 0 &&
+        (pr.requested_teams ?? []).length === 0);
 }
 async function hasReviews(octokit, { org, repo, pr }) {
     const reviews = await octokit.paginate(octokit.rest.pulls.listReviews, {
@@ -49745,7 +49753,10 @@ async function runAudit(octokit, { org, dryRun, reposFilter, runId, runAttempt, 
 
 
 /** Logs through the workflow commands GitHub Actions renders. */
-const actionsLog = (entry) => core_namespaceObject[entry.level](formatLogLine(entry));
+const actionsLog = (entry) => {
+    // eslint-disable-next-line import-x/namespace -- TypeScript ensures every `LogLevel` is a `core` export.
+    core_namespaceObject[entry.level](formatLogLine(entry));
+};
 const DRY_RUN_NOTE = '> [!NOTE]\n> This is a **dry run**. No pull requests will be created and no reviewers will be requested. Will show info about ones that would, here in the summary.\n\n';
 function readInputs() {
     const { /* context */ "_": context } = github_namespaceObject;
@@ -49785,5 +49796,7 @@ async function main() {
     });
     await publish(findings, { repoCount, dryRun: inputs.dryRun, previews });
 }
-main().catch((error) => setFailed(getErrorMessage(error)));
+main().catch((error) => {
+    setFailed(getErrorMessage(error));
+});
 

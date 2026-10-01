@@ -11,7 +11,7 @@
  * is involved.
  */
 
-import type { Check, GitHub } from '../types.ts'
+import type { Check, GitHub } from '../types.ts';
 
 /** The settings `PATCH /repos/{owner}/{repo}` accepts that we care about. */
 type Settings = Pick<
@@ -21,12 +21,12 @@ type Settings = Pick<
   | 'has_issues'
   | 'allow_auto_merge'
   | 'delete_branch_on_merge'
->
+>;
 
 interface Wanted {
-  setting: keyof Settings
-  value: boolean
-  describe: string
+  setting: keyof Settings;
+  value: boolean;
+  describe: string;
 }
 
 /**
@@ -38,7 +38,7 @@ interface Wanted {
 function listWantedSettings(repository: GitHub.Repository): Array<Wanted> {
   const isPublic = repository.visibility
     ? repository.visibility === 'public'
-    : !repository.private
+    : !repository.private;
   return [
     { setting: 'has_wiki', value: false, describe: 'disable the wiki' },
     { setting: 'has_projects', value: false, describe: 'disable projects' },
@@ -57,21 +57,21 @@ function listWantedSettings(repository: GitHub.Repository): Array<Wanted> {
       value: true,
       describe: 'delete branches once merged',
     },
-  ]
+  ];
 }
 
 /** Repository settings every repo should have; see `listWantedSettings`. */
 export const repoSettings: Check = {
   name: 'repo-settings',
   run: async (snapshot) => {
-    const repository = await snapshot.getRepository()
+    const repository = await snapshot.getRepository();
     const changes = listWantedSettings(repository).filter(
-      ({ setting, value }) => repository[setting] !== value
-    )
+      ({ setting, value }) => repository[setting] !== value,
+    );
     if (changes.length === 0) {
-      return [{ level: 'info', summary: 'repository settings are as wanted' }]
+      return [{ level: 'info', summary: 'repository settings are as wanted' }];
     }
-    const describes = changes.map((c) => c.describe)
+    const describes = changes.map((c) => c.describe);
     return [
       {
         level: 'info',
@@ -85,11 +85,11 @@ export const repoSettings: Check = {
               owner: ctx.org,
               repo: ctx.repo,
               ...Object.fromEntries(changes.map((c) => [c.setting, c.value])),
-            })
-            return 'updated repository settings'
+            });
+            return 'updated repository settings';
           },
         },
       },
-    ]
+    ];
   },
-}
+};
