@@ -34,7 +34,7 @@
     "@semantic-release/exec": "^7.1.0",
     "@semantic-release/git": "^10.0.1",
     "@types/node": "^24 <=24.18.0",
-    "@typescript-eslint/eslint-plugin": "^8.70.0",
+    "@typescript-eslint/eslint-plugin": "^8.70.1",
     "@typescript-eslint/parser": "^8.70.0",
     "@vercel/ncc": "^0.44.0",
     "@verkstedt/eslint-config-verkstedt": "^9.3.1",
