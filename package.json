@@ -20,10 +20,11 @@
     "ref-comment-in-commit",
     "repo-hygiene"
   ],
+  "type": "module",
   "scripts": {
     "lint": "npm-run-all --print-label 'lint:*'",
     "lint:js": "eslint .",
-    "lint:ts": "npm run lint:ts --workspaces --if-present",
+    "lint:ts": "tsc",
     "lint:actions": "docker run --rm -v .:/repo --workdir /repo rhysd/actionlint:latest -color",
     "build": "npm run build --workspaces --if-present"
   },
