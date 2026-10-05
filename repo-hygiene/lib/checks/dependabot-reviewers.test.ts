@@ -143,6 +143,7 @@ describe('dependabotReviewers', () => {
         'pulls.requestReviewers': () => {
           throw createHttpError(422);
         },
+        'pulls.listRequestedReviewers': () => ({ users: [], teams: [] }),
       },
     });
     const [finding] = await dependabotReviewers.run(

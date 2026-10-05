@@ -136,6 +136,11 @@ export async function chooseReviewers(
   return { reviewerTokens: [], reviewerSource: 'none' };
 }
 
+interface RequestedReviewers {
+  users: Array<{ login: string }>;
+  teams: Array<{ slug: string }>;
+}
+
 interface RequestReviewersParams {
   org: string;
   repo: string;
@@ -156,50 +161,53 @@ interface RequestReviewersParams {
  * Stops once MAX_REVIEWERS have been accepted, so an invalid candidate
  * does not use up a slot. Returns the reviewers that were requested,
  * as `@` handles.
+ *
+ * GitHub requests code owners on its own when the PR is opened, and
+ * then rejects requesting them again with a 422. So on a 422 the PR’s
+ * requested reviewers are read back, and a reviewer already there
+ * counts as requested.
  */
 export async function requestReviewersOneByOne(
   octokit: Octokit,
   { org, repo, pullNumber, users, teams, log }: RequestReviewersParams,
 ): Promise<Array<string>> {
+  const pr = { owner: org, repo, pull_number: pullNumber };
+  const candidates = [
+    ...users.map((user) => ({
+      handle: `@${user}`,
+      label: 'reviewer',
+      params: { reviewers: [user] },
+      isListed: ({ users: listed }: RequestedReviewers) =>
+        listed.some((u) => u.login.toLowerCase() === user.toLowerCase()),
+    })),
+    ...teams.map((team) => ({
+      handle: `@${org}/${team}`,
+      label: 'team reviewer',
+      params: { team_reviewers: [team] },
+      isListed: ({ teams: listed }: RequestedReviewers) =>
+        listed.some((t) => t.slug.toLowerCase() === team.toLowerCase()),
+    })),
+  ];
   const requested: Array<string> = [];
-  for (const user of users) {
+  for (const { handle, label, params, isListed } of candidates) {
     if (requested.length >= MAX_REVIEWERS) {
       break;
     }
     try {
-      await octokit.rest.pulls.requestReviewers({
-        owner: org,
-        repo,
-        pull_number: pullNumber,
-        reviewers: [user],
-      });
-      requested.push(`@${user}`);
+      await octokit.rest.pulls.requestReviewers({ ...pr, ...params });
+      requested.push(handle);
     } catch (e) {
       if (getHttpStatus(e) !== 422) {
         throw e;
       }
-      log.warning(`could not request reviewer @${user}: ${getErrorMessage(e)}`);
-    }
-  }
-  for (const team of teams) {
-    if (requested.length >= MAX_REVIEWERS) {
-      break;
-    }
-    try {
-      await octokit.rest.pulls.requestReviewers({
-        owner: org,
-        repo,
-        pull_number: pullNumber,
-        team_reviewers: [team],
-      });
-      requested.push(`@${org}/${team}`);
-    } catch (e) {
-      if (getHttpStatus(e) !== 422) {
-        throw e;
+      const { data } = await octokit.rest.pulls.listRequestedReviewers(pr);
+      if (isListed(data)) {
+        requested.push(handle);
+      } else {
+        log.warning(
+          `could not request ${label} ${handle}: ${getErrorMessage(e)}`,
+        );
       }
-      log.warning(
-        `could not request team reviewer @${org}/${team}: ${getErrorMessage(e)}`,
-      );
     }
   }
   return requested;
