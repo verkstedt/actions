@@ -156,7 +156,7 @@ interface RequestReviewersParams {
  * a collaborator, or a team without repo access) 422s the whole call.
  * Requesting each reviewer separately — calls are additive — means
  * a bad entry only drops itself while the valid reviewers still get
- * assigned. Any other failure (auth, rate limit, server error) is
+ * assigned. Any other request failure (auth, rate limit, server error) is
  * rethrown so the audit reports it instead of a partial success.
  * Stops once MAX_REVIEWERS have been accepted, so an invalid candidate
  * does not use up a slot. Returns the reviewers that were requested,
@@ -165,7 +165,8 @@ interface RequestReviewersParams {
  * GitHub requests code owners on its own when the PR is opened, and
  * then rejects requesting them again with a 422. So on a 422 the PR’s
  * requested reviewers are read back, and a reviewer already there
- * counts as requested.
+ * counts as requested. This lookup is cached on first use; a failed
+ * lookup is warned about without stopping later requests.
  */
 export async function requestReviewersOneByOne(
   octokit: Octokit,
@@ -189,6 +190,7 @@ export async function requestReviewersOneByOne(
     })),
   ];
   const requested: Array<string> = [];
+  let requestedReviewers: RequestedReviewers | undefined;
   for (const { handle, label, params, isListed } of candidates) {
     if (requested.length >= MAX_REVIEWERS) {
       break;
@@ -200,8 +202,18 @@ export async function requestReviewersOneByOne(
       if (getHttpStatus(e) !== 422) {
         throw e;
       }
-      const { data } = await octokit.rest.pulls.listRequestedReviewers(pr);
-      if (isListed(data)) {
+      if (!requestedReviewers) {
+        try {
+          requestedReviewers = (
+            await octokit.rest.pulls.listRequestedReviewers(pr)
+          ).data;
+        } catch (lookupError) {
+          log.warning(
+            `could not list requested reviewers: ${getErrorMessage(lookupError)}`,
+          );
+        }
+      }
+      if (requestedReviewers && isListed(requestedReviewers)) {
         requested.push(handle);
       } else {
         log.warning(
