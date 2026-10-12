@@ -2,6 +2,7 @@ import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 
 import {
+  getErrorMessage,
   tryGetContent,
   commitChange,
   createLineComment,
@@ -13,6 +14,41 @@ import {
   createHttpError,
   fakeOctokit,
 } from './__fixtures__/octokit.ts'
+
+describe('getErrorMessage', () => {
+  it('passes plain messages through', () => {
+    assert.equal(getErrorMessage(new Error('boom')), 'boom')
+    assert.equal(getErrorMessage('oops'), 'oops')
+  })
+
+  it('reduces an HTML error page to the status and title', () => {
+    const error = Object.assign(
+      new Error(
+        '<!DOCTYPE html>\n<html>\n<head><title>Unicorn! \n · GitHub</title></head><body>…</body></html>'
+      ),
+      {
+        status: 502,
+        response: { headers: { 'content-type': 'text/html; charset=utf-8' } },
+      }
+    )
+    assert.equal(getErrorMessage(error), 'HTTP 502: “Unicorn! · GitHub”')
+  })
+
+  it('copes with an HTML page without status or title', () => {
+    const error = Object.assign(new Error('<html><body>nope</body></html>'), {
+      response: { headers: { 'content-type': 'text/html' } },
+    })
+    assert.equal(getErrorMessage(error), 'HTML error response')
+  })
+
+  it('keeps messages of non-HTML responses', () => {
+    const error = Object.assign(new Error('<html> in JSON message'), {
+      status: 422,
+      response: { headers: { 'content-type': 'application/json' } },
+    })
+    assert.equal(getErrorMessage(error), '<html> in JSON message')
+  })
+})
 
 describe('tryGetContent', () => {
   it('returns the first path that exists, decoded', async () => {

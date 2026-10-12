@@ -11,9 +11,42 @@ export function getHttpStatus(error: unknown): number | undefined {
   return undefined
 }
 
-/** The message of whatever was thrown. */
+/** The response content type of a failed Octokit request, or `undefined`. */
+function getContentType(error: unknown): string | undefined {
+  if (typeof error === 'object' && error !== null && 'response' in error) {
+    const { response } = error as {
+      response?: { headers?: Record<string, unknown> }
+    }
+    const contentType = response?.headers?.['content-type']
+    return typeof contentType === 'string'
+      ? contentType.toLowerCase()
+      : undefined
+  }
+  return undefined
+}
+
+/**
+ * The message of whatever was thrown. When GitHub answers with an HTML
+ * error page (e.g. a 5xx), Octokit puts the whole page in the message;
+ * that is reduced to the HTTP status and the page title.
+ */
 export function getErrorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error)
+  const message = error instanceof Error ? error.message : String(error)
+  if (!getContentType(error)?.startsWith('text/html')) {
+    return message
+  }
+
+  const title = /<title[^>]*>([^<]*)<\/title>/i
+    .exec(message)?.[1]
+    ?.replace(/\s+/g, ' ')
+    .trim()
+  const status = getHttpStatus(error)
+  return [
+    status ? `HTTP ${status}` : 'HTML error response',
+    title ? `“${title}”` : undefined,
+  ]
+    .filter(Boolean)
+    .join(': ')
 }
 
 /**
