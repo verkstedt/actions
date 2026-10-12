@@ -136,6 +136,7 @@ describe('requestReviewersOneByOne', () => {
         }
         return {};
       },
+      'pulls.listRequestedReviewers': () => ({ users: [], teams: [] }),
     });
     const log = fakeLog();
     const requested = await requestReviewersOneByOne(octokit, {
@@ -147,7 +148,7 @@ describe('requestReviewersOneByOne', () => {
       log,
     });
     assert.deepEqual(requested, ['@alice', '@bob', '@org/devs']);
-    assert.equal(octokit.calls.length, 5);
+    assert.equal(octokit.calls.length, 6);
     assert.deepEqual(log.calls.warning, [
       'could not request reviewer @gone: Reviews may only be requested from collaborators',
       'could not request team reviewer @org/nope: Reviews may only be requested from collaborators',
@@ -158,7 +159,97 @@ describe('requestReviewersOneByOne', () => {
       pull_number: 3,
       reviewers: ['alice'],
     });
-    assert.deepEqual(octokit.calls[4].params.team_reviewers, ['devs']);
+    assert.deepEqual(octokit.calls[5].params.team_reviewers, ['devs']);
+  });
+
+  it('counts a rejected reviewer GitHub already requested', async () => {
+    const octokit = fakeOctokit({
+      'pulls.requestReviewers': () => {
+        throw createHttpError(
+          422,
+          'Could not add requested reviewers to pull request.',
+        );
+      },
+      'pulls.listRequestedReviewers': () => ({
+        users: [{ login: 'Alice' }],
+        teams: [{ slug: 'devs' }],
+      }),
+    });
+    const log = fakeLog();
+    const requested = await requestReviewersOneByOne(octokit, {
+      org: 'org',
+      repo: 'r',
+      pullNumber: 3,
+      users: ['alice', 'gone'],
+      teams: ['devs'],
+      log,
+    });
+    assert.deepEqual(requested, ['@alice', '@org/devs']);
+    assert.equal(
+      octokit.calls.filter(
+        (call) => call.name === 'pulls.listRequestedReviewers',
+      ).length,
+      1,
+    );
+    assert.deepEqual(log.calls.warning, [
+      'could not request reviewer @gone: Could not add requested reviewers to pull request.',
+    ]);
+    assert.deepEqual(octokit.calls[1].params, {
+      owner: 'org',
+      repo: 'r',
+      pull_number: 3,
+    });
+  });
+
+  it('does not look up reviewers when every request succeeds', async () => {
+    const octokit = fakeOctokit({ 'pulls.requestReviewers': () => ({}) });
+    const requested = await requestReviewersOneByOne(octokit, {
+      org: 'org',
+      repo: 'r',
+      pullNumber: 3,
+      users: ['alice'],
+      teams: ['devs'],
+      log: fakeLog(),
+    });
+    assert.deepEqual(requested, ['@alice', '@org/devs']);
+    assert.deepEqual(
+      octokit.calls.map((call) => call.name),
+      ['pulls.requestReviewers', 'pulls.requestReviewers'],
+    );
+  });
+
+  it('retries a failed lookup on the next rejection', async () => {
+    let lookups = 0;
+    const octokit = fakeOctokit({
+      'pulls.requestReviewers': ({ reviewers, team_reviewers: teams }) => {
+        if (reviewers?.includes('gone') || teams?.includes('nope')) {
+          throw createHttpError(422, 'Invalid reviewer');
+        }
+        return {};
+      },
+      'pulls.listRequestedReviewers': () => {
+        lookups += 1;
+        if (lookups === 1) {
+          throw createHttpError(503, 'Service unavailable');
+        }
+        return { users: [], teams: [{ slug: 'nope' }] };
+      },
+    });
+    const log = fakeLog();
+    const requested = await requestReviewersOneByOne(octokit, {
+      org: 'org',
+      repo: 'r',
+      pullNumber: 3,
+      users: ['alice', 'gone', 'bob'],
+      teams: ['nope', 'devs'],
+      log,
+    });
+    assert.deepEqual(requested, ['@alice', '@bob', '@org/nope', '@org/devs']);
+    assert.equal(lookups, 2);
+    assert.deepEqual(log.calls.warning, [
+      'could not list requested reviewers: Service unavailable',
+      'could not request reviewer @gone: Invalid reviewer',
+    ]);
   });
 
   it('caps accepted reviewers at 15 without counting invalid ones', async () => {
@@ -169,6 +260,7 @@ describe('requestReviewersOneByOne', () => {
         }
         return {};
       },
+      'pulls.listRequestedReviewers': () => ({ users: [], teams: [] }),
     });
     const users = ['gone', ...Array.from({ length: 20 }, (_, i) => `u${i}`)];
     const requested = await requestReviewersOneByOne(octokit, {
@@ -182,7 +274,7 @@ describe('requestReviewersOneByOne', () => {
     assert.equal(requested.length, 15);
     assert.equal(requested[0], '@u0');
     assert.equal(requested[14], '@u14');
-    assert.equal(octokit.calls.length, 16);
+    assert.equal(octokit.calls.length, 17);
   });
 
   it('rethrows failures other than an invalid reviewer', async () => {
