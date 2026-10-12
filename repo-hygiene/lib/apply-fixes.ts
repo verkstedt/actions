@@ -1,60 +1,60 @@
-import { parseCodeowners } from './codeowners.ts'
-import { commitChange, getErrorMessage } from './github.ts'
-import { createLogger } from './log.ts'
+import { parseCodeowners } from './codeowners.ts';
+import { commitChange, getErrorMessage } from './github.ts';
+import { createLogger } from './log.ts';
 import {
-  CODEOWNERS_PATHS,
   chooseReviewers,
+  CODEOWNERS_PATHS,
   describeReviewers,
-  requestReviewersOneByOne,
   formatReviewerHandles,
+  requestReviewersOneByOne,
   splitReviewers,
-} from './reviewers.ts'
-import type { RepoSnapshot } from './snapshot.ts'
+} from './reviewers.ts';
+import type { RepoSnapshot } from './snapshot.ts';
 import type {
   ActionFix,
   FileFix,
   Finding,
   GitHub,
   ReviewerSource,
-} from './types.ts'
+} from './types.ts';
 
 const WORKFLOW_LINK =
-  'https://github.com/verkstedt/actions/blob/HEAD/repo-hygiene/'
+  'https://github.com/verkstedt/actions/blob/HEAD/repo-hygiene/';
 /** Also how PRs from earlier runs are recognised. */
-export const BRANCH_PREFIX = 'chore/repo-hygiene/'
-export const PR_TITLE = 'chore: Repo hygiene'
+export const BRANCH_PREFIX = 'chore/repo-hygiene/';
+export const PR_TITLE = 'chore: Repo hygiene';
 
 export interface RunOptions {
-  dryRun: boolean
-  runId: number
-  runAttempt: number
+  dryRun: boolean;
+  runId: number;
+  runAttempt: number;
 }
 
 export interface Applied {
-  findings: Array<Finding>
+  findings: Array<Finding>;
   /** The rendered PR for the job summary, in a dry run. */
-  preview: string | null
+  preview: string | null;
 }
 
-type FileFinding = Finding & { fix: FileFix }
-type ActionFinding = Finding & { fix: ActionFix }
+type FileFinding = Finding & { fix: FileFix };
+type ActionFinding = Finding & { fix: ActionFix };
 
-const isPending = (f: Finding) => f.outcome === undefined
-const hasFileFix = (f: Finding): f is FileFinding => f.fix?.kind === 'file'
+const isPending = (f: Finding) => f.outcome === undefined;
+const hasFileFix = (f: Finding): f is FileFinding => f.fix?.kind === 'file';
 const hasActionFix = (f: Finding): f is ActionFinding =>
-  f.fix?.kind === 'action'
+  f.fix?.kind === 'action';
 
 function normalise(path: string): string {
-  return path.replace(/^\//, '')
+  return path.replace(/^\//, '');
 }
 
 /** One entry per path, the last fix’s content winning. */
 function collectFinalFiles(findings: Array<FileFinding>): Map<string, string> {
-  const files = new Map<string, string>()
+  const files = new Map<string, string>();
   for (const { fix } of findings) {
-    files.set(normalise(fix.path), fix.content)
+    files.set(normalise(fix.path), fix.content);
   }
-  return files
+  return files;
 }
 
 const REVIEWER_PARAGRAPHS: Partial<Record<ReviewerSource, string>> = {
@@ -62,58 +62,58 @@ const REVIEWER_PARAGRAPHS: Partial<Record<ReviewerSource, string>> = {
     'Assigned people from CODEOWNERS as reviewers of this PR.',
   'contributors': 'Assigned repo contributors as reviewers of this PR.',
   'none': 'Could not determine who to assign as reviewers of this PR.',
-}
+};
 
 function composePrBody(
   reviewerSource: ReviewerSource,
-  describes: Array<string>
+  describes: Array<string>,
 ): string {
   const parts = [
     `> [!NOTE]\n> 🤖 Opened automatically by [repo-hygiene action from verkstedt/actions](${WORKFLOW_LINK}). Merge after approving.`,
-  ]
-  const paragraph = REVIEWER_PARAGRAPHS[reviewerSource]
+  ];
+  const paragraph = REVIEWER_PARAGRAPHS[reviewerSource];
   if (paragraph) {
-    parts.push(paragraph)
+    parts.push(paragraph);
   }
-  parts.push('## What?', `${describes.map((d) => `- ${d}`).join('\n')}`)
-  return parts.join('\n\n')
+  parts.push('## What?', describes.map((d) => `- ${d}`).join('\n'));
+  return parts.join('\n\n');
 }
 
 async function readCommittedCodeowners(snapshot: RepoSnapshot) {
   for (const path of CODEOWNERS_PATHS) {
-    const file = await snapshot.readFileOnDefaultBranch(path)
+    const file = await snapshot.readFileOnDefaultBranch(path);
     if (file) {
-      return parseCodeowners(file.content)
+      return parseCodeowners(file.content);
     }
   }
-  return []
+  return [];
 }
 
 interface PrPlan {
-  files: Map<string, string>
+  files: Map<string, string>;
   /** Code fence language per path, from the last fix for it. */
-  langs: Map<string, string>
-  describes: Array<string>
-  reviewers: { users: Array<string>; teams: Array<string> }
-  reviewerHandles: Array<string>
-  body: string
+  langs: Map<string, string>;
+  describes: Array<string>;
+  reviewers: { users: Array<string>; teams: Array<string> };
+  reviewerHandles: Array<string>;
+  body: string;
 }
 
 function collectSuggestedReviewers(
   fileFindings: Array<FileFinding>,
-  findings: Array<Finding>
+  findings: Array<Finding>,
 ): Array<string> {
   return findings
     .filter(
-      (f) => f.reviewers && (fileFindings.includes(f as FileFinding) || !f.fix)
+      (f) => f.reviewers && (fileFindings.includes(f as FileFinding) || !f.fix),
     )
-    .flatMap((f) => f.reviewers ?? [])
+    .flatMap((f) => f.reviewers ?? []);
 }
 
 async function planPr(
   fileFindings: Array<FileFinding>,
   findings: Array<Finding>,
-  snapshot: RepoSnapshot
+  snapshot: RepoSnapshot,
 ): Promise<PrPlan> {
   const { reviewerTokens, reviewerSource } = await chooseReviewers(
     snapshot.octokit,
@@ -122,29 +122,29 @@ async function planPr(
       repo: snapshot.repo,
       suggested: collectSuggestedReviewers(fileFindings, findings),
       parsedLines: await readCommittedCodeowners(snapshot),
-    }
-  )
-  const reviewers = splitReviewers(reviewerTokens)
-  const describes = fileFindings.map((f) => f.fix.describe)
+    },
+  );
+  const reviewers = splitReviewers(reviewerTokens);
+  const describes = fileFindings.map((f) => f.fix.describe);
   return {
     files: collectFinalFiles(fileFindings),
     langs: new Map(
-      fileFindings.map((f) => [normalise(f.fix.path), f.fix.lang])
+      fileFindings.map((f) => [normalise(f.fix.path), f.fix.lang]),
     ),
     describes,
     reviewers,
     reviewerHandles: formatReviewerHandles(snapshot.org, reviewers),
     body: composePrBody(reviewerSource, describes),
-  }
+  };
 }
 
 async function renderFilePreview(
   path: string,
   content: string,
   plan: PrPlan,
-  snapshot: RepoSnapshot
+  snapshot: RepoSnapshot,
 ): Promise<Array<string>> {
-  const existing = await snapshot.readFileOnDefaultBranch(path)
+  const existing = await snapshot.readFileOnDefaultBranch(path);
   return [
     '',
     `**${path}** (${existing ? 'update' : 'create'}):`,
@@ -152,12 +152,12 @@ async function renderFilePreview(
     `\`\`\`${plan.langs.get(path) ?? ''}`,
     content,
     '```',
-  ]
+  ];
 }
 
 async function renderPrPreview(
   plan: PrPlan,
-  snapshot: RepoSnapshot
+  snapshot: RepoSnapshot,
 ): Promise<string> {
   const lines = [
     `### \`${snapshot.org}/${snapshot.repo}\`: ${PR_TITLE}`,
@@ -176,22 +176,22 @@ async function renderPrPreview(
     '</blockquote>',
     '',
     '---',
-  ]
+  ];
   for (const [path, content] of plan.files) {
-    lines.push(...(await renderFilePreview(path, content, plan, snapshot)))
+    lines.push(...(await renderFilePreview(path, content, plan, snapshot)));
   }
-  lines.push('', '</details>', '')
-  return lines.join('\n')
+  lines.push('', '</details>', '');
+  return lines.join('\n');
 }
 
 async function commitPlanFiles(
   plan: PrPlan,
   snapshot: RepoSnapshot,
-  branch: string
+  branch: string,
 ): Promise<void> {
-  const { octokit, org, repo } = snapshot
+  const { octokit, org, repo } = snapshot;
   for (const [path, content] of plan.files) {
-    const existing = await snapshot.readFileOnDefaultBranch(path)
+    const existing = await snapshot.readFileOnDefaultBranch(path);
     await commitChange(octokit, {
       org,
       repo,
@@ -199,25 +199,25 @@ async function commitPlanFiles(
       path,
       content,
       sha: existing?.sha,
-    })
+    });
   }
 }
 
 async function openPr(
   plan: PrPlan,
   snapshot: RepoSnapshot,
-  run: RunOptions
+  run: RunOptions,
 ): Promise<{ pr: GitHub.PullRequest; requested: Array<string> }> {
-  const { octokit, org, repo, defaultBranch, headSha, log } = snapshot
+  const { octokit, org, repo, defaultBranch, headSha, log } = snapshot;
   // Run ID and attempt make every run use a fresh branch.
-  const branch = `${BRANCH_PREFIX}${run.runId}-${run.runAttempt}`
+  const branch = `${BRANCH_PREFIX}${run.runId}-${run.runAttempt}`;
   await octokit.rest.git.createRef({
     owner: org,
     repo,
     ref: `refs/heads/${branch}`,
     sha: headSha,
-  })
-  await commitPlanFiles(plan, snapshot, branch)
+  });
+  await commitPlanFiles(plan, snapshot, branch);
   const pr = await octokit.rest.pulls.create({
     owner: org,
     repo,
@@ -225,7 +225,7 @@ async function openPr(
     head: branch,
     base: defaultBranch,
     body: plan.body,
-  })
+  });
   const requested = await requestReviewersOneByOne(octokit, {
     org,
     repo,
@@ -233,30 +233,31 @@ async function openPr(
     users: plan.reviewers.users,
     teams: plan.reviewers.teams,
     log,
-  })
-  log.info(`opened ${pr.data.html_url}`)
-  return { pr: pr.data, requested }
+  });
+  log.info(`opened ${pr.data.html_url}`);
+  return { pr: pr.data, requested };
 }
 
 function createActionOutcome(
   fix: ActionFix,
-  result: Awaited<ReturnType<ActionFix['run']>>
+  result: Awaited<ReturnType<ActionFix['run']>>,
 ): Finding['outcome'] {
-  if (typeof result === 'object' && result !== null) {
-    return { status: 'none', detail: result.detail }
+  if (typeof result === 'object') {
+    return { status: 'none', detail: result.detail };
   }
-  return { status: 'fixed', detail: result || fix.describe }
+  // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing -- An empty detail also falls back to the description.
+  return { status: 'fixed', detail: result || fix.describe };
 }
 
 async function runAction(
   finding: ActionFinding,
   snapshot: RepoSnapshot,
   pr: GitHub.PullRequest | null,
-  files: Record<string, string>
+  files: Record<string, string>,
 ): Promise<Finding['outcome']> {
-  const { fix } = finding
+  const { fix } = finding;
   if (fix.afterPr && !pr) {
-    return { status: 'failed', detail: 'hygiene PR was not opened' }
+    return { status: 'failed', detail: 'hygiene PR was not opened' };
   }
   try {
     const result = await fix.run({
@@ -266,76 +267,76 @@ async function runAction(
       pr,
       files,
       log: snapshot.log,
-    })
-    return createActionOutcome(fix, result)
+    });
+    return createActionOutcome(fix, result);
   } catch (e) {
-    return { status: 'failed', detail: getErrorMessage(e) }
+    return { status: 'failed', detail: getErrorMessage(e) };
   }
 }
 
 interface FileFixesApplied {
-  pr: GitHub.PullRequest | null
-  files: Record<string, string>
-  preview: string | null
+  pr: GitHub.PullRequest | null;
+  files: Record<string, string>;
+  preview: string | null;
 }
 
 async function applyFileFixes(
   fileFindings: Array<FileFinding>,
   findings: Array<Finding>,
   snapshot: RepoSnapshot,
-  run: RunOptions
+  run: RunOptions,
 ): Promise<FileFixesApplied> {
   if (fileFindings.length === 0) {
-    return { pr: null, files: {}, preview: null }
+    return { pr: null, files: {}, preview: null };
   }
 
-  const plan = await planPr(fileFindings, findings, snapshot)
-  const files = Object.fromEntries(plan.files)
+  const plan = await planPr(fileFindings, findings, snapshot);
+  const files = Object.fromEntries(plan.files);
 
   if (run.dryRun) {
-    snapshot.log.info('Dry run, skipping PR creation')
-    const preview = await renderPrPreview(plan, snapshot)
+    snapshot.log.info('Dry run, skipping PR creation');
+    const preview = await renderPrPreview(plan, snapshot);
     for (const f of fileFindings) {
-      f.outcome = { status: 'would-fix', detail: f.fix.describe }
+      f.outcome = { status: 'would-fix', detail: f.fix.describe };
     }
-    return { pr: null, files, preview }
+    return { pr: null, files, preview };
   }
 
   try {
-    const { pr, requested } = await openPr(plan, snapshot, run)
+    const { pr, requested } = await openPr(plan, snapshot, run);
     for (const f of fileFindings) {
       f.outcome = {
         status: 'fixed',
         url: pr.html_url,
         detail: describeReviewers(requested),
-      }
+      };
     }
-    return { pr, files, preview: null }
+    return { pr, files, preview: null };
   } catch (e) {
-    const detail = getErrorMessage(e)
+    const detail = getErrorMessage(e);
     for (const f of fileFindings) {
-      f.outcome = { status: 'failed', detail }
+      f.outcome = { status: 'failed', detail };
     }
-    return { pr: null, files, preview: null }
+    return { pr: null, files, preview: null };
   }
 }
 
 interface ActionFixesContext {
-  snapshot: RepoSnapshot
-  run: RunOptions
-  pr: GitHub.PullRequest | null
-  files: Record<string, string>
+  snapshot: RepoSnapshot;
+  run: RunOptions;
+  pr: GitHub.PullRequest | null;
+  files: Record<string, string>;
 }
 
 async function applyActionFixes(
   findings: Array<Finding>,
-  { snapshot, run, pr, files }: ActionFixesContext
+  { snapshot, run, pr, files }: ActionFixesContext,
 ): Promise<void> {
   for (const finding of findings.filter(isPending).filter(hasActionFix)) {
     if (run.dryRun) {
-      finding.outcome = { status: 'would-fix', detail: finding.fix.describe }
+      finding.outcome = { status: 'would-fix', detail: finding.fix.describe };
     } else {
-      finding.outcome = await runAction(finding, snapshot, pr, files)
+      finding.outcome = await runAction(finding, snapshot, pr, files);
     }
   }
 }
@@ -349,24 +350,24 @@ async function applyActionFixes(
 export async function applyFixes(
   findings: Array<Finding>,
   snapshot: RepoSnapshot,
-  run: RunOptions
+  run: RunOptions,
 ): Promise<Applied> {
-  const fileFindings = findings.filter(isPending).filter(hasFileFix)
+  const fileFindings = findings.filter(isPending).filter(hasFileFix);
   const { pr, files, preview } = await applyFileFixes(
     fileFindings,
     findings,
     snapshot,
-    run
-  )
+    run,
+  );
 
-  await applyActionFixes(findings, { snapshot, run, pr, files })
+  await applyActionFixes(findings, { snapshot, run, pr, files });
 
   for (const finding of findings.filter(isPending)) {
-    finding.outcome = { status: 'none' }
+    finding.outcome = { status: 'none' };
     const log = finding.check
       ? createLogger({ check: finding.check }, snapshot.log)
-      : snapshot.log
-    log.info(finding.summary)
+      : snapshot.log;
+    log.info(finding.summary);
   }
-  return { findings, preview }
+  return { findings, preview };
 }

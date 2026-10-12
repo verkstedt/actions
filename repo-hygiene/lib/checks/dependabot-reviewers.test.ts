@@ -1,11 +1,12 @@
-import { describe, it } from 'node:test'
-import assert from 'node:assert/strict'
+import assert from 'node:assert/strict';
+import { describe, it } from 'node:test';
 
-import { fakeLog } from '../__fixtures__/log.ts'
-import { createHttpError, listCallsTo } from '../__fixtures__/octokit.ts'
-import { fakeRepo, fakeSnapshot } from '../__fixtures__/repo.ts'
-import { dependabotReviewers } from './dependabot-reviewers.ts'
-import type { ActionContext } from '../types.ts'
+import { fakeLog } from '../__fixtures__/log.ts';
+import { createHttpError, listCallsTo } from '../__fixtures__/octokit.ts';
+import { fakeRepo, fakeSnapshot } from '../__fixtures__/repo.ts';
+import type { ActionContext } from '../types.ts';
+
+import { dependabotReviewers } from './dependabot-reviewers.ts';
 
 const dependabotPr = (number: number) => ({
   number,
@@ -14,11 +15,11 @@ const dependabotPr = (number: number) => ({
   head: { ref: `dependabot/npm/x-${number}`, sha: 's' },
   requested_reviewers: [],
   requested_teams: [],
-})
+});
 
 const actionContext = (
   octokit: ReturnType<typeof fakeRepo>,
-  log = fakeLog()
+  log = fakeLog(),
 ): ActionContext => ({
   octokit,
   org: 'org',
@@ -26,7 +27,7 @@ const actionContext = (
   pr: null,
   files: {},
   log,
-})
+});
 
 describe('dependabotReviewers', () => {
   it('proposes the CODEOWNERS owners as an action', async () => {
@@ -36,25 +37,22 @@ describe('dependabotReviewers', () => {
       handlers: {
         'pulls.listFiles': () => [{ filename: 'package-lock.json' }],
       },
-    })
-    const snapshot = await fakeSnapshot({ octokit })
-    const findings = await dependabotReviewers.run(snapshot)
-    assert.equal(findings.length, 1)
-    const [finding] = findings
-    assert.equal(finding.level, 'info')
-    assert.equal(finding.summary, 'Dependabot PR has no reviewers')
-    assert.equal(finding.url, 'https://p/1')
-    assert.equal(finding.fix?.kind, 'action')
+    });
+    const snapshot = await fakeSnapshot({ octokit });
+    const findings = await dependabotReviewers.run(snapshot);
+    assert.equal(findings.length, 1);
+    const [finding] = findings;
+    assert.equal(finding.level, 'info');
+    assert.equal(finding.summary, 'Dependabot PR has no reviewers');
+    assert.equal(finding.url, 'https://p/1');
+    assert.equal(finding.fix?.kind, 'action');
     assert.equal(
-      finding.fix?.describe,
-      'request @alice, @org/devs as reviewers'
-    )
+      finding.fix.describe,
+      'request @alice, @org/devs as reviewers',
+    );
 
-    if (finding.fix?.kind !== 'action') {
-      throw new Error('expected action')
-    }
-    const result = await finding.fix.run(actionContext(octokit))
-    assert.equal(result, 'requested @alice, @org/devs')
+    const result = await finding.fix.run(actionContext(octokit));
+    assert.equal(result, 'requested @alice, @org/devs');
     assert.deepEqual(
       listCallsTo(octokit, 'pulls.requestReviewers').map((p) => [
         p.pull_number,
@@ -64,9 +62,9 @@ describe('dependabotReviewers', () => {
       [
         [1, ['alice'], undefined],
         [1, undefined, ['devs']],
-      ]
-    )
-  })
+      ],
+    );
+  });
 
   it('reads CODEOWNERS from the default branch, not the working copy', async () => {
     const octokit = fakeRepo({
@@ -75,12 +73,12 @@ describe('dependabotReviewers', () => {
       handlers: {
         'pulls.listFiles': () => [{ filename: 'package-lock.json' }],
       },
-    })
-    const snapshot = await fakeSnapshot({ octokit })
-    snapshot.workingCopy.attach('CODEOWNERS', 'package-lock.json @OWNER\n')
-    const [finding] = await dependabotReviewers.run(snapshot)
-    assert.equal(finding.fix?.describe, 'request @alice as reviewers')
-  })
+    });
+    const snapshot = await fakeSnapshot({ octokit });
+    snapshot.workingCopy.attach('CODEOWNERS', 'package-lock.json @OWNER\n');
+    const [finding] = await dependabotReviewers.run(snapshot);
+    assert.equal(finding.fix?.describe, 'request @alice as reviewers');
+  });
 
   it('warns when CODEOWNERS names nobody for the files', async () => {
     const snapshot = await fakeSnapshot({
@@ -91,8 +89,8 @@ describe('dependabotReviewers', () => {
           { filename: 'Dockerfile', previous_filename: 'Dockerfile.old' },
         ],
       },
-    })
-    const findings = await dependabotReviewers.run(snapshot)
+    });
+    const findings = await dependabotReviewers.run(snapshot);
     assert.deepEqual(findings, [
       {
         level: 'warning',
@@ -100,16 +98,16 @@ describe('dependabotReviewers', () => {
         url: 'https://p/1',
         details: ['Dockerfile', 'Dockerfile.old'],
       },
-    ])
-  })
+    ]);
+  });
 
   it('skips PRs that already have a review', async () => {
     const snapshot = await fakeSnapshot({
       openPrs: [dependabotPr(1)],
       handlers: { 'pulls.listReviews': () => [{ id: 1 }] },
-    })
-    assert.deepEqual(await dependabotReviewers.run(snapshot), [])
-  })
+    });
+    assert.deepEqual(await dependabotReviewers.run(snapshot), []);
+  });
 
   it('reports an API failure for one PR and continues with the rest', async () => {
     const snapshot = await fakeSnapshot({
@@ -118,23 +116,23 @@ describe('dependabotReviewers', () => {
       handlers: {
         'pulls.listReviews': ({ pull_number: n }: { pull_number: number }) => {
           if (n === 1) {
-            throw createHttpError(500, 'kaboom')
+            throw createHttpError(500, 'kaboom');
           }
-          return []
+          return [];
         },
         'pulls.listFiles': () => [{ filename: 'package-lock.json' }],
       },
-    })
-    const findings = await dependabotReviewers.run(snapshot)
+    });
+    const findings = await dependabotReviewers.run(snapshot);
     assert.deepEqual(findings[0], {
       level: 'error',
       summary: 'could not check reviewers of Dependabot PR',
       url: 'https://p/1',
       details: ['kaboom'],
-    })
-    assert.equal(findings[1].url, 'https://p/2')
-    assert.equal(findings[1].fix?.kind, 'action')
-  })
+    });
+    assert.equal(findings[1].url, 'https://p/2');
+    assert.equal(findings[1].fix?.kind, 'action');
+  });
 
   it('reports fixed: false when every reviewer is rejected', async () => {
     const octokit = fakeRepo({
@@ -143,19 +141,19 @@ describe('dependabotReviewers', () => {
       handlers: {
         'pulls.listFiles': () => [{ filename: 'package-lock.json' }],
         'pulls.requestReviewers': () => {
-          throw createHttpError(422)
+          throw createHttpError(422);
         },
       },
-    })
+    });
     const [finding] = await dependabotReviewers.run(
-      await fakeSnapshot({ octokit })
-    )
+      await fakeSnapshot({ octokit }),
+    );
     if (finding.fix?.kind !== 'action') {
-      throw new Error('expected action')
+      throw new Error('expected action');
     }
     assert.deepEqual(await finding.fix.run(actionContext(octokit)), {
       fixed: false,
       detail: 'none of @alice, @bob could be requested',
-    })
-  })
-})
+    });
+  });
+});

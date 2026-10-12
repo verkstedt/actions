@@ -1,31 +1,31 @@
-import yaml from 'yaml'
-import { getErrorMessage, tryGetContent } from './github.ts'
-import type { Document, Scalar, YAMLMap, YAMLSeq } from 'yaml'
+import yaml from 'yaml';
+import type { Document, Scalar, YAMLMap, YAMLSeq } from 'yaml';
 
+import { getErrorMessage, tryGetContent } from './github.ts';
 import type {
   Change,
   DependabotTemplate,
   FileContent,
   Logger,
   Octokit,
-} from './types.ts'
+} from './types.ts';
 
 // Pick up the first quoted string scalar’s style so new scalars we
 // add match what’s already there. Plain/block scalars are ignored —
 // they don’t tell us a quoting preference.
-const QUOTED_TYPES: Array<Scalar.Type> = ['QUOTE_SINGLE', 'QUOTE_DOUBLE']
+const QUOTED_TYPES: Array<Scalar.Type> = ['QUOTE_SINGLE', 'QUOTE_DOUBLE'];
 function inferStringType(doc: Document): Scalar.Type {
-  let found: Scalar.Type = 'QUOTE_SINGLE'
+  let found: Scalar.Type = 'QUOTE_SINGLE';
   yaml.visit(doc, {
     Scalar(_, node) {
       if (node.type && QUOTED_TYPES.includes(node.type)) {
-        found = node.type
-        return yaml.visit.BREAK
+        found = node.type;
+        return yaml.visit.BREAK;
       }
-      return undefined
+      return undefined;
     },
-  })
-  return found
+  });
+  return found;
 }
 
 function stringifyDependabotDoc(doc: Document): string {
@@ -33,7 +33,7 @@ function stringifyDependabotDoc(doc: Document): string {
     defaultKeyType: 'PLAIN',
     defaultStringType: inferStringType(doc),
     lineWidth: 120,
-  })
+  });
 }
 
 /**
@@ -46,11 +46,10 @@ function clearScalarQuoting(node: Parameters<typeof yaml.visit>[0]): void {
   yaml.visit(node, {
     Scalar(_, scalar) {
       if (typeof scalar.value === 'string') {
-        // eslint-disable-next-line no-param-reassign -- mutating the visited node is the point
-        scalar.type = undefined
+        scalar.type = undefined;
       }
     },
-  })
+  });
 }
 
 /**
@@ -59,17 +58,17 @@ function clearScalarQuoting(node: Parameters<typeof yaml.visit>[0]): void {
  * entry node.
  */
 export function parseDependabotTemplate(text: string): DependabotTemplate {
-  const doc = yaml.parseDocument(text)
-  const updates = doc.get('updates')
-  const entryByEcosystem = new Map<string, YAMLMap>()
+  const doc = yaml.parseDocument(text);
+  const updates = doc.get('updates');
+  const entryByEcosystem = new Map<string, YAMLMap>();
   if (yaml.isSeq(updates)) {
     for (const item of updates.items) {
       if (yaml.isMap(item)) {
-        entryByEcosystem.set(String(item.get('package-ecosystem')), item)
+        entryByEcosystem.set(String(item.get('package-ecosystem')), item);
       }
     }
   }
-  return { doc, entryByEcosystem }
+  return { doc, entryByEcosystem };
 }
 
 /**
@@ -79,12 +78,12 @@ export function parseDependabotTemplate(text: string): DependabotTemplate {
  */
 function collectBasenamesMatching(
   paths: Array<string>,
-  re: RegExp
+  re: RegExp,
 ): Array<string> {
   const names = new Set(
-    paths.map((p) => p.split('/').pop() ?? '').filter((name) => re.test(name))
-  )
-  return [...names].sort()
+    paths.map((p) => p.split('/').pop() ?? '').filter((name) => re.test(name)),
+  );
+  return [...names].sort();
 }
 
 /**
@@ -92,23 +91,23 @@ function collectBasenamesMatching(
  * template missing is fatal: nothing sensible can be added without it.
  */
 export async function loadDependabotTemplate(
-  octokit: Octokit
+  octokit: Octokit,
 ): Promise<DependabotTemplate> {
   const file = await tryGetContent(octokit, {
     owner: 'verkstedt',
     repo: '.github',
     paths: ['templates/dependabot.yaml'],
-  })
+  });
   if (!file) {
-    throw new Error('verkstedt/.github has no templates/dependabot.yaml')
+    throw new Error('verkstedt/.github has no templates/dependabot.yaml');
   }
-  return parseDependabotTemplate(file.content)
+  return parseDependabotTemplate(file.content);
 }
 
 /** An ecosystem a repo uses and the CODEOWNERS patterns it requires. */
 interface DetectedEcosystem {
-  ecosystem: string
-  requiredCodeowners: Array<string>
+  ecosystem: string;
+  requiredCodeowners: Array<string>;
 }
 
 /**
@@ -119,13 +118,13 @@ function detectManifestEcosystem(
   paths: Array<string>,
   ecosystem: string,
   manifest: string,
-  lockfiles: Array<string>
+  lockfiles: Array<string>,
 ): DetectedEcosystem | null {
-  const hasFile = (name: string) => paths.some((p) => p.endsWith(`/${name}`))
+  const hasFile = (name: string) => paths.some((p) => p.endsWith(`/${name}`));
   if (!hasFile(manifest)) {
-    return null
+    return null;
   }
-  return { ecosystem, requiredCodeowners: lockfiles.filter(hasFile) }
+  return { ecosystem, requiredCodeowners: lockfiles.filter(hasFile) };
 }
 
 /** `npm`, when the repo has a `package.json`. */
@@ -134,12 +133,12 @@ function detectNpmEcosystem(paths: Array<string>): DetectedEcosystem | null {
     'package-lock.json',
     'yarn.lock',
     'pnpm-lock.yaml',
-  ])
+  ]);
 }
 
 /** `cargo`, when the repo has a `Cargo.toml`. */
 function detectCargoEcosystem(paths: Array<string>): DetectedEcosystem | null {
-  return detectManifestEcosystem(paths, 'cargo', 'Cargo.toml', ['Cargo.lock'])
+  return detectManifestEcosystem(paths, 'cargo', 'Cargo.toml', ['Cargo.lock']);
 }
 
 /**
@@ -152,12 +151,12 @@ function detectCargoEcosystem(paths: Array<string>): DetectedEcosystem | null {
 function detectPipEcosystem(paths: Array<string>): DetectedEcosystem | null {
   const requirementsNames = collectBasenamesMatching(
     paths,
-    /^requirements.*\.(txt|in)$/
-  )
+    /^requirements.*\.(txt|in)$/,
+  );
   if (requirementsNames.length === 0) {
-    return null
+    return null;
   }
-  return { ecosystem: 'pip', requiredCodeowners: requirementsNames }
+  return { ecosystem: 'pip', requiredCodeowners: requirementsNames };
 }
 
 /**
@@ -166,14 +165,14 @@ function detectPipEcosystem(paths: Array<string>): DetectedEcosystem | null {
  * must have an owner so the resulting Dependabot PRs get reviewers.
  */
 export function detectEcosystems(paths: Array<string>): {
-  detected: Set<string>
-  requiredCodeowners: Array<string>
+  detected: Set<string>;
+  requiredCodeowners: Array<string>;
 } {
   const hasFile = (predicate: (path: string) => boolean) =>
-    paths.some(predicate)
+    paths.some(predicate);
 
-  const detected = new Set<string>()
-  const requiredCodeowners: Array<string> = []
+  const detected = new Set<string>();
+  const requiredCodeowners: Array<string> = [];
 
   for (const found of [
     detectNpmEcosystem(paths),
@@ -181,8 +180,8 @@ export function detectEcosystems(paths: Array<string>): {
     detectPipEcosystem(paths),
   ]) {
     if (found) {
-      detected.add(found.ecosystem)
-      requiredCodeowners.push(...found.requiredCodeowners)
+      detected.add(found.ecosystem);
+      requiredCodeowners.push(...found.requiredCodeowners);
     }
   }
   // Dependabot matches “dockerfile” or “containerfile” anywhere in the
@@ -190,39 +189,39 @@ export function detectEcosystems(paths: Array<string>): {
   // `Dockerfile`, `Dockerfile.worker`, `base.Dockerfile`, `Containerfile`.
   const dockerfileNames = collectBasenamesMatching(
     paths,
-    /^(dockerfile|containerfile)(\.|$)|\.(dockerfile|containerfile)$/i
-  )
+    /^(dockerfile|containerfile)(\.|$)|\.(dockerfile|containerfile)$/i,
+  );
   if (dockerfileNames.length > 0) {
-    detected.add('docker')
-    requiredCodeowners.push(...dockerfileNames)
+    detected.add('docker');
+    requiredCodeowners.push(...dockerfileNames);
   }
   const composeNames = collectBasenamesMatching(
     paths,
-    /^docker-compose.*\.ya?ml$/
-  )
+    /^docker-compose.*\.ya?ml$/,
+  );
   if (composeNames.length > 0) {
-    detected.add('docker-compose')
-    requiredCodeowners.push(...composeNames)
+    detected.add('docker-compose');
+    requiredCodeowners.push(...composeNames);
   }
   if (paths.includes('/.devcontainer/devcontainer.json')) {
-    detected.add('devcontainers')
-    requiredCodeowners.push('/.devcontainer/devcontainer.json')
+    detected.add('devcontainers');
+    requiredCodeowners.push('/.devcontainer/devcontainer.json');
   }
   if (hasFile((p) => p.startsWith('/.github/workflows/'))) {
-    detected.add('github-actions')
-    requiredCodeowners.push('/.github/workflows/')
+    detected.add('github-actions');
+    requiredCodeowners.push('/.github/workflows/');
   }
 
-  return { detected, requiredCodeowners }
+  return { detected, requiredCodeowners };
 }
 
 /** The `package-ecosystem` of an `updates` entry, or `undefined`. */
 function readEcosystem(entry: unknown): string | undefined {
   if (!yaml.isMap(entry)) {
-    return undefined
+    return undefined;
   }
-  const eco: unknown = entry.get('package-ecosystem')
-  return typeof eco === 'string' ? eco : undefined
+  const eco: unknown = entry.get('package-ecosystem');
+  return typeof eco === 'string' ? eco : undefined;
 }
 
 /**
@@ -231,46 +230,46 @@ function readEcosystem(entry: unknown): string | undefined {
  */
 function createFromTemplate(
   template: DependabotTemplate,
-  detected: Set<string>
+  detected: Set<string>,
 ): Change | null {
-  const newDoc = template.doc.clone()
-  const updates = newDoc.get('updates')
-  const kept: Array<string> = []
+  const newDoc = template.doc.clone();
+  const updates = newDoc.get('updates');
+  const kept: Array<string> = [];
   if (yaml.isSeq(updates)) {
     for (let i = updates.items.length - 1; i >= 0; i -= 1) {
-      const eco = readEcosystem(updates.items[i])
+      const eco = readEcosystem(updates.items[i]);
       if (eco !== undefined && detected.has(eco)) {
-        kept.unshift(eco)
+        kept.unshift(eco);
       } else {
-        updates.delete(i)
+        updates.delete(i);
       }
     }
   }
   if (kept.length === 0) {
-    return null
+    return null;
   }
   return {
     path: '.github/dependabot.yaml',
     newContent: stringifyDependabotDoc(newDoc),
     summary: `created \`.github/dependabot.yaml\` with sections: ${kept.map((e) => `\`${e}\``).join(', ')}`,
-  }
+  };
 }
 
 function parseExisting(existing: FileContent, log: Logger): Document | null {
   try {
-    const parsed = yaml.parseDocument(existing.content)
+    const parsed = yaml.parseDocument(existing.content);
     if (parsed.errors.length > 0) {
       log.warning(
-        `could not parse existing dependabot file: ${parsed.errors[0].message}`
-      )
-      return null
+        `could not parse existing dependabot file: ${parsed.errors[0].message}`,
+      );
+      return null;
     }
-    return parsed
+    return parsed;
   } catch (e) {
     log.warning(
-      `could not parse existing dependabot file: ${getErrorMessage(e)}`
-    )
-    return null
+      `could not parse existing dependabot file: ${getErrorMessage(e)}`,
+    );
+    return null;
   }
 }
 
@@ -279,23 +278,23 @@ function parseExisting(existing: FileContent, log: Logger): Document | null {
  * new version. Returns a description of each fix made.
  */
 function ensureCooldowns(parsed: Document, updates: YAMLSeq): Array<string> {
-  const fixes: Array<string> = []
+  const fixes: Array<string> = [];
   for (const u of updates.items.filter((item) => yaml.isMap(item))) {
-    const eco = readEcosystem(u)
-    const cooldown = u.get('cooldown')
+    const eco = readEcosystem(u);
+    const cooldown = u.get('cooldown');
     const days: unknown = yaml.isMap(cooldown)
       ? cooldown.get('default-days')
-      : undefined
+      : undefined;
     if (typeof days !== 'number' || days < 7) {
       if (yaml.isMap(cooldown)) {
-        cooldown.set('default-days', 7)
+        cooldown.set('default-days', 7);
       } else {
-        u.set('cooldown', parsed.createNode({ 'default-days': 7 }))
+        u.set('cooldown', parsed.createNode({ 'default-days': 7 }));
       }
-      fixes.push(`set \`cooldown.default-days: 7\` on \`${eco}\``)
+      fixes.push(`set \`cooldown.default-days: 7\` on \`${eco}\``);
     }
   }
-  return fixes
+  return fixes;
 }
 
 /**
@@ -305,24 +304,24 @@ function ensureCooldowns(parsed: Document, updates: YAMLSeq): Array<string> {
 function addMissingEcosystems(
   updates: YAMLSeq,
   template: DependabotTemplate,
-  detected: Set<string>
+  detected: Set<string>,
 ): Array<string> {
-  const existingEcos = new Set(updates.items.map(readEcosystem))
-  const added: Array<string> = []
+  const existingEcos = new Set(updates.items.map(readEcosystem));
+  const added: Array<string> = [];
   for (const eco of detected) {
-    const templateEntry = template.entryByEcosystem.get(eco)
+    const templateEntry = template.entryByEcosystem.get(eco);
     if (!existingEcos.has(eco) && templateEntry) {
       // Clone so we don’t share nodes with the template doc; the clone
       // keeps the comments attached to the template entry. Strip its
       // scalar quoting so the spliced block matches the host doc’s
       // style instead of the template’s.
-      const cloned = templateEntry.clone() as YAMLMap
-      clearScalarQuoting(cloned)
-      updates.add(cloned)
-      added.push(eco)
+      const cloned = templateEntry.clone() as YAMLMap;
+      clearScalarQuoting(cloned);
+      updates.add(cloned);
+      added.push(eco);
     }
   }
-  return added
+  return added;
 }
 
 /**
@@ -334,52 +333,52 @@ function updateExisting(
   existing: FileContent,
   template: DependabotTemplate,
   detected: Set<string>,
-  log: Logger
+  log: Logger,
 ): Change | null {
-  const parsed = parseExisting(existing, log)
+  const parsed = parseExisting(existing, log);
   if (!parsed) {
-    return null
+    return null;
   }
 
-  const fixes: Array<string> = []
+  const fixes: Array<string> = [];
   if (parsed.get('version') == null) {
-    parsed.set('version', 2)
-    fixes.push('set `version: 2`')
+    parsed.set('version', 2);
+    fixes.push('set `version: 2`');
   }
-  let updates = parsed.get('updates')
+  let updates = parsed.get('updates');
   if (updates == null) {
-    updates = parsed.createNode([])
-    parsed.set('updates', updates)
+    updates = parsed.createNode([]);
+    parsed.set('updates', updates);
   }
   if (!yaml.isSeq(updates)) {
-    log.warning('existing dependabot file has a non-list `updates`, skipping')
-    return null
+    log.warning('existing dependabot file has a non-list `updates`, skipping');
+    return null;
   }
 
-  fixes.push(...ensureCooldowns(parsed, updates))
-  const added = addMissingEcosystems(updates, template, detected)
+  fixes.push(...ensureCooldowns(parsed, updates));
+  const added = addMissingEcosystems(updates, template, detected);
   if (fixes.length === 0 && added.length === 0) {
-    return null
+    return null;
   }
 
-  const parts: Array<string> = []
+  const parts: Array<string> = [];
   if (added.length > 0) {
-    parts.push(`added sections: ${added.map((e) => `\`${e}\``).join(', ')}`)
+    parts.push(`added sections: ${added.map((e) => `\`${e}\``).join(', ')}`);
   }
-  parts.push(...fixes)
+  parts.push(...fixes);
   return {
     path: existing.path,
     sha: existing.sha,
     newContent: stringifyDependabotDoc(parsed),
     summary: `updated \`${existing.path}\`: ${parts.join('; ')}`,
-  }
+  };
 }
 
 interface PlanDependabotParams {
-  detected: Set<string>
-  existing: FileContent | null
-  template: DependabotTemplate
-  log: Logger
+  detected: Set<string>;
+  existing: FileContent | null;
+  template: DependabotTemplate;
+  log: Logger;
 }
 
 /**
@@ -395,10 +394,10 @@ export function planDependabotChange({
 }: PlanDependabotParams): Change | null {
   if (detected.size === 0) {
     // No detected ecosystems — nothing to add.
-    return null
+    return null;
   }
   if (!existing) {
-    return createFromTemplate(template, detected)
+    return createFromTemplate(template, detected);
   }
-  return updateExisting(existing, template, detected, log)
+  return updateExisting(existing, template, detected, log);
 }

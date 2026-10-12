@@ -29121,6 +29121,13 @@ module.exports = __WEBPACK_EXTERNAL_createRequire(import.meta.url)("events");
 
 /***/ }),
 
+/***/ 9896:
+/***/ ((module) => {
+
+module.exports = __WEBPACK_EXTERNAL_createRequire(import.meta.url)("fs");
+
+/***/ }),
+
 /***/ 8611:
 /***/ ((module) => {
 
@@ -29279,6 +29286,13 @@ module.exports = __WEBPACK_EXTERNAL_createRequire(import.meta.url)("node:worker_
 /***/ ((module) => {
 
 module.exports = __WEBPACK_EXTERNAL_createRequire(import.meta.url)("node:zlib");
+
+/***/ }),
+
+/***/ 857:
+/***/ ((module) => {
+
+module.exports = __WEBPACK_EXTERNAL_createRequire(import.meta.url)("os");
 
 /***/ }),
 
@@ -29478,85 +29492,553 @@ module.exports.xL = safeParse
 __webpack_unused_export__ = defaultContentType
 
 
-/***/ })
+/***/ }),
 
-/******/ });
-/************************************************************************/
-/******/ // The module cache
-/******/ var __webpack_module_cache__ = {};
-/******/ 
-/******/ // The require function
-/******/ function __nccwpck_require__(moduleId) {
-/******/ 	// Check if module is in cache
-/******/ 	var cachedModule = __webpack_module_cache__[moduleId];
-/******/ 	if (cachedModule !== undefined) {
-/******/ 		return cachedModule.exports;
-/******/ 	}
-/******/ 	// Create a new module (and put it into the cache)
-/******/ 	var module = __webpack_module_cache__[moduleId] = {
-/******/ 		// no module.id needed
-/******/ 		// no module.loaded needed
-/******/ 		exports: {}
-/******/ 	};
-/******/ 
-/******/ 	// Execute the module function
-/******/ 	var threw = true;
-/******/ 	try {
-/******/ 		__webpack_modules__[moduleId].call(module.exports, module, module.exports, __nccwpck_require__);
-/******/ 		threw = false;
-/******/ 	} finally {
-/******/ 		if(threw) delete __webpack_module_cache__[moduleId];
-/******/ 	}
-/******/ 
-/******/ 	// Return the exports of the module
-/******/ 	return module.exports;
-/******/ }
-/******/ 
-/************************************************************************/
-/******/ /* webpack/runtime/asset-relocator-loader */
-/******/ if (typeof __nccwpck_require__ !== 'undefined') __nccwpck_require__.ab = decodeURIComponent(new URL('.', import.meta.url).pathname).slice(import.meta.url.match(/^file:\/\/\/\w:/) ? 1 : 0, -1) + "/";
-/******/ 
-/******/ /* webpack/runtime/define property getters */
-/******/ (() => {
-/******/ 	// define getter functions for harmony exports
-/******/ 	__nccwpck_require__.d = (exports, definition) => {
-/******/ 		for(var key in definition) {
-/******/ 			if(__nccwpck_require__.o(definition, key) && !__nccwpck_require__.o(exports, key)) {
-/******/ 				Object.defineProperty(exports, key, { enumerable: true, get: definition[key] });
-/******/ 			}
-/******/ 		}
-/******/ 	};
-/******/ })();
-/******/ 
-/******/ /* webpack/runtime/hasOwnProperty shorthand */
-/******/ (() => {
-/******/ 	__nccwpck_require__.o = (obj, prop) => (Object.prototype.hasOwnProperty.call(obj, prop))
-/******/ })();
-/******/ 
-/******/ /* webpack/runtime/make namespace object */
-/******/ (() => {
-/******/ 	// define __esModule on exports
-/******/ 	__nccwpck_require__.r = (exports) => {
-/******/ 		if(typeof Symbol !== 'undefined' && Symbol.toStringTag) {
-/******/ 			Object.defineProperty(exports, Symbol.toStringTag, { value: 'Module' });
-/******/ 		}
-/******/ 		Object.defineProperty(exports, '__esModule', { value: true });
-/******/ 	};
-/******/ })();
-/******/ 
-/************************************************************************/
-var __webpack_exports__ = {};
+/***/ 7468:
+/***/ ((__webpack_module__, __unused_webpack___webpack_exports__, __nccwpck_require__) => {
 
-// NAMESPACE OBJECT: ../node_modules/@actions/github/lib/github.js
-var github_namespaceObject = {};
-__nccwpck_require__.r(github_namespaceObject);
-__nccwpck_require__.d(github_namespaceObject, {
-  _: () => (github_context),
-  Q: () => (getOctokit)
+__nccwpck_require__.a(__webpack_module__, async (__webpack_handle_async_dependencies__, __webpack_async_result__) => { try {
+/* harmony import */ var _actions_core__WEBPACK_IMPORTED_MODULE_0__ = __nccwpck_require__(7867);
+/* harmony import */ var _actions_github__WEBPACK_IMPORTED_MODULE_1__ = __nccwpck_require__(202);
+
+
+
+// Use these for local debugging.
+// You will also need `mock-inputs.json` with input values.
+//
+// import * as mock from './mock.mjs'
+//
+// const core = mock
+// const github = mock
+
+const {
+  /* context */ "_": context,
+  /* context */ "_": { payload },
+} = _actions_github__WEBPACK_IMPORTED_MODULE_1__;
+const pr = payload.pull_request ?? payload.issue;
+
+const githubToken = _actions_core__WEBPACK_IMPORTED_MODULE_0__/* .getInput */ .V4('github-token');
+const githubRequireKeywordPrefix =
+  _actions_core__WEBPACK_IMPORTED_MODULE_0__/* .getInput */ .V4('github-require-keyword-prefix') !== 'false';
+
+const jiraDomainInput = _actions_core__WEBPACK_IMPORTED_MODULE_0__/* .getInput */ .V4('jira-domain', { required: true });
+const jiraUser = _actions_core__WEBPACK_IMPORTED_MODULE_0__/* .getInput */ .V4('jira-user', { required: true });
+const jiraApiToken = _actions_core__WEBPACK_IMPORTED_MODULE_0__/* .getInput */ .V4('jira-api-token', { required: true });
+const jiraStatusPrDraft = _actions_core__WEBPACK_IMPORTED_MODULE_0__/* .getInput */ .V4('jira-status-pr-draft');
+const jiraStatusPrReady = _actions_core__WEBPACK_IMPORTED_MODULE_0__/* .getInput */ .V4('jira-status-pr-ready');
+const jiraStatusPrMerged = _actions_core__WEBPACK_IMPORTED_MODULE_0__/* .getInput */ .V4('jira-status-pr-merged');
+
+const timeoutMs = 10_000;
+
+const authHeader = `Basic ${Buffer.from(`${jiraUser}:${jiraApiToken}`).toString('base64')}`;
+
+/**
+ * @param {URL} baseUrl
+ */
+function createJiraClient(baseUrl) {
+  async function request(method, path, { params, body } = {}) {
+    const url = new URL(path, baseUrl);
+    if (params) {
+      for (const [key, value] of Object.entries(params)) {
+        url.searchParams.set(key, value);
+      }
+    }
+    const response = await fetch(url, {
+      method,
+      headers: {
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
+        'Authorization': authHeader,
+      },
+      body: body == null ? undefined : JSON.stringify(body),
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    const responseText = await response.text();
+    const data = responseText ? JSON.parse(responseText) : undefined;
+    if (!response.ok) {
+      _actions_core__WEBPACK_IMPORTED_MODULE_0__/* .error */ .z3(
+        `Error ${response.status} ${response.statusText} ${url.pathname}`,
+      );
+      if (data !== undefined) {
+        _actions_core__WEBPACK_IMPORTED_MODULE_0__/* .error */ .z3(JSON.stringify(data));
+      }
+      throw new Error(
+        `Jira request failed: ${method} ${url.pathname} → ${response.status} ${response.statusText}`,
+      );
+    }
+    return { data };
+  }
+
+  return {
+    get: (path, options) => request('GET', path, options),
+    post: (path, body) => request('POST', path, { body }),
+    put: (path, body) => request('PUT', path, { body }),
+  };
+}
+
+// https://developer.atlassian.com/cloud/jira/platform/rest/v3/
+const jiraApiBaseUrl = new URL('/rest/api/3/', `https://${jiraDomainInput}`);
+const jiraApi = createJiraClient(jiraApiBaseUrl);
+
+// https://developer.atlassian.com/cloud/jira/software/rest/
+const jiraAgileApiBaseUrl = new URL(
+  '/rest/agile/1.0/',
+  `https://${jiraDomainInput}`,
+);
+const jiraAgileApi = createJiraClient(jiraAgileApiBaseUrl);
+
+const octokit = _actions_github__WEBPACK_IMPORTED_MODULE_1__/* .getOctokit */ .Q(githubToken);
+const repoOwner = (payload.organization ?? payload.repository.owner).login;
+const issueNumber = (payload.pull_request ?? payload.issue).number;
+
+const tipCommentMarker = '<!-- JIRA_INTEGRATION_NAG -->';
+
+/**
+ * GitHub data
+ *
+ * @typedef {object} PullRequestComment
+ * @property {string} id
+ * @property {string} body
+ * @property {boolean} isMinimized
+ */
+
+/**
+ * Jira data
+ *
+ * @typedef {string} IssueKey
+ * @typedef {string} StatusName
+ *
+ * @typedef {object} IssueData
+ * @property {string} issueKey
+ * @property {StatusName} currentStatusName
+ * @property {Map<StatusName, number>} availableTransitions
+ */
+
+/**
+ * @param {string} name
+ * @return {StatusName}
+ */
+function normaliseStatusName(name) {
+  return name.trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+/**
+ * @param {Array<IssueKey>} issuesKeys
+ * @return {Promise<Array<IssueData>>}
+ */
+async function getIssues(issuesKeys) {
+  const response = await jiraApi.get('search/jql', {
+    params: {
+      maxResults: 100,
+      jql: `id in (${issuesKeys.join(',')})`,
+      fields: 'status',
+      expand: 'transitions',
+    },
+  });
+
+  return response.data.issues.map((jiraIssueData) => ({
+    issueKey: jiraIssueData.key,
+    currentStatusName: normaliseStatusName(jiraIssueData.fields.status.name),
+    availableTransitions: new Map(
+      jiraIssueData.transitions
+        .filter((t) => t.isAvailable)
+        .map((t) => [normaliseStatusName(t.name), Number.parseInt(t.id, 10)]),
+    ),
+  }));
+}
+
+const keywords = [
+  'closes',
+  'close',
+  'closed',
+  'fix',
+  'fixes',
+  'fixed',
+  'resolve',
+  'resolves',
+  'resolved',
+];
+
+/**
+ * @param {string} prBody
+ * @param {Array<PullRequestComment>} comments
+ * @return {Array<IssueKey>}
+ */
+function extractResolvedIssueKeys(prBody, comments) {
+  const text = [
+    prBody,
+    ...comments
+      .filter((comment) => !comment.isMinimized)
+      .map((comment) => comment.body),
+  ].join('\0');
+
+  const keywordsRegExp = githubRequireKeywordPrefix
+    ? `(?:${keywords.join('|')})\\s+`
+    : '';
+  // Warning:
+  // It’s extremely important for this regexp to match only simple
+  // jira keys as extracted keys will be used in JQL queries.
+  const issueKeyRegExp = '[A-Z][A-Z0-9]+-[0-9]+';
+  const urlRegExp = `${RegExp.escape(jiraApiBaseUrl.origin)}/browse/(${issueKeyRegExp})`;
+  const closesRegExp = `${keywordsRegExp}<?${urlRegExp}>?(?:\\s*,\\s*<?${urlRegExp}>?)*`;
+
+  // Find all “Closes URL, URL…”
+  const matches = text.match(new RegExp(closesRegExp, 'gi')) ?? [];
+
+  return Array.from(
+    new Set(
+      matches.flatMap((match) => {
+        // Find URLs
+        const urlMatches = match.match(new RegExp(urlRegExp, 'gi'));
+        // Find issueId in the URL (only capture group in urlRegExp)
+        const issueKeys = urlMatches.map((url) =>
+          new RegExp(urlRegExp, 'i').exec(url)[1].toUpperCase(),
+        );
+        return issueKeys;
+      }),
+    ),
+  );
+}
+
+/**
+ * @return {Promise<Array<PullRequestComment>>}
+ */
+async function getPullRequestComments() {
+  _actions_core__WEBPACK_IMPORTED_MODULE_0__/* .info */ .pq('Requesting pull request comments');
+
+  const query = `
+    query ($owner: String!, $repo: String!, $number: Int!, $cursor: String) {
+      repository(owner: $owner, name: $repo) {
+        issueOrPullRequest(number: $number) {
+          ... on Issue {
+            comments(first: 100, after: $cursor) {
+              nodes { id body isMinimized }
+              pageInfo { hasNextPage endCursor }
+            }
+          }
+          ... on PullRequest {
+            comments(first: 100, after: $cursor) {
+              nodes { id body isMinimized }
+              pageInfo { hasNextPage endCursor }
+            }
+          }
+        }
+      }
+    }
+  `;
+
+  const comments = [];
+  let cursor = null;
+  let hasNextPage = true;
+  while (hasNextPage) {
+    const result = await octokit.graphql(query, {
+      owner: repoOwner,
+      repo: payload.repository.name,
+      number: issueNumber,
+      cursor,
+    });
+    const page = result.repository.issueOrPullRequest.comments;
+    comments.push(...page.nodes);
+    hasNextPage = page.pageInfo.hasNextPage;
+    cursor = page.pageInfo.endCursor;
+  }
+  return comments;
+}
+
+/**
+ * @param {Array<PullRequestComment>} tipComments
+ * @return {Promise<void>}
+ */
+async function minimiseTipComments(tipComments) {
+  if (tipComments.length === 0) return;
+
+  _actions_core__WEBPACK_IMPORTED_MODULE_0__/* .info */ .pq('Issues found — minimising stale tip comment(s).');
+  await Promise.all(
+    tipComments.map(async (tip) => {
+      try {
+        await octokit.graphql(
+          `mutation ($id: ID!) {
+            minimizeComment(input: { subjectId: $id, classifier: RESOLVED }) {
+              minimizedComment { isMinimized }
+            }
+          }`,
+          { id: tip.id },
+        );
+      } catch (error) {
+        _actions_core__WEBPACK_IMPORTED_MODULE_0__/* .error */ .z3(`Failed to minimise tip comment: ${String(error)}`);
+      }
+    }),
+  );
+}
+
+async function postTipCommentLinkJiraIssue(tipComments) {
+  if (
+    // Only post a comment, if acting upon an event that could’ve
+    // changed PR body
+    ['pull_request', 'pull_request_target'].includes(context.eventName) &&
+    ['opened', 'edited'].includes(payload.action) &&
+    // Bots (e.g. Dependabot) won’t read or act on the tip, so don’t
+    // bother posting it
+    pr.user.type !== 'Bot'
+  ) {
+    try {
+      if (tipComments.length > 0) {
+        _actions_core__WEBPACK_IMPORTED_MODULE_0__/* .info */ .pq('No issues found, but tip comment already present.');
+      } else {
+        _actions_core__WEBPACK_IMPORTED_MODULE_0__/* .info */ .pq('No issues found — posting a tip comment.');
+
+        const keyword =
+          keywords[0].slice(0, 1).toUpperCase() + keywords[0].slice(1);
+        const body = `${tipCommentMarker}\n> [!TIP]\n> Include “${keyword} <var>JIRA_ISSUE_URL</var>” in the PR body to associate it with an issue.`;
+
+        await octokit.rest.issues.createComment({
+          issue_number: pr.number,
+          owner: repoOwner,
+          repo: payload.repository.name,
+          body,
+        });
+      }
+    } catch (error) {
+      _actions_core__WEBPACK_IMPORTED_MODULE_0__/* .error */ .z3(`Failed to post tip comment: ${String(error)}`);
+    }
+  }
+}
+
+/**
+ * @param {Array<IssueKey>} issueKeys
+ * @return {Promise<void>}
+ */
+async function assignPrToIssues(issueKeys) {
+  await Promise.all(
+    issueKeys.map(async (issueKey) => {
+      _actions_core__WEBPACK_IMPORTED_MODULE_0__/* .info */ .pq(`Assigning PR #${pr.number} to issue ${issueKey}`);
+
+      const prLinkObject = {
+        url: pr.html_url,
+        // Using URL as title will make JIRA fetch the title itself
+        title: pr.html_url,
+        icon: { url16x16: 'https://github.com/favicon.ico' },
+      };
+
+      const { data: links } = await jiraApi.get(
+        `issue/${encodeURIComponent(issueKey)}/remotelink`,
+      );
+
+      const alreadyAssigned = links.some(
+        (link) => link.object.url === prLinkObject.url,
+      );
+      if (!alreadyAssigned) {
+        await jiraApi.post(`issue/${encodeURIComponent(issueKey)}/remotelink`, {
+          application: {},
+          object: prLinkObject,
+        });
+      }
+    }),
+  );
+
+  _actions_core__WEBPACK_IMPORTED_MODULE_0__/* .info */ .pq(`Assigned PR #${pr.number} to ${issueKeys.length} issue(s)`);
+}
+
+function escapeJqlString(str) {
+  return str.replace(/(["\\])/g, '\\$1');
+}
+
+/**
+ * @param {StatusName} statusName
+ * @return {Promise<IssueKey|undefined>}
+ */
+async function getLastIssueInStatusKey(statusName) {
+  const statusNameNormalised = normaliseStatusName(statusName);
+  const response = await jiraApi.get('search/jql', {
+    params: {
+      maxResults: 1,
+      jql: `status="${escapeJqlString(statusNameNormalised)}" ORDER BY Rank DESC`,
+      fields: 'key',
+    },
+  });
+  const key = response.data.issues.at(0)?.key;
+  _actions_core__WEBPACK_IMPORTED_MODULE_0__/* .info */ .pq(`Last issue in ${statusName} is ${key}`);
+  return key;
+}
+
+/**
+ * @param {Array<IssueKey>} issueKeys
+ * @param {Array<StatusName>} newStatusNames
+ * @return {Promise<void>}
+ */
+async function transitionIssues(issueKeys, newStatusNames) {
+  const newStatusNamesNormalised = newStatusNames.map(normaliseStatusName);
+
+  const issuesData = await getIssues(issueKeys);
+
+  /** @type {Map<StatusName, Array<IssueData>}>} */
+  const issuesByNewStatusName = new Map();
+  issuesData.forEach((issueData) => {
+    const newStatusName = newStatusNamesNormalised.find((statusName) =>
+      issueData.availableTransitions.has(statusName),
+    );
+    if (!newStatusName) {
+      throw new Error(
+        `Failed to find a valid transition for issue ${issueData.issueKey}. Looked for statuses: ${newStatusNames.join(', ')}. Available transitions: ${Array.from(issueData.availableTransitions.keys()).join(', ')}`,
+      );
+    }
+
+    if (issuesByNewStatusName.has(newStatusName)) {
+      issuesByNewStatusName.get(newStatusName).push(issueData);
+    } else {
+      issuesByNewStatusName.set(newStatusName, [issueData]);
+    }
+  });
+
+  await Promise.all(
+    Array.from(issuesByNewStatusName.entries()).map(
+      async ([newStatusName, issues]) => {
+        const lastIssueInStatusKey =
+          await getLastIssueInStatusKey(newStatusName);
+
+        const transitionedIssueKeys = (
+          await Promise.all(
+            issues.map(async (issue) => {
+              if (issue.currentStatusName === newStatusName) {
+                _actions_core__WEBPACK_IMPORTED_MODULE_0__/* .info */ .pq(
+                  `Did not transition ${issue.issueKey} — already in ${newStatusName}`,
+                );
+                return null;
+              } else {
+                const newStatusId =
+                  issue.availableTransitions.get(newStatusName);
+                if (newStatusId == null) {
+                  throw new Error(
+                    `List name “${newStatusName}” not found in JIRA. Available statuses: ${Array.from(issue.availableTransitions.keys()).join(', ')}`,
+                  );
+                }
+
+                await jiraApi.post(
+                  `issue/${encodeURIComponent(issue.issueKey)}/transitions`,
+                  {
+                    transition: {
+                      id: newStatusId,
+                    },
+                  },
+                );
+
+                _actions_core__WEBPACK_IMPORTED_MODULE_0__/* .info */ .pq(`Transitioned ${issue.issueKey} to ${newStatusName}`);
+
+                return issue.issueKey;
+              }
+            }),
+          )
+        ).filter(Boolean);
+
+        // Move all newly transitioned issues to the end of the list
+        if (transitionedIssueKeys.length > 0 && lastIssueInStatusKey) {
+          await jiraAgileApi.put('issue/rank', {
+            issues: transitionedIssueKeys,
+            rankAfterIssue: lastIssueInStatusKey,
+          });
+          _actions_core__WEBPACK_IMPORTED_MODULE_0__/* .info */ .pq(
+            `Moved issues to the end of column '${newStatusName}': ${transitionedIssueKeys.join(', ')}`,
+          );
+        }
+      },
+    ),
+  );
+}
+
+/* eslint complexity: ["error", 20] -- TODO Refactor */
+async function main() {
+  try {
+    const comments = await getPullRequestComments();
+    const tipComments = comments.filter(
+      (comment) =>
+        !comment.isMinimized && comment.body.includes(tipCommentMarker),
+    );
+    const issueIds = extractResolvedIssueKeys(pr.body, comments);
+
+    if (!issueIds.length) {
+      _actions_core__WEBPACK_IMPORTED_MODULE_0__/* .info */ .pq('Could not find issue IDs');
+      // Only post a tip comment when the PR body could have changed
+      await postTipCommentLinkJiraIssue(tipComments);
+      return;
+    }
+    _actions_core__WEBPACK_IMPORTED_MODULE_0__/* .info */ .pq('Found issue IDs:', issueIds.join(', '));
+
+    await minimiseTipComments(tipComments);
+
+    // Treat PRs with “draft” or “wip” in brackets at the start or
+    // end of the titles like drafts. Useful for orgs on unpaid
+    // plans which doesn’t support PR drafts.
+    const titleDraftRegExp =
+      /^(?:\s*[[(](?:wip|draft)[\])]\s+)|(?:\s+[[(](?:wip|draft)[\])]\s*)$/i;
+    const isRealDraft = pr.draft === true;
+    const isFauxDraft = Boolean(pr.title.match(titleDraftRegExp));
+    const isDraft = isRealDraft || isFauxDraft;
+
+    await assignPrToIssues(issueIds);
+
+    if (pr.state === 'open' && isDraft) {
+      if (!jiraStatusPrDraft) {
+        _actions_core__WEBPACK_IMPORTED_MODULE_0__/* .info */ .pq(
+          'No draft PR status name provided, skipping transitioning issues',
+        );
+      } else {
+        await transitionIssues(issueIds, jiraStatusPrDraft.split('|'));
+      }
+    } else if (pr.state === 'open' && !isDraft) {
+      if (!jiraStatusPrReady) {
+        _actions_core__WEBPACK_IMPORTED_MODULE_0__/* .info */ .pq(
+          'No ready PR status name provided, skipping transitioning issues',
+        );
+      } else {
+        await transitionIssues(issueIds, jiraStatusPrReady.split('|'));
+      }
+    } else if (pr.state === 'closed') {
+      if (!jiraStatusPrMerged) {
+        _actions_core__WEBPACK_IMPORTED_MODULE_0__/* .info */ .pq(
+          'No merged PR status name provided, skipping transitioning issues',
+        );
+      } else {
+        await transitionIssues(issueIds, jiraStatusPrMerged.split('|'));
+      }
+    } else {
+      let type = 'not draft';
+      if (isFauxDraft) {
+        type = 'faux draft';
+      } else if (pr.draft) {
+        type = 'draft';
+      }
+      _actions_core__WEBPACK_IMPORTED_MODULE_0__/* .info */ .pq(
+        `Skipping transitioning the issues: pr.state=${pr.state}, ${type}`,
+      );
+    }
+  } catch (error) {
+    _actions_core__WEBPACK_IMPORTED_MODULE_0__/* .setFailed */ .C1(error);
+  }
+}
+
+await main();
+
+__webpack_async_result__();
+} catch(e) { __webpack_async_result__(e); } }, 1);
+
+/***/ }),
+
+/***/ 7867:
+/***/ ((__unused_webpack___webpack_module__, __webpack_exports__, __nccwpck_require__) => {
+
+
+// EXPORTS
+__nccwpck_require__.d(__webpack_exports__, {
+  z3: () => (/* binding */ error),
+  V4: () => (/* binding */ getInput),
+  pq: () => (/* binding */ info),
+  C1: () => (/* binding */ setFailed)
 });
 
-;// CONCATENATED MODULE: external "os"
-const external_os_namespaceObject = __WEBPACK_EXTERNAL_createRequire(import.meta.url)("os");
+// UNUSED EXPORTS: ExitCode, addPath, debug, endGroup, exportVariable, getBooleanInput, getIDToken, getMultilineInput, getState, group, isDebug, markdownSummary, notice, platform, saveState, setCommandEcho, setOutput, setSecret, startGroup, summary, toPlatformPath, toPosixPath, toWin32Path, warning
+
+// EXTERNAL MODULE: external "os"
+var external_os_ = __nccwpck_require__(857);
 ;// CONCATENATED MODULE: ../node_modules/@actions/core/lib/utils.js
 // We use any as a valid input type
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -29631,7 +30113,7 @@ function utils_toCommandProperties(annotationProperties) {
  */
 function command_issueCommand(command, properties, message) {
     const cmd = new Command(command, properties, message);
-    process.stdout.write(cmd.toString() + external_os_namespaceObject.EOL);
+    process.stdout.write(cmd.toString() + external_os_.EOL);
 }
 function command_issue(name, message = '') {
     command_issueCommand(name, {}, message);
@@ -29687,8 +30169,8 @@ function escapeProperty(s) {
 //# sourceMappingURL=command.js.map
 ;// CONCATENATED MODULE: external "crypto"
 const external_crypto_namespaceObject = __WEBPACK_EXTERNAL_createRequire(import.meta.url)("crypto");
-;// CONCATENATED MODULE: external "fs"
-const external_fs_namespaceObject = __WEBPACK_EXTERNAL_createRequire(import.meta.url)("fs");
+// EXTERNAL MODULE: external "fs"
+var external_fs_ = __nccwpck_require__(9896);
 ;// CONCATENATED MODULE: ../node_modules/@actions/core/lib/file-command.js
 // For internal use, subject to change.
 // We use any as a valid input type
@@ -30684,7 +31166,7 @@ var summary_awaiter = (undefined && undefined.__awaiter) || function (thisArg, _
 };
 
 
-const { access, appendFile, writeFile } = external_fs_namespaceObject.promises;
+const { access, appendFile, writeFile } = external_fs_.promises;
 const SUMMARY_ENV_VAR = 'GITHUB_STEP_SUMMARY';
 const SUMMARY_DOCS_URL = 'https://docs.github.com/actions/using-workflows/workflow-commands-for-github-actions#adding-a-job-summary';
 class Summary {
@@ -30707,7 +31189,7 @@ class Summary {
                 throw new Error(`Unable to find environment variable for $${SUMMARY_ENV_VAR}. Check if your runtime environment supports job summaries.`);
             }
             try {
-                yield access(pathFromEnv, external_fs_namespaceObject.constants.R_OK | external_fs_namespaceObject.constants.W_OK);
+                yield access(pathFromEnv, external_fs_.constants.R_OK | external_fs_.constants.W_OK);
             }
             catch (_a) {
                 throw new Error(`Unable to access summary file: '${pathFromEnv}'. Check if the file has correct read/write permissions.`);
@@ -30803,7 +31285,7 @@ class Summary {
      * @returns {Summary} summary instance
      */
     addEOL() {
-        return this.addRaw(external_os_namespaceObject.EOL);
+        return this.addRaw(external_os_.EOL);
     }
     /**
      * Adds an HTML codeblock to the summary buffer
@@ -31007,7 +31489,7 @@ var io_util_awaiter = (undefined && undefined.__awaiter) || function (thisArg, _
 };
 
 
-const { chmod, copyFile, lstat, mkdir, open: io_util_open, readdir, rename, rm, rmdir, stat, symlink, unlink } = external_fs_namespaceObject.promises;
+const { chmod, copyFile, lstat, mkdir, open: io_util_open, readdir, rename, rm, rmdir, stat, symlink, unlink } = external_fs_.promises;
 // export const {open} = 'fs'
 const IS_WINDOWS = process.platform === 'win32';
 /**
@@ -31034,7 +31516,7 @@ function readlink(fsPath) {
 }
 // See https://github.com/nodejs/node/blob/d0153aee367422d0858105abec186da4dff0a0c5/deps/uv/include/uv/win.h#L691
 const UV_FS_O_EXLOCK = 0x10000000;
-const READONLY = external_fs_namespaceObject.constants.O_RDONLY;
+const READONLY = external_fs_.constants.O_RDONLY;
 function exists(fsPath) {
     return io_util_awaiter(this, void 0, void 0, function* () {
         try {
@@ -31527,13 +32009,13 @@ class ToolRunner extends external_events_.EventEmitter {
     _processLineBuffer(data, strBuffer, onLine) {
         try {
             let s = strBuffer + data.toString();
-            let n = s.indexOf(external_os_namespaceObject.EOL);
+            let n = s.indexOf(external_os_.EOL);
             while (n > -1) {
                 const line = s.substring(0, n);
                 onLine(line);
                 // the rest of the string ...
-                s = s.substring(n + external_os_namespaceObject.EOL.length);
-                n = s.indexOf(external_os_namespaceObject.EOL);
+                s = s.substring(n + external_os_.EOL.length);
+                n = s.indexOf(external_os_.EOL);
             }
             return s;
         }
@@ -31824,7 +32306,7 @@ class ToolRunner extends external_events_.EventEmitter {
                 }
                 const optionsNonNull = this._cloneExecOptions(this.options);
                 if (!optionsNonNull.silent && optionsNonNull.outStream) {
-                    optionsNonNull.outStream.write(this._getCommandString(optionsNonNull) + external_os_namespaceObject.EOL);
+                    optionsNonNull.outStream.write(this._getCommandString(optionsNonNull) + external_os_.EOL);
                 }
                 const state = new ExecState(optionsNonNull, this.toolPath);
                 state.on('debug', (message) => {
@@ -32163,8 +32645,8 @@ const getLinuxInfo = () => platform_awaiter(void 0, void 0, void 0, function* ()
         version
     };
 });
-const platform = external_os_namespaceObject.platform();
-const arch = external_os_namespaceObject.arch();
+const platform = external_os_.platform();
+const arch = external_os_.arch();
 const isWindows = platform === 'win32';
 const isMacOS = platform === 'darwin';
 const isLinux = platform === 'linux';
@@ -32366,7 +32848,7 @@ function setCommandEcho(enabled) {
  */
 function setFailed(message) {
     process.exitCode = ExitCode.Failure;
-    core_error(message);
+    error(message);
 }
 //-----------------------------------------------------------------------
 // Logging Commands
@@ -32389,7 +32871,7 @@ function core_debug(message) {
  * @param message error issue message. Errors will be converted to string via toString()
  * @param properties optional properties to add to the annotation.
  */
-function core_error(message, properties = {}) {
+function error(message, properties = {}) {
     command_issueCommand('error', utils_toCommandProperties(properties), message instanceof Error ? message.toString() : message);
 }
 /**
@@ -32413,7 +32895,7 @@ function notice(message, properties = {}) {
  * @param message info message
  */
 function info(message) {
-    process.stdout.write(message + external_os_namespaceObject.EOL);
+    process.stdout.write(message + external_os_.EOL);
 }
 /**
  * Begin an output group.
@@ -32500,6 +32982,23 @@ function getIDToken(aud) {
  */
 
 //# sourceMappingURL=core.js.map
+
+/***/ }),
+
+/***/ 202:
+/***/ ((__unused_webpack___webpack_module__, __webpack_exports__, __nccwpck_require__) => {
+
+
+// EXPORTS
+__nccwpck_require__.d(__webpack_exports__, {
+  _: () => (/* binding */ github_context),
+  Q: () => (/* binding */ getOctokit)
+});
+
+// EXTERNAL MODULE: external "fs"
+var external_fs_ = __nccwpck_require__(9896);
+// EXTERNAL MODULE: external "os"
+var external_os_ = __nccwpck_require__(857);
 ;// CONCATENATED MODULE: ../node_modules/@actions/github/lib/context.js
 
 
@@ -32511,12 +33010,12 @@ class Context {
         var _a, _b, _c;
         this.payload = {};
         if (process.env.GITHUB_EVENT_PATH) {
-            if ((0,external_fs_namespaceObject.existsSync)(process.env.GITHUB_EVENT_PATH)) {
-                this.payload = JSON.parse((0,external_fs_namespaceObject.readFileSync)(process.env.GITHUB_EVENT_PATH, { encoding: 'utf8' }));
+            if ((0,external_fs_.existsSync)(process.env.GITHUB_EVENT_PATH)) {
+                this.payload = JSON.parse((0,external_fs_.readFileSync)(process.env.GITHUB_EVENT_PATH, { encoding: 'utf8' }));
             }
             else {
                 const path = process.env.GITHUB_EVENT_PATH;
-                process.stdout.write(`GITHUB_EVENT_PATH ${path} does not exist${external_os_namespaceObject.EOL}`);
+                process.stdout.write(`GITHUB_EVENT_PATH ${path} does not exist${external_os_.EOL}`);
             }
         }
         this.eventName = process.env.GITHUB_EVENT_NAME;
@@ -32555,8 +33054,10 @@ class Context {
 //# sourceMappingURL=context.js.map
 // EXTERNAL MODULE: ../node_modules/@actions/github/node_modules/@actions/http-client/lib/index.js
 var lib = __nccwpck_require__(977);
+// EXTERNAL MODULE: ../node_modules/undici/index.js
+var undici = __nccwpck_require__(734);
 ;// CONCATENATED MODULE: ../node_modules/@actions/github/lib/internal/utils.js
-var utils_awaiter = (undefined && undefined.__awaiter) || function (thisArg, _arguments, P, generator) {
+var __awaiter = (undefined && undefined.__awaiter) || function (thisArg, _arguments, P, generator) {
     function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
     return new (P || (P = Promise))(function (resolve, reject) {
         function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
@@ -32586,7 +33087,7 @@ function getProxyAgentDispatcher(destinationUrl) {
 }
 function getProxyFetch(destinationUrl) {
     const httpDispatcher = getProxyAgentDispatcher(destinationUrl);
-    const proxyFetch = (url, opts) => utils_awaiter(this, void 0, void 0, function* () {
+    const proxyFetch = (url, opts) => __awaiter(this, void 0, void 0, function* () {
         return (0,undici.fetch)(url, Object.assign(Object.assign({}, opts), { dispatcher: httpDispatcher }));
     });
     return proxyFetch;
@@ -32790,7 +33291,7 @@ var DEFAULTS = {
 };
 
 // pkg/dist-src/util/lowercase-keys.js
-function dist_bundle_lowercaseKeys(object) {
+function lowercaseKeys(object) {
   if (!object) {
     return {};
   }
@@ -32842,7 +33343,7 @@ function merge(defaults, route, options) {
   } else {
     options = Object.assign({}, route);
   }
-  options.headers = dist_bundle_lowercaseKeys(options.headers);
+  options.headers = lowercaseKeys(options.headers);
   removeUndefinedProperties(options);
   removeUndefinedProperties(options.headers);
   const mergedOptions = mergeDeep(defaults || {}, options);
@@ -36598,522 +37099,136 @@ function getOctokit(token, options, ...additionalPlugins) {
     return new GitHubWithPlugins(getOctokitOptions(token, options));
 }
 //# sourceMappingURL=github.js.map
-;// CONCATENATED MODULE: ./index.mjs
 
+/***/ })
 
-
-// Use these for local debugging.
-// You will also need `mock-inputs.json` with input values.
-//
-// import * as mock from './mock.mjs'
-//
-// const core = mock
-// const github = mock
-
-const {
-  /* context */ "_": index_context,
-  /* context */ "_": { payload },
-} = github_namespaceObject
-const pr = payload.pull_request || payload.issue
-
-const githubToken = getInput('github-token')
-const githubRequireKeywordPrefix =
-  getInput('github-require-keyword-prefix') !== 'false'
-
-const jiraDomainInput = getInput('jira-domain', { required: true })
-const jiraUser = getInput('jira-user', { required: true })
-const jiraApiToken = getInput('jira-api-token', { required: true })
-const jiraStatusPrDraft = getInput('jira-status-pr-draft')
-const jiraStatusPrReady = getInput('jira-status-pr-ready')
-const jiraStatusPrMerged = getInput('jira-status-pr-merged')
-
-const timeoutMs = 10_000
-
-const authHeader = `Basic ${Buffer.from(`${jiraUser}:${jiraApiToken}`).toString('base64')}`
-
-/**
- * @param {URL} baseUrl
- */
-function createJiraClient(baseUrl) {
-  async function request(method, path, { params, body } = {}) {
-    const url = new URL(path, baseUrl)
-    if (params) {
-      for (const [key, value] of Object.entries(params)) {
-        url.searchParams.set(key, value)
-      }
-    }
-    const response = await fetch(url, {
-      method,
-      headers: {
-        'Accept': 'application/json',
-        'Content-Type': 'application/json',
-        'Authorization': authHeader,
-      },
-      body: body == null ? undefined : JSON.stringify(body),
-      signal: AbortSignal.timeout(timeoutMs),
-    })
-    const responseText = await response.text()
-    const data = responseText ? JSON.parse(responseText) : undefined
-    if (!response.ok) {
-      core_error(
-        `Error ${response.status} ${response.statusText} ${url.pathname}`
-      )
-      if (data !== undefined) {
-        core_error(JSON.stringify(data))
-      }
-      throw new Error(
-        `Jira request failed: ${method} ${url.pathname} → ${response.status} ${response.statusText}`
-      )
-    }
-    return { data }
-  }
-
-  return {
-    get: (path, options) => request('GET', path, options),
-    post: (path, body) => request('POST', path, { body }),
-    put: (path, body) => request('PUT', path, { body }),
-  }
-}
-
-// https://developer.atlassian.com/cloud/jira/platform/rest/v3/
-const jiraApiBaseUrl = new URL('/rest/api/3/', `https://${jiraDomainInput}`)
-const jiraApi = createJiraClient(jiraApiBaseUrl)
-
-// https://developer.atlassian.com/cloud/jira/software/rest/
-const jiraAgileApiBaseUrl = new URL(
-  '/rest/agile/1.0/',
-  `https://${jiraDomainInput}`
-)
-const jiraAgileApi = createJiraClient(jiraAgileApiBaseUrl)
-
-const octokit = getOctokit(githubToken)
-const repoOwner = (payload.organization || payload.repository.owner).login
-const issueNumber = (payload.pull_request || payload.issue).number
-
-const tipCommentMarker = '<!-- JIRA_INTEGRATION_NAG -->'
-
-/**
- * GitHub data
- *
- * @typedef {object} PullRequestComment
- * @property {string} id
- * @property {string} body
- * @property {boolean} isMinimized
- */
-
-/**
- * Jira data
- *
- * @typedef {string} IssueKey
- * @typedef {string} StatusName
- *
- * @typedef {object} IssueData
- * @property {string} issueKey
- * @property {StatusName} currentStatusName
- * @property {Map<StatusName, number>} availableTransitions
- */
-
-/**
- * @param {string} name
- * @return {StatusName}
- */
-function normaliseStatusName(name) {
-  return name.trim().toLowerCase().replace(/\s+/g, ' ')
-}
-
-/**
- * @param {Array<IssueKey>} issuesKeys
- * @return {Promise<Array<IssueData>>}
- */
-async function getIssues(issuesKeys) {
-  const response = await jiraApi.get('search/jql', {
-    params: {
-      maxResults: 100,
-      jql: `id in (${issuesKeys.join(',')})`,
-      fields: 'status',
-      expand: 'transitions',
-    },
-  })
-
-  return response.data.issues.map((jiraIssueData) => ({
-    issueKey: jiraIssueData.key,
-    currentStatusName: normaliseStatusName(jiraIssueData.fields.status.name),
-    availableTransitions: new Map(
-      jiraIssueData.transitions
-        .filter((t) => t.isAvailable)
-        .map((t) => [normaliseStatusName(t.name), Number.parseInt(t.id, 10)])
-    ),
-  }))
-}
-
-const keywords = [
-  'closes',
-  'close',
-  'closed',
-  'fix',
-  'fixes',
-  'fixed',
-  'resolve',
-  'resolves',
-  'resolved',
-]
-
-/**
- * @param {string} prBody
- * @param {Array<PullRequestComment>} comments
- * @return {Array<IssueKey>}
- */
-function extractResolvedIssueKeys(prBody, comments) {
-  const text = [
-    prBody,
-    ...comments
-      .filter((comment) => !comment.isMinimized)
-      .map((comment) => comment.body),
-  ].join('\0')
-
-  const keywordsRegExp = githubRequireKeywordPrefix
-    ? `(?:${keywords.join('|')})\\s+`
-    : ''
-  // Warning:
-  // It’s extremely important for this regexp to match only simple
-  // jira keys as extracted keys will be used in JQL queries.
-  const issueKeyRegExp = '[A-Z][A-Z0-9]+-[0-9]+'
-  const urlRegExp = `${RegExp.escape(jiraApiBaseUrl.origin)}/browse/(${issueKeyRegExp})`
-  const closesRegExp = `${keywordsRegExp}<?${urlRegExp}>?(?:\\s*,\\s*<?${urlRegExp}>?)*`
-
-  // Find all “Closes URL, URL…”
-  const matches = text.match(new RegExp(closesRegExp, 'gi')) || []
-
-  return Array.from(
-    new Set(
-      matches.flatMap((match) => {
-        // Find URLs
-        const urlMatches = match.match(new RegExp(urlRegExp, 'gi'))
-        // Find issueId in the URL (only capture group in urlRegExp)
-        const issueKeys = urlMatches.map((url) =>
-          url.match(new RegExp(urlRegExp, 'i'))[1].toUpperCase()
-        )
-        return issueKeys
-      })
-    )
-  )
-}
-
-/**
- * @return {Promise<Array<PullRequestComment>>}
- */
-async function getPullRequestComments() {
-  info('Requesting pull request comments')
-
-  const query = `
-    query ($owner: String!, $repo: String!, $number: Int!, $cursor: String) {
-      repository(owner: $owner, name: $repo) {
-        issueOrPullRequest(number: $number) {
-          ... on Issue {
-            comments(first: 100, after: $cursor) {
-              nodes { id body isMinimized }
-              pageInfo { hasNextPage endCursor }
-            }
-          }
-          ... on PullRequest {
-            comments(first: 100, after: $cursor) {
-              nodes { id body isMinimized }
-              pageInfo { hasNextPage endCursor }
-            }
-          }
-        }
-      }
-    }
-  `
-
-  const comments = []
-  let cursor = null
-  let hasNextPage = true
-  while (hasNextPage) {
-    const result = await octokit.graphql(query, {
-      owner: repoOwner,
-      repo: payload.repository.name,
-      number: issueNumber,
-      cursor,
-    })
-    const page = result.repository.issueOrPullRequest.comments
-    comments.push(...page.nodes)
-    hasNextPage = page.pageInfo.hasNextPage
-    cursor = page.pageInfo.endCursor
-  }
-  return comments
-}
-
-/**
- * @param {Array<PullRequestComment>} tipComments
- * @return {Promise<void>}
- */
-async function minimiseTipComments(tipComments) {
-  if (tipComments.length === 0) return
-
-  info('Issues found — minimising stale tip comment(s).')
-  await Promise.all(
-    tipComments.map(async (tip) => {
-      try {
-        await octokit.graphql(
-          `mutation ($id: ID!) {
-            minimizeComment(input: { subjectId: $id, classifier: RESOLVED }) {
-              minimizedComment { isMinimized }
-            }
-          }`,
-          { id: tip.id }
-        )
-      } catch (error) {
-        core_error(`Failed to minimise tip comment: ${error}`)
-      }
-    })
-  )
-}
-
-async function postTipCommentLinkJiraIssue(tipComments) {
-  if (
-    // Only post a comment, if acting upon an event that could’ve
-    // changed PR body
-    ['pull_request', 'pull_request_target'].includes(index_context.eventName) &&
-    ['opened', 'edited'].includes(payload.action) &&
-    // Bots (e.g. Dependabot) won’t read or act on the tip, so don’t
-    // bother posting it
-    pr.user.type !== 'Bot'
-  ) {
-    try {
-      if (tipComments.length > 0) {
-        info('No issues found, but tip comment already present.')
-      } else {
-        info('No issues found — posting a tip comment.')
-
-        const keyword =
-          keywords[0].slice(0, 1).toUpperCase() + keywords[0].slice(1)
-        const body = `${tipCommentMarker}\n> [!TIP]\n> Include “${keyword} <var>JIRA_ISSUE_URL</var>” in the PR body to associate it with an issue.`
-
-        await octokit.rest.issues.createComment({
-          issue_number: pr.number,
-          owner: repoOwner,
-          repo: payload.repository.name,
-          body,
-        })
-      }
-    } catch (error) {
-      core_error(`Failed to post tip comment: ${error}`)
-    }
-  }
-}
-
-/**
- * @param {Array<IssueKey>} issueKeys
- * @return {Promise<void>}
- */
-async function assignPrToIssues(issueKeys) {
-  await Promise.all(
-    issueKeys.map(async (issueKey) => {
-      info(`Assigning PR #${pr.number} to issue ${issueKey}`)
-
-      const prLinkObject = {
-        url: pr.html_url,
-        // Using URL as title will make JIRA fetch the title itself
-        title: pr.html_url,
-        icon: { url16x16: 'https://github.com/favicon.ico' },
-      }
-
-      const { data: links } = await jiraApi.get(
-        `issue/${encodeURIComponent(issueKey)}/remotelink`
-      )
-
-      const alreadyAssigned = links.some(
-        (link) => link.object.url === prLinkObject.url
-      )
-      if (!alreadyAssigned) {
-        await jiraApi.post(`issue/${encodeURIComponent(issueKey)}/remotelink`, {
-          application: {},
-          object: prLinkObject,
-        })
-      }
-    })
-  )
-
-  info(`Assigned PR #${pr.number} to ${issueKeys.length} issue(s)`)
-}
-
-function escapeJqlString(str) {
-  return str.replace(/(["\\])/g, '\\$1')
-}
-
-/**
- * @param {StatusName} statusName
- * @return {Promise<IssueKey|undefined>}
- */
-async function getLastIssueInStatusKey(statusName) {
-  const statusNameNormalised = normaliseStatusName(statusName)
-  const response = await jiraApi.get('search/jql', {
-    params: {
-      maxResults: 1,
-      jql: `status="${escapeJqlString(statusNameNormalised)}" ORDER BY Rank DESC`,
-      fields: 'key',
-    },
-  })
-  const key = response.data.issues.at(0)?.key
-  info(`Last issue in ${statusName} is ${key}`)
-  return key
-}
-
-/**
- * @param {Array<IssueKey>} issueKeys
- * @param {Array<StatusName>} newStatusNames
- * @return {Promise<void>}
- */
-async function transitionIssues(issueKeys, newStatusNames) {
-  const newStatusNamesNormalised = newStatusNames.map(normaliseStatusName)
-
-  const issuesData = await getIssues(issueKeys)
-
-  /** @type {Map<StatusName, Array<IssueData>}>} */
-  const issuesByNewStatusName = new Map()
-  issuesData.forEach((issueData) => {
-    const newStatusName = newStatusNamesNormalised.find((statusName) =>
-      issueData.availableTransitions.has(statusName)
-    )
-    if (!newStatusName) {
-      throw new Error(
-        `Failed to find a valid transition for issue ${issueData.issueKey}. Looked for statuses: ${newStatusNames.join(', ')}. Available transitions: ${Array.from(issueData.availableTransitions.keys()).join(', ')}`
-      )
-    }
-
-    if (issuesByNewStatusName.has(newStatusName)) {
-      issuesByNewStatusName.get(newStatusName).push(issueData)
-    } else {
-      issuesByNewStatusName.set(newStatusName, [issueData])
-    }
-  })
-
-  await Promise.all(
-    Array.from(issuesByNewStatusName.entries()).map(
-      async ([newStatusName, issues]) => {
-        const lastIssueInStatusKey =
-          await getLastIssueInStatusKey(newStatusName)
-
-        const transitionedIssueKeys = (
-          await Promise.all(
-            issues.map(async (issue) => {
-              if (issue.currentStatusName === newStatusName) {
-                info(
-                  `Did not transition ${issue.issueKey} — already in ${newStatusName}`
-                )
-                return null
-              } else {
-                const newStatusId =
-                  issue.availableTransitions.get(newStatusName)
-                if (newStatusId == null) {
-                  throw new Error(
-                    `List name “${newStatusName}” not found in JIRA. Available statuses: ${Array.from(issue.availableTransitions.keys()).join(', ')}`
-                  )
-                }
-
-                await jiraApi.post(
-                  `issue/${encodeURIComponent(issue.issueKey)}/transitions`,
-                  {
-                    transition: {
-                      id: newStatusId,
-                    },
-                  }
-                )
-
-                info(`Transitioned ${issue.issueKey} to ${newStatusName}`)
-
-                return issue.issueKey
-              }
-            })
-          )
-        ).filter(Boolean)
-
-        // Move all newly transitioned issues to the end of the list
-        if (transitionedIssueKeys.length > 0 && lastIssueInStatusKey) {
-          await jiraAgileApi.put('issue/rank', {
-            issues: transitionedIssueKeys,
-            rankAfterIssue: lastIssueInStatusKey,
-          })
-          info(
-            `Moved issues to the end of column '${newStatusName}': ${transitionedIssueKeys.join(', ')}`
-          )
-        }
-      }
-    )
-  )
-}
-
-/* eslint complexity: ["error", 20] -- TODO Refactor */
-async function main() {
-  try {
-    const comments = await getPullRequestComments()
-    const tipComments = comments.filter(
-      (comment) =>
-        !comment.isMinimized && comment.body?.includes(tipCommentMarker)
-    )
-    const issueIds = extractResolvedIssueKeys(pr.body, comments)
-
-    if (!issueIds.length) {
-      info('Could not find issue IDs')
-      // Only post a tip comment when the PR body could have changed
-      await postTipCommentLinkJiraIssue(tipComments)
-      return
-    }
-    info('Found issue IDs:', issueIds.join(', '))
-
-    await minimiseTipComments(tipComments)
-
-    // Treat PRs with “draft” or “wip” in brackets at the start or
-    // end of the titles like drafts. Useful for orgs on unpaid
-    // plans which doesn’t support PR drafts.
-    const titleDraftRegExp =
-      /^(?:\s*[[(](?:wip|draft)[\])]\s+)|(?:\s+[[(](?:wip|draft)[\])]\s*)$/i
-    const isRealDraft = pr.draft === true
-    const isFauxDraft = Boolean(pr.title.match(titleDraftRegExp))
-    const isDraft = isRealDraft || isFauxDraft
-
-    await assignPrToIssues(issueIds)
-
-    if (pr.state === 'open' && isDraft) {
-      if (!jiraStatusPrDraft) {
-        info(
-          'No draft PR status name provided, skipping transitioning issues'
-        )
-      } else {
-        await transitionIssues(issueIds, jiraStatusPrDraft.split('|'))
-      }
-    } else if (pr.state === 'open' && !isDraft) {
-      if (!jiraStatusPrReady) {
-        info(
-          'No ready PR status name provided, skipping transitioning issues'
-        )
-      } else {
-        await transitionIssues(issueIds, jiraStatusPrReady.split('|'))
-      }
-    } else if (pr.state === 'closed') {
-      if (!jiraStatusPrMerged) {
-        info(
-          'No merged PR status name provided, skipping transitioning issues'
-        )
-      } else {
-        await transitionIssues(issueIds, jiraStatusPrMerged.split('|'))
-      }
-    } else {
-      let type = 'not draft'
-      if (isFauxDraft) {
-        type = 'faux draft'
-      } else if (pr.draft) {
-        type = 'draft'
-      }
-      info(
-        `Skipping transitioning the issues: pr.state=${pr.state}, ${type}`
-      )
-    }
-  } catch (error) {
-    setFailed(error)
-  }
-}
-
-main()
-
+/******/ });
+/************************************************************************/
+/******/ // The module cache
+/******/ var __webpack_module_cache__ = {};
+/******/ 
+/******/ // The require function
+/******/ function __nccwpck_require__(moduleId) {
+/******/ 	// Check if module is in cache
+/******/ 	var cachedModule = __webpack_module_cache__[moduleId];
+/******/ 	if (cachedModule !== undefined) {
+/******/ 		return cachedModule.exports;
+/******/ 	}
+/******/ 	// Create a new module (and put it into the cache)
+/******/ 	var module = __webpack_module_cache__[moduleId] = {
+/******/ 		// no module.id needed
+/******/ 		// no module.loaded needed
+/******/ 		exports: {}
+/******/ 	};
+/******/ 
+/******/ 	// Execute the module function
+/******/ 	var threw = true;
+/******/ 	try {
+/******/ 		__webpack_modules__[moduleId].call(module.exports, module, module.exports, __nccwpck_require__);
+/******/ 		threw = false;
+/******/ 	} finally {
+/******/ 		if(threw) delete __webpack_module_cache__[moduleId];
+/******/ 	}
+/******/ 
+/******/ 	// Return the exports of the module
+/******/ 	return module.exports;
+/******/ }
+/******/ 
+/************************************************************************/
+/******/ /* webpack/runtime/asset-relocator-loader */
+/******/ if (typeof __nccwpck_require__ !== 'undefined') __nccwpck_require__.ab = decodeURIComponent(new URL('.', import.meta.url).pathname).slice(import.meta.url.match(/^file:\/\/\/\w:/) ? 1 : 0, -1) + "/";
+/******/ 
+/******/ /* webpack/runtime/async module */
+/******/ (() => {
+/******/ 	var webpackQueues = typeof Symbol === "function" ? Symbol("webpack queues") : "__webpack_queues__";
+/******/ 	var webpackExports = typeof Symbol === "function" ? Symbol("webpack exports") : "__webpack_exports__";
+/******/ 	var webpackError = typeof Symbol === "function" ? Symbol("webpack error") : "__webpack_error__";
+/******/ 	var resolveQueue = (queue) => {
+/******/ 		if(queue && queue.d < 1) {
+/******/ 			queue.d = 1;
+/******/ 			queue.forEach((fn) => (fn.r--));
+/******/ 			queue.forEach((fn) => (fn.r-- ? fn.r++ : fn()));
+/******/ 		}
+/******/ 	}
+/******/ 	var wrapDeps = (deps) => (deps.map((dep) => {
+/******/ 		if(dep !== null && typeof dep === "object") {
+/******/ 			if(dep[webpackQueues]) return dep;
+/******/ 			if(dep.then) {
+/******/ 				var queue = [];
+/******/ 				queue.d = 0;
+/******/ 				dep.then((r) => {
+/******/ 					obj[webpackExports] = r;
+/******/ 					resolveQueue(queue);
+/******/ 				}, (e) => {
+/******/ 					obj[webpackError] = e;
+/******/ 					resolveQueue(queue);
+/******/ 				});
+/******/ 				var obj = {};
+/******/ 				obj[webpackQueues] = (fn) => (fn(queue));
+/******/ 				return obj;
+/******/ 			}
+/******/ 		}
+/******/ 		var ret = {};
+/******/ 		ret[webpackQueues] = x => {};
+/******/ 		ret[webpackExports] = dep;
+/******/ 		return ret;
+/******/ 	}));
+/******/ 	__nccwpck_require__.a = (module, body, hasAwait) => {
+/******/ 		var queue;
+/******/ 		hasAwait && ((queue = []).d = -1);
+/******/ 		var depQueues = new Set();
+/******/ 		var exports = module.exports;
+/******/ 		var currentDeps;
+/******/ 		var outerResolve;
+/******/ 		var reject;
+/******/ 		var promise = new Promise((resolve, rej) => {
+/******/ 			reject = rej;
+/******/ 			outerResolve = resolve;
+/******/ 		});
+/******/ 		promise[webpackExports] = exports;
+/******/ 		promise[webpackQueues] = (fn) => (queue && fn(queue), depQueues.forEach(fn), promise["catch"](x => {}));
+/******/ 		module.exports = promise;
+/******/ 		body((deps) => {
+/******/ 			currentDeps = wrapDeps(deps);
+/******/ 			var fn;
+/******/ 			var getResult = () => (currentDeps.map((d) => {
+/******/ 				if(d[webpackError]) throw d[webpackError];
+/******/ 				return d[webpackExports];
+/******/ 			}))
+/******/ 			var promise = new Promise((resolve) => {
+/******/ 				fn = () => (resolve(getResult));
+/******/ 				fn.r = 0;
+/******/ 				var fnQueue = (q) => (q !== queue && !depQueues.has(q) && (depQueues.add(q), q && !q.d && (fn.r++, q.push(fn))));
+/******/ 				currentDeps.map((dep) => (dep[webpackQueues](fnQueue)));
+/******/ 			});
+/******/ 			return fn.r ? promise : getResult();
+/******/ 		}, (err) => ((err ? reject(promise[webpackError] = err) : outerResolve(exports)), resolveQueue(queue)));
+/******/ 		queue && queue.d < 0 && (queue.d = 0);
+/******/ 	};
+/******/ })();
+/******/ 
+/******/ /* webpack/runtime/define property getters */
+/******/ (() => {
+/******/ 	// define getter functions for harmony exports
+/******/ 	__nccwpck_require__.d = (exports, definition) => {
+/******/ 		for(var key in definition) {
+/******/ 			if(__nccwpck_require__.o(definition, key) && !__nccwpck_require__.o(exports, key)) {
+/******/ 				Object.defineProperty(exports, key, { enumerable: true, get: definition[key] });
+/******/ 			}
+/******/ 		}
+/******/ 	};
+/******/ })();
+/******/ 
+/******/ /* webpack/runtime/hasOwnProperty shorthand */
+/******/ (() => {
+/******/ 	__nccwpck_require__.o = (obj, prop) => (Object.prototype.hasOwnProperty.call(obj, prop))
+/******/ })();
+/******/ 
+/************************************************************************/
+/******/ 
+/******/ // startup
+/******/ // Load entry module and return exports
+/******/ // This entry module used 'module' so it can't be inlined
+/******/ var __webpack_exports__ = __nccwpck_require__(7468);
+/******/ __webpack_exports__ = await __webpack_exports__;
+/******/ 

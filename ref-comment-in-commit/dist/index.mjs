@@ -36583,22 +36583,21 @@ __nccwpck_require__.a(__webpack_module__, async (__webpack_handle_async_dependen
 
 
 
-const context = _actions_github__WEBPACK_IMPORTED_MODULE_1__/* .context */ ._ ?? {}
-const { payload } = context
+const { payload } = _actions_github__WEBPACK_IMPORTED_MODULE_1__/* .context */ ._;
 
-const token = _actions_core__WEBPACK_IMPORTED_MODULE_0__/* .getInput */ .V4('token')
+const token = _actions_core__WEBPACK_IMPORTED_MODULE_0__/* .getInput */ .V4('token');
 
 /**
  * @doc https://octokit.github.io/rest.js
  */
-const octokit = _actions_github__WEBPACK_IMPORTED_MODULE_1__/* .getOctokit */ .Q(token)
+const octokit = _actions_github__WEBPACK_IMPORTED_MODULE_1__/* .getOctokit */ .Q(token);
 
 /**
  * Hidden marker we put in every reply we post, so that we can tell our own
  * replies apart from anything else in the thread.
  */
 function marker(sha) {
-  return `<!-- verkstedt/ref-comment-in-commit/${sha} -->`
+  return `<!-- verkstedt/ref-comment-in-commit/${sha} -->`;
 }
 
 /**
@@ -36637,7 +36636,7 @@ const REVIEW_THREADS_QUERY = `
       }
     }
   }
-`
+`;
 
 /**
  * Review threads of a pull request, keyed by `owner/repo#number`.
@@ -36647,32 +36646,32 @@ const REVIEW_THREADS_QUERY = `
  *
  * @type {Map<string, Promise<Array<{ id: string, commentIds: number[], bodies: string[] }>>>}
  */
-const pullRequestThreads = new Map()
+const pullRequestThreads = new Map();
 
 async function fetchPullRequestThreads({ owner, repo, prNumber }) {
-  const threads = []
-  let cursor = null
-  let hasNextPage = true
+  const threads = [];
+  let cursor = null;
+  let hasNextPage = true;
   while (hasNextPage) {
     const { repository } = await octokit.graphql(REVIEW_THREADS_QUERY, {
       owner,
       repo,
       prNumber,
       cursor,
-    })
-    const pullRequest = repository?.pullRequest
+    });
+    const pullRequest = repository?.pullRequest;
     if (!pullRequest) {
       _actions_core__WEBPACK_IMPORTED_MODULE_0__/* .warning */ .$e(
-        `No pull request ${owner}/${repo}#${prNumber} found; skipping duplicate check`
-      )
-      return threads
+        `No pull request ${owner}/${repo}#${prNumber} found; skipping duplicate check`,
+      );
+      return threads;
     }
-    const { reviewThreads } = pullRequest
+    const { reviewThreads } = pullRequest;
     reviewThreads.nodes.forEach((thread) => {
       if (thread.recent.pageInfo.hasPreviousPage) {
         _actions_core__WEBPACK_IMPORTED_MODULE_0__/* .warning */ .$e(
-          `Thread in ${owner}/${repo}#${prNumber} has more than 100 comments; only the 100 most recent ones are checked for duplicates`
-        )
+          `Thread in ${owner}/${repo}#${prNumber} has more than 100 comments; only the 100 most recent ones are checked for duplicates`,
+        );
       }
       threads.push({
         id: thread.id,
@@ -36683,28 +36682,30 @@ async function fetchPullRequestThreads({ owner, repo, prNumber }) {
           ...thread.oldest.nodes.map(({ databaseId }) => databaseId),
         ],
         bodies: thread.recent.nodes.map(({ body }) => body ?? ''),
-      })
-    })
-    hasNextPage = reviewThreads.pageInfo.hasNextPage
-    cursor = reviewThreads.pageInfo.endCursor
+      });
+    });
+    hasNextPage = reviewThreads.pageInfo.hasNextPage;
+    cursor = reviewThreads.pageInfo.endCursor;
   }
-  return threads
+  return threads;
 }
 
 function getPullRequestThreads({ owner, repo, prNumber }) {
-  const key = `${owner}/${repo}#${prNumber}`
+  const key = `${owner}/${repo}#${prNumber}`;
   if (!pullRequestThreads.has(key)) {
     pullRequestThreads.set(
       key,
       // Only successful fetches are worth keeping, so that a commit is not
       // dropped because of a failure another commit ran into.
-      fetchPullRequestThreads({ owner, repo, prNumber }).catch((error) => {
-        pullRequestThreads.delete(key)
-        throw error
-      })
-    )
+      fetchPullRequestThreads({ owner, repo, prNumber }).catch(
+        (/** @type {unknown} */ error) => {
+          pullRequestThreads.delete(key);
+          throw error;
+        },
+      ),
+    );
   }
-  return pullRequestThreads.get(key)
+  return pullRequestThreads.get(key);
 }
 
 /**
@@ -36714,12 +36715,12 @@ function getPullRequestThreads({ owner, repo, prNumber }) {
  * a thread, hence looking for it anywhere in the thread.
  */
 async function getThread({ owner, repo, prNumber, commentId }) {
-  const threads = await getPullRequestThreads({ owner, repo, prNumber })
-  return threads.find(({ commentIds }) => commentIds.includes(commentId))
+  const threads = await getPullRequestThreads({ owner, repo, prNumber });
+  return threads.find(({ commentIds }) => commentIds.includes(commentId));
 }
 
 function isAlreadyReferenced(bodies, sha) {
-  return bodies.some((body) => body.includes(marker(sha)))
+  return bodies.some((body) => body.includes(marker(sha)));
 }
 
 /**
@@ -36731,7 +36732,7 @@ function isAlreadyReferenced(bodies, sha) {
  *
  * @type {Set<string>}
  */
-const postedReferences = new Set()
+const postedReferences = new Set();
 
 /**
  * Claims a reference for posting, telling us whether it was ours to claim.
@@ -36742,19 +36743,19 @@ const postedReferences = new Set()
 function claimReference({ owner, repo, prNumber, threadId, commentId, sha }) {
   // Falling back to the comment when the thread is unknown, which at worst
   // claims the same thread twice under two different keys.
-  const key = `${owner}/${repo}#${prNumber}/${threadId ?? `r${commentId}`}/${sha}`
+  const key = `${owner}/${repo}#${prNumber}/${threadId ?? `r${commentId}`}/${sha}`;
   if (postedReferences.has(key)) {
-    return false
+    return false;
   }
-  postedReferences.add(key)
-  return true
+  postedReferences.add(key);
+  return true;
 }
 
 function adaptPushEventCommits(commits) {
   return commits.map(({ id, ...commit }) => ({
     sha: id,
     commit,
-  }))
+  }));
 }
 
 async function getCommits() {
@@ -36763,53 +36764,53 @@ async function getCommits() {
     repository: { name: repo },
     before,
     after,
-  } = payload
-  _actions_core__WEBPACK_IMPORTED_MODULE_0__/* .info */ .pq(`Getting commits from ${before} to ${after}`)
+  } = payload;
+  _actions_core__WEBPACK_IMPORTED_MODULE_0__/* .info */ .pq(`Getting commits from ${before} to ${after}`);
   const { data } = await octokit.rest.repos.compareCommits({
     owner,
     repo,
     base: before,
     head: after,
-  })
-  return data.commits
+  });
+  return data.commits;
 }
 
 const commits =
   'commits' in payload
     ? adaptPushEventCommits(payload.commits)
-    : await getCommits()
+    : await getCommits();
 
 if (!commits?.length) {
-  _actions_core__WEBPACK_IMPORTED_MODULE_0__/* .info */ .pq('No commits found')
+  _actions_core__WEBPACK_IMPORTED_MODULE_0__/* .info */ .pq('No commits found');
 } else {
-  _actions_core__WEBPACK_IMPORTED_MODULE_0__/* .info */ .pq(`Commits: ${commits.length}`)
+  _actions_core__WEBPACK_IMPORTED_MODULE_0__/* .info */ .pq(`Commits: ${commits.length}`);
   const commitResults = await Promise.allSettled(
     commits.map(async (commitItem) => {
       const {
         sha,
         commit: { message, author: gitAuthor },
-      } = commitItem
-      _actions_core__WEBPACK_IMPORTED_MODULE_0__/* .debug */ .Yz(`Commit message:${`\n${message}`.replace('\n', '\n\t')}`)
+      } = commitItem;
+      _actions_core__WEBPACK_IMPORTED_MODULE_0__/* .debug */ .Yz(`Commit message:${`\n${message}`.replace('\n', '\n\t')}`);
 
       const urls =
         message.match(
-          /https:\/\/github.com\/([^\s/]+\/){2}pull\/\d+#discussion_r\d+/gi
-        ) || []
+          /https:\/\/github.com\/([^\s/]+\/){2}pull\/\d+#discussion_r\d+/gi,
+        ) ?? [];
 
-      _actions_core__WEBPACK_IMPORTED_MODULE_0__/* .debug */ .Yz(`Discussion URLs: ${urls.length}`)
+      _actions_core__WEBPACK_IMPORTED_MODULE_0__/* .debug */ .Yz(`Discussion URLs: ${urls.length}`);
 
       if (urls.length > 0) {
-        const ghLogin = commitItem.author?.login ?? gitAuthor?.username
+        const ghLogin = commitItem.author?.login ?? gitAuthor?.username;
         const authorMarkdown = ghLogin
           ? // Link, not `@mention`, to avoid notifying the author each reference.
             `[@${ghLogin}](https://github.com/${ghLogin})`
-          : (gitAuthor?.name ?? '_(unknown)_')
+          : (gitAuthor?.name ?? '_(unknown)_');
 
         const longestBacktickRun = Math.max(
           0,
-          ...[...message.matchAll(/`+/g)].map((m) => m[0].length)
-        )
-        const fence = '`'.repeat(Math.max(3, longestBacktickRun + 1))
+          ...[...message.matchAll(/`+/g)].map((m) => m[0].length),
+        );
+        const fence = '`'.repeat(Math.max(3, longestBacktickRun + 1));
 
         const replyResults = await Promise.allSettled(
           urls
@@ -36824,25 +36825,25 @@ if (!commits?.length) {
             .map(async ({ url, owner, repo, prNumber, commentId }) => {
               // A reference we fail to check is still worth posting: a
               // duplicate reply is an annoyance, a missing one is a lost link.
-              let thread
+              let thread;
               try {
                 thread = await getThread({
                   owner,
                   repo,
                   prNumber,
                   commentId,
-                })
+                });
               } catch (error) {
                 _actions_core__WEBPACK_IMPORTED_MODULE_0__/* .error */ .z3(
-                  `Failed to read the thread of ${url.toString()}, replying without checking for duplicates: ${error}`
-                )
+                  `Failed to read the thread of ${url.toString()}, replying without checking for duplicates: ${String(error)}`,
+                );
               }
 
               if (isAlreadyReferenced(thread?.bodies ?? [], sha)) {
                 _actions_core__WEBPACK_IMPORTED_MODULE_0__/* .info */ .pq(
-                  `Already referenced in ${url.toString()}, skipping reply`
-                )
-                return null
+                  `Already referenced in ${url.toString()}, skipping reply`,
+                );
+                return null;
               }
               if (
                 !claimReference({
@@ -36855,40 +36856,40 @@ if (!commits?.length) {
                 })
               ) {
                 _actions_core__WEBPACK_IMPORTED_MODULE_0__/* .info */ .pq(
-                  `Thread of ${url.toString()} is referenced by this run already, skipping reply`
-                )
-                return null
+                  `Thread of ${url.toString()} is referenced by this run already, skipping reply`,
+                );
+                return null;
               }
 
-              _actions_core__WEBPACK_IMPORTED_MODULE_0__/* .info */ .pq(`Posting reply to ${url.toString()}`)
+              _actions_core__WEBPACK_IMPORTED_MODULE_0__/* .info */ .pq(`Posting reply to ${url.toString()}`);
               return octokit.rest.pulls.createReplyForReviewComment({
                 owner,
                 repo,
                 pull_number: prNumber,
                 comment_id: commentId,
                 body: `Referenced in ${sha} by ${authorMarkdown}:\n\n${fence}\n${message}\n${fence}\n\n${marker(sha)}`,
-              })
-            })
-        )
+              });
+            }),
+        );
 
         replyResults.forEach((result, index) => {
           if (result.status === 'rejected') {
             _actions_core__WEBPACK_IMPORTED_MODULE_0__/* .error */ .z3(
-              `Failed to post reply to ${urls[index]}: ${result.reason}`
-            )
+              `Failed to post reply to ${urls[index]}: ${result.reason}`,
+            );
           }
-        })
+        });
       }
-    })
-  )
+    }),
+  );
 
   commitResults.forEach((result, index) => {
     if (result.status === 'rejected') {
       _actions_core__WEBPACK_IMPORTED_MODULE_0__/* .error */ .z3(
-        `Failed to process commit ${commits[index].sha}: ${result.reason}`
-      )
+        `Failed to process commit ${commits[index].sha}: ${result.reason}`,
+      );
     }
-  })
+  });
 }
 
 __webpack_async_result__();
