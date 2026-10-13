@@ -174,6 +174,17 @@ See [deploy-cloudfunction.yaml](./.github/workflows/deploy-cloudfunction.yaml) f
 
 - [🔍 Repositories using this workflow](https://github.com/search?q=-is:archived+path:.github/workflows/+"verkstedt/actions/.github/workflows/deploy-cloudfunction.yaml"+NOT+"https://github.com/verkstedt/.github/blob/main/workflow-templates/deploy-cloudfunction.yaml"&type=code)
 
+### Dependabot auto-merge
+
+Enables GitHub auto-merge on Dependabot PRs and approves the ones with
+configured update types (patch updates by default), so they are merged
+once all required checks pass.
+
+See [dependabot-auto-merge.yaml](./.github/workflows/dependabot-auto-merge.yaml)
+for setup and details.
+
+- [🔍 Repositories using this workflow](https://github.com/search?q=-is:archived+path:.github/workflows/+%22verkstedt/actions/.github/workflows/dependabot-auto-merge.yaml%22&type=code)
+
 ### Repo hygiene
 
 Loop over repos in an org and check checking if they are set up
