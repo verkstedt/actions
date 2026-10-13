@@ -6,7 +6,8 @@ name: Dependabot auto-merge
 # PRs that update just the patch version are also **APPROVED**, so they
 # get merged without human review. When someone other than Dependabot
 # pushes to the PR, auto-merge is disabled, so changes made by humans
-# don’t get merged unnoticed.
+# don’t get merged unnoticed. It’s enabled again when Dependabot pushes
+# afterwards (e.g. after `@dependabot recreate`).
 #
 # Fails when no ruleset requires status checks on the base branch —
 # without them auto-merge would merge without anything verifying the
@@ -61,11 +62,17 @@ on:
         required: false
 
 jobs:
-  handle-opened:
-    name: Handle opened
+  handle-dependabot-push:
+    name: Handle Dependabot push
     if: >
-      github.event.action == 'opened'
-      && github.event.pull_request.user.login == 'dependabot[bot]'
+      github.actor == 'dependabot[bot]'
+      && (
+        github.event.action == 'opened'
+        || (
+          github.event.action == 'synchronize'
+          && github.event.pull_request.auto_merge == null
+        )
+      )
     runs-on: ubuntu-latest
     steps:
       - name: GitHub App token
@@ -130,8 +137,8 @@ jobs:
             --body 'Auto-approved, because it only updates the patch version. Will be merged once required checks pass.' \
             "$PR_URL"
 
-  handle-synchronize:
-    name: Handle synchronize
+  handle-other-push:
+    name: Handle push from someone else
     if: >
       github.event.action == 'synchronize'
       && github.event.pull_request.user.login == 'dependabot[bot]'
