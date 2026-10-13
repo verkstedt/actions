@@ -17,14 +17,11 @@ name: Dependabot auto-merge
 #   - General → “Allow auto-merge”
 #   - Rulesets → … → Require a pull request before merging →
 #     → DISABLE “Require review from Code Owners”
-# - Organisation _and_ repository settings:
-#   - Actions → General → Workflow permissions →
-#     → “Allow GitHub Actions to create and approve pull requests”
-#
-# > [!WARNING]
-# > Merges are made by `github-actions[bot]`, so they don’t trigger
-# > `push` workflows (e.g. deployments) on the base branch. Changes go
-# > out with the next push that does trigger them.
+# - GitHub App installed on the repository, with read/write access to
+#   Contents, Pull requests and Workflows.
+# - The app’s client ID in an Actions variable and its secret in a
+#   _Dependabot_ secret. It’s a good idea to set them on organisation
+#   level.
 #
 # Usage:
 #
@@ -41,10 +38,27 @@ name: Dependabot auto-merge
 #       contents: write
 #       pull-requests: write
 #     uses: verkstedt/actions/.github/workflows/dependabot-auto-merge.yaml@v1
+#     with:
+#       gh-auth-app-client-id: ${{ vars.DEPENDABOT_AUTO_MERGE_CLIENT_ID }}
+#     secrets:
+#       gh-auth-app-private-key: ${{ secrets.DEPENDABOT_AUTO_MERGE_APP_PRIVATE_KEY }}
 # ```
 
 on:
   workflow_call:
+    inputs:
+      gh-auth-app-client-id:
+        description: >
+          Client ID of the GitHub App used to approve and merge PRs.
+        required: true
+        type: string
+    secrets:
+      gh-auth-app-private-key:
+        description: >
+          Private key for the GitHub App identified by
+          `gh-auth-app-client-id`.
+          Only needed when dependabot creates a PR.
+        required: false
 
 jobs:
   handle-opened:
@@ -53,13 +67,17 @@ jobs:
       github.event.action == 'opened'
       && github.event.pull_request.user.login == 'dependabot[bot]'
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      pull-requests: write
     steps:
+      - name: GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ inputs.gh-auth-app-client-id }}
+          private-key: ${{ secrets.gh-auth-app-private-key }}
+
       - name: Check if base branch has any required status checks
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
           REPO: ${{ github.repository }}
           BASE_REF: ${{ github.event.pull_request.base.ref }}
         shell: sh
@@ -88,7 +106,7 @@ jobs:
 
       - name: Enable auto-merge
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
           PR_URL: ${{ github.event.pull_request.html_url }}
         shell: sh
         run: |
@@ -103,7 +121,7 @@ jobs:
         # https://docs.github.com/en/code-security/reference/supply-chain-security/dependabot-options-reference#ignore--
         if: steps.metadata.outputs.update-type == 'version-update:semver-patch'
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
           PR_URL: ${{ github.event.pull_request.html_url }}
         shell: sh
         run: |
