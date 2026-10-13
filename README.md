@@ -177,8 +177,7 @@ See [deploy-cloudfunction.yaml](./.github/workflows/deploy-cloudfunction.yaml) f
 ### Dependabot auto-merge
 
 Enables GitHub auto-merge on Dependabot PRs and approves the ones with
-configured update types (patch updates by default), so they are merged
-once all required checks pass.
+patch updates, so they are merged once all required checks pass.
 
 See [dependabot-auto-merge.yaml](./.github/workflows/dependabot-auto-merge.yaml)
 for setup and details.
