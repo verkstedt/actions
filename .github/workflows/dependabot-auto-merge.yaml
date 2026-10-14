@@ -1,13 +1,11 @@
 name: Dependabot auto-merge
 
-# Enable GitHub auto-merge on Dependabot PRs that update just the patch
-# version, so they get merged as soon as all requirements of the base
-# branch are met.
+# Automatically merge Dependabot PRs that update just the patch version.
 #
-# These PRs are also **APPROVED**, so they get merged without human
-# review. When someone other than Dependabot
-# pushes to the PR, auto-merge is disabled, so changes made by humans
-# don’t get merged unnoticed.
+# It enables GitHub auto-merge and approves the PR. Auto-merge is
+# disabled if somebody else pushes to the branch, or when the update is
+# no longer just a patch. When Dependabot pushes again, the PR is
+# approved again if needed.
 #
 # Fails when no ruleset requires status checks on the base branch —
 # without them auto-merge would merge without anything verifying the
@@ -63,11 +61,17 @@ on:
         required: false
 
 jobs:
-  handle-opened:
-    name: Handle opened
+  handle-dependabot:
+    name: Handle Dependabot
     if: >
-      github.event.action == 'opened'
-      && github.event.pull_request.user.login == 'dependabot[bot]'
+      github.event.pull_request.user.login == 'dependabot[bot]'
+      && (
+        github.event.action == 'opened'
+        || (
+          github.event.action == 'synchronize'
+          && github.actor == 'dependabot[bot]'
+        )
+      )
     runs-on: ubuntu-latest
     steps:
       - name: GitHub App token
@@ -126,13 +130,28 @@ jobs:
           fi
 
       - name: Enable auto-merge
-        if: fromJSON(steps.update-type.outputs.should-automerge)
+        if: >
+          github.event.action == 'opened'
+          && github.event.pull_request.auto_merge == null
+          && fromJSON(steps.update-type.outputs.should-automerge)
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
           PR_URL: ${{ github.event.pull_request.html_url }}
         shell: sh
         run: |
           gh pr merge --auto --merge "$PR_URL"
+
+      - name: Disable auto-merge
+        if: >
+          github.event.pull_request.auto_merge != null
+          && !fromJSON(steps.update-type.outputs.should-automerge)
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+        shell: sh
+        run: |
+          gh pr merge --disable-auto "$PR_URL"
+          printf "::notice::This PR no longer updates just the patch version, so auto-merge has been disabled.\n"
 
       - name: Approve PR
         if: fromJSON(steps.update-type.outputs.should-automerge)
@@ -141,13 +160,20 @@ jobs:
           PR_URL: ${{ github.event.pull_request.html_url }}
         shell: sh
         run: |
-          gh pr review \
-            --approve \
-            --body 'Auto-approved, because it only updates the patch version. Will be merged once required checks pass.' \
-            "$PR_URL"
+          # Approval might have been dismissed as stale after a push.
+          decision="$( gh pr view --json reviewDecision --jq .reviewDecision "$PR_URL" )"
+          if [ "$decision" = "APPROVED" ]
+          then
+            printf "::notice::Already approved.\n"
+          else
+            gh pr review \
+              --approve \
+              --body 'Auto-approved, because it only updates the patch version. Will be merged once required checks pass.' \
+              "$PR_URL"
+          fi
 
-  handle-synchronize:
-    name: Handle synchronize
+  handle-other:
+    name: Handle someone else
     if: >
       github.event.action == 'synchronize'
       && github.event.pull_request.user.login == 'dependabot[bot]'
