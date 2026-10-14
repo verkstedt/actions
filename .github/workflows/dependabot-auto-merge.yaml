@@ -1,10 +1,11 @@
 name: Dependabot auto-merge
 
-# Enable GitHub auto-merge on Dependabot PRs, so they get merged as soon
-# as all requirements of the base branch are met.
+# Enable GitHub auto-merge on Dependabot PRs that update just the patch
+# version, so they get merged as soon as all requirements of the base
+# branch are met.
 #
-# PRs that update just the patch version are also **APPROVED**, so they
-# get merged without human review. When someone other than Dependabot
+# These PRs are also **APPROVED**, so they get merged without human
+# review. When someone other than Dependabot
 # pushes to the PR, auto-merge is disabled, so changes made by humans
 # don’t get merged unnoticed.
 #
@@ -105,7 +106,27 @@ jobs:
             printf "Required status checks on \`%s\`: %s.\n" "$BASE_REF" "$count"
           fi
 
+      - name: Fetch Dependabot metadata
+        id: metadata
+        uses: dependabot/fetch-metadata@25dd0e34f4fe68f24cc83900b1fe3fe149efef98 # v3.1.0
+
+      - name: Check if PR should be auto-merged
+        id: update-type
+        env:
+          UPDATE_TYPE: ${{ steps.metadata.outputs.update-type }}
+        shell: sh
+        run: |
+          # Possible values are the same as for `update-types` in
+          # https://docs.github.com/en/code-security/reference/supply-chain-security/dependabot-options-reference#ignore--
+          if [ "$UPDATE_TYPE" = "version-update:semver-patch" ]
+          then
+            echo "should-automerge=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "should-automerge=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Enable auto-merge
+        if: fromJSON(steps.update-type.outputs.should-automerge)
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
           PR_URL: ${{ github.event.pull_request.html_url }}
@@ -113,14 +134,8 @@ jobs:
         run: |
           gh pr merge --auto --merge "$PR_URL"
 
-      - name: Fetch Dependabot metadata
-        id: metadata
-        uses: dependabot/fetch-metadata@25dd0e34f4fe68f24cc83900b1fe3fe149efef98 # v3.1.0
-
       - name: Approve PR
-        # Possible values are the same as for `update-types` in
-        # https://docs.github.com/en/code-security/reference/supply-chain-security/dependabot-options-reference#ignore--
-        if: steps.metadata.outputs.update-type == 'version-update:semver-patch'
+        if: fromJSON(steps.update-type.outputs.should-automerge)
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
           PR_URL: ${{ github.event.pull_request.html_url }}
