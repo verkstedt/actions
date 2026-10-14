@@ -11,7 +11,7 @@ name: Dependabot auto-merge
 #
 # Fails when no ruleset requires status checks on the base branch —
 # without them auto-merge would merge without anything verifying the
-# update.
+# update. Classic branch protection not supported.
 #
 # Requirements:
 # - Repository settings:
