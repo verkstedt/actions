@@ -18,6 +18,7 @@ name: Dependabot auto-merge
 #   - General → “Allow auto-merge”
 #   - Rulesets → … → Require a pull request before merging →
 #     → DISABLE “Require review from Code Owners”
+#       - The app’s approval doesn’t count as a code owner review.
 # - GitHub App installed on the repository, with read/write access to
 #   Contents, Pull requests and Workflows.
 # - The app’s client ID in an Actions variable and its secret in a
