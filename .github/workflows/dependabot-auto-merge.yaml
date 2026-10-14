@@ -59,7 +59,7 @@ on:
         description: >
           Private key for the GitHub App identified by
           `gh-auth-app-client-id`.
-          Only needed when dependabot creates a PR.
+          Needed whenever Dependabot triggers the workflow.
         required: false
 
 jobs:
