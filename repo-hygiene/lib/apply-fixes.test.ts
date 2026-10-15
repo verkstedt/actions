@@ -130,6 +130,21 @@ describe('applyFixes', () => {
     );
   });
 
+  it('lists warnings as separate bullets in the body', async () => {
+    const octokit = fakeRepo();
+    const snapshot = await fakeSnapshot({ octokit });
+    snapshot.workingCopy.attach('x', '1');
+    await applyFixes(
+      [finding({ fix: { ...file('x', '1'), warnings: ['merged things'] } })],
+      snapshot,
+      run,
+    );
+    assert.match(
+      listCallsTo(octokit, 'pulls.create')[0].body,
+      /## What\?\n\n- write x\n- ⚠️ merged things$/,
+    );
+  });
+
   it('renders the PR instead of opening it in a dry run', async () => {
     const octokit = fakeRepo();
     const snapshot = await fakeSnapshot({ octokit });
