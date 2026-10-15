@@ -61,7 +61,7 @@ describe('detectEcosystems', () => {
     });
   });
 
-  it('requires an owner only for lockfiles that exist', () => {
+  it('detects npm from lockfiles and requires an owner for them', () => {
     const { detected, requiredCodeowners } = detectEcosystems([
       '/package.json',
       '/packages/a/package.json',
@@ -69,6 +69,13 @@ describe('detectEcosystems', () => {
     ]);
     assert.deepEqual([...detected], ['npm']);
     assert.deepEqual(requiredCodeowners, ['pnpm-lock.yaml']);
+  });
+
+  it('ignores manifests without lockfiles', () => {
+    assert.deepEqual(detectEcosystems(['/package.json', '/Cargo.toml']), {
+      detected: new Set(),
+      requiredCodeowners: [],
+    });
   });
 
   it('detects cargo and requires an owner for its lockfile', () => {
