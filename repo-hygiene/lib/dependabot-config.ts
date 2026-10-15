@@ -111,34 +111,33 @@ interface DetectedEcosystem {
 }
 
 /**
- * `ecosystem` when the repo has a `manifest` file, requiring an owner
- * for each of `lockfiles` that exists.
+ * `ecosystem` when any of `paths` has a basename matching `re`,
+ * requiring an owner for each distinct name found.
  */
-function detectManifestEcosystem(
+function detectEcosystem(
   paths: Array<string>,
   ecosystem: string,
-  manifest: string,
-  lockfiles: Array<string>,
+  re: RegExp,
 ): DetectedEcosystem | null {
-  const hasFile = (name: string) => paths.some((p) => p.endsWith(`/${name}`));
-  if (!hasFile(manifest)) {
+  const names = collectBasenamesMatching(paths, re);
+  if (names.length === 0) {
     return null;
   }
-  return { ecosystem, requiredCodeowners: lockfiles.filter(hasFile) };
+  return { ecosystem, requiredCodeowners: names };
 }
 
-/** `npm`, when the repo has a `package.json`. */
+/** `npm`, when the repo has an npm, Yarn or pnpm lockfile. */
 function detectNpmEcosystem(paths: Array<string>): DetectedEcosystem | null {
-  return detectManifestEcosystem(paths, 'npm', 'package.json', [
-    'package-lock.json',
-    'yarn.lock',
-    'pnpm-lock.yaml',
-  ]);
+  return detectEcosystem(
+    paths,
+    'npm',
+    /^(package-lock\.json|yarn\.lock|pnpm-lock\.yaml)$/,
+  );
 }
 
-/** `cargo`, when the repo has a `Cargo.toml`. */
+/** `cargo`, when the repo has a `Cargo.lock`. */
 function detectCargoEcosystem(paths: Array<string>): DetectedEcosystem | null {
-  return detectManifestEcosystem(paths, 'cargo', 'Cargo.toml', ['Cargo.lock']);
+  return detectEcosystem(paths, 'cargo', /^Cargo\.lock$/);
 }
 
 /**
@@ -149,14 +148,36 @@ function detectCargoEcosystem(paths: Array<string>): DetectedEcosystem | null {
  * subset is supported, to keep things simple.
  */
 function detectPipEcosystem(paths: Array<string>): DetectedEcosystem | null {
-  const requirementsNames = collectBasenamesMatching(
+  return detectEcosystem(paths, 'pip', /^requirements.*\.(txt|in)$/);
+}
+
+/**
+ * `docker`, when the repo has a Dockerfile.
+ *
+ * Dependabot matches “dockerfile” or “containerfile” anywhere in the
+ * file name, case-insensitively. Cover the names people actually use:
+ * `Dockerfile`, `Dockerfile.worker`, `base.Dockerfile`, `Containerfile`.
+ */
+function detectDockerEcosystem(paths: Array<string>): DetectedEcosystem | null {
+  return detectEcosystem(
     paths,
-    /^requirements.*\.(txt|in)$/,
+    'docker',
+    /^(dockerfile|containerfile)(\.|$)|\.(dockerfile|containerfile)$/i,
   );
-  if (requirementsNames.length === 0) {
-    return null;
-  }
-  return { ecosystem: 'pip', requiredCodeowners: requirementsNames };
+}
+
+/**
+ * `docker-compose`, when the repo has a compose file, e.g.
+ * `compose.yaml`, `docker-compose.yml` or `docker-compose.prod.yaml`.
+ */
+function detectDockerComposeEcosystem(
+  paths: Array<string>,
+): DetectedEcosystem | null {
+  return detectEcosystem(
+    paths,
+    'docker-compose',
+    /^(docker-)?compose([.-].*)?\.ya?ml$/,
+  );
 }
 
 /**
@@ -168,9 +189,6 @@ export function detectEcosystems(paths: Array<string>): {
   detected: Set<string>;
   requiredCodeowners: Array<string>;
 } {
-  const hasFile = (predicate: (path: string) => boolean) =>
-    paths.some(predicate);
-
   const detected = new Set<string>();
   const requiredCodeowners: Array<string> = [];
 
@@ -178,36 +196,19 @@ export function detectEcosystems(paths: Array<string>): {
     detectNpmEcosystem(paths),
     detectCargoEcosystem(paths),
     detectPipEcosystem(paths),
+    detectDockerEcosystem(paths),
+    detectDockerComposeEcosystem(paths),
   ]) {
     if (found) {
       detected.add(found.ecosystem);
       requiredCodeowners.push(...found.requiredCodeowners);
     }
   }
-  // Dependabot matches “dockerfile” or “containerfile” anywhere in the
-  // file name, case-insensitively. Cover the names people actually use:
-  // `Dockerfile`, `Dockerfile.worker`, `base.Dockerfile`, `Containerfile`.
-  const dockerfileNames = collectBasenamesMatching(
-    paths,
-    /^(dockerfile|containerfile)(\.|$)|\.(dockerfile|containerfile)$/i,
-  );
-  if (dockerfileNames.length > 0) {
-    detected.add('docker');
-    requiredCodeowners.push(...dockerfileNames);
-  }
-  const composeNames = collectBasenamesMatching(
-    paths,
-    /^docker-compose.*\.ya?ml$/,
-  );
-  if (composeNames.length > 0) {
-    detected.add('docker-compose');
-    requiredCodeowners.push(...composeNames);
-  }
   if (paths.includes('/.devcontainer/devcontainer.json')) {
     detected.add('devcontainers');
     requiredCodeowners.push('/.devcontainer/devcontainer.json');
   }
-  if (hasFile((p) => p.startsWith('/.github/workflows/'))) {
+  if (paths.some((p) => p.startsWith('/.github/workflows/'))) {
     detected.add('github-actions');
     requiredCodeowners.push('/.github/workflows/');
   }
