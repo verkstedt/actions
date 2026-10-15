@@ -1,5 +1,7 @@
+import { posix } from 'node:path';
+
 import yaml from 'yaml';
-import type { Document, Scalar, YAMLMap, YAMLSeq } from 'yaml';
+import type { Document, Pair, Scalar, YAMLMap, YAMLSeq } from 'yaml';
 
 import { getErrorMessage, tryGetContent } from './github.ts';
 import type {
@@ -72,18 +74,11 @@ export function parseDependabotTemplate(text: string): DependabotTemplate {
 }
 
 /**
- * Sorted unique basenames of `paths` whose basename matches `re`.
- * CODEOWNERS matches a bare name at any depth, so one line per
- * distinct name covers every copy of it.
+ * Sorted unique basenames of `paths`. CODEOWNERS matches a bare name
+ * at any depth, so one line per distinct name covers every copy of it.
  */
-function collectBasenamesMatching(
-  paths: Array<string>,
-  re: RegExp,
-): Array<string> {
-  const names = new Set(
-    paths.map((p) => p.split('/').pop() ?? '').filter((name) => re.test(name)),
-  );
-  return [...names].sort();
+function listUniqueBasenames(paths: Array<string>): Array<string> {
+  return [...new Set(paths.map((p) => posix.basename(p)))].toSorted();
 }
 
 /**
@@ -104,9 +99,13 @@ export async function loadDependabotTemplate(
   return parseDependabotTemplate(file.content);
 }
 
-/** An ecosystem a repo uses and the CODEOWNERS patterns it requires. */
+/**
+ * An ecosystem a repo uses, the directories its manifests are in and
+ * the CODEOWNERS patterns it requires.
+ */
 interface DetectedEcosystem {
   ecosystem: string;
+  manifestDirs: Set<string>;
   requiredCodeowners: Array<string>;
 }
 
@@ -119,11 +118,15 @@ function detectEcosystem(
   ecosystem: string,
   re: RegExp,
 ): DetectedEcosystem | null {
-  const names = collectBasenamesMatching(paths, re);
-  if (names.length === 0) {
+  const manifestPaths = paths.filter((p) => re.test(posix.basename(p)));
+  if (manifestPaths.length === 0) {
     return null;
   }
-  return { ecosystem, requiredCodeowners: names };
+  return {
+    ecosystem,
+    manifestDirs: new Set(manifestPaths.map((p) => posix.dirname(p))),
+    requiredCodeowners: listUniqueBasenames(manifestPaths),
+  };
 }
 
 /** `npm`, when the repo has an npm, Yarn or pnpm lockfile. */
@@ -175,17 +178,21 @@ function detectDockerComposeEcosystem(
 
 /**
  * Which dependabot ecosystems a repo uses, judged from the paths in
- * its tree (each prefixed with `/`), and the CODEOWNERS patterns that
- * must have an owner so the resulting Dependabot PRs get reviewers.
+ * its tree (each prefixed with `/`), the CODEOWNERS patterns that
+ * must have an owner so the resulting Dependabot PRs get reviewers,
+ * and, for ecosystems found by their manifests, the directories those
+ * manifests are in.
  */
 export function detectEcosystems(paths: Array<string>): {
   detected: Set<string>;
+  manifestDirsByEcosystem: Map<string, Set<string>>;
   requiredCodeowners: Array<string>;
 } {
   const hasFile = (predicate: (path: string) => boolean) =>
     paths.some(predicate);
 
   const detected = new Set<string>();
+  const manifestDirsByEcosystem = new Map<string, Set<string>>();
   const requiredCodeowners: Array<string> = [];
 
   for (const found of [
@@ -197,6 +204,7 @@ export function detectEcosystems(paths: Array<string>): {
   ]) {
     if (found) {
       detected.add(found.ecosystem);
+      manifestDirsByEcosystem.set(found.ecosystem, found.manifestDirs);
       requiredCodeowners.push(...found.requiredCodeowners);
     }
   }
@@ -209,7 +217,7 @@ export function detectEcosystems(paths: Array<string>): {
     requiredCodeowners.push('/.github/workflows/');
   }
 
-  return { detected, requiredCodeowners };
+  return { detected, manifestDirsByEcosystem, requiredCodeowners };
 }
 
 /** The `package-ecosystem` of an `updates` entry, or `undefined`. */
@@ -297,6 +305,93 @@ function ensureCooldowns(parsed: Document, updates: YAMLSeq): Array<string> {
   return fixes;
 }
 
+/** Keys of an `updates` entry that say where its manifests are. */
+const DIRECTORY_KEYS = ['directory', 'directories'];
+
+/** Whether `pair` is a `directory` or `directories` key. */
+function isDirectoryPair(pair: Pair): boolean {
+  return (
+    yaml.isScalar(pair.key) && DIRECTORY_KEYS.includes(String(pair.key.value))
+  );
+}
+
+/** The `directory` / `directories` pairs of `entry`, serialised for comparison. */
+function serialiseDirectoryPairs(entry: YAMLMap): string {
+  return JSON.stringify(
+    entry.items
+      .filter(isDirectoryPair)
+      .map((pair): [string, unknown] => [
+        String(pair.key),
+        yaml.isNode(pair.value) ? pair.value.toJSON() : pair.value,
+      ]),
+  );
+}
+
+/**
+ * Every `directory` / `directories` pattern of `entry`.
+ */
+function listDirectoryPatterns(entry: YAMLMap): Array<string> {
+  const directories: unknown = entry.get('directories');
+  const patterns = yaml.isSeq(directories)
+    ? directories.items.map((item) => (yaml.isScalar(item) ? item.value : item))
+    : [entry.get('directory')];
+  return patterns.filter((p): p is string => typeof p === 'string');
+}
+
+/**
+ * Give every entry the `directory` / `directories` of its template
+ * entry.
+ *
+ * @param updates The `updates` list. Mutated.
+ * @returns A description of each fix made.
+ */
+function ensureTemplateDirectories(
+  updates: YAMLSeq,
+  template: DependabotTemplate,
+  manifestDirsByEcosystem: Map<string, Set<string>>,
+): Array<string> {
+  const fixes: Array<string> = [];
+  for (const u of updates.items.filter((item) => yaml.isMap(item))) {
+    const eco = readEcosystem(u);
+    const templateEntry = eco ? template.entryByEcosystem.get(eco) : undefined;
+    if (!templateEntry) {
+      continue;
+    }
+
+    // Keep entries that already cover every manifest, to open fewer PRs.
+    const manifestDirs = eco ? manifestDirsByEcosystem.get(eco) : undefined;
+    const patterns = listDirectoryPatterns(u);
+    if (
+      !manifestDirs ||
+      [...manifestDirs].every((dir) =>
+        patterns.some((pattern) => posix.matchesGlob(dir, pattern)),
+      )
+    ) {
+      continue;
+    }
+
+    const before = serialiseDirectoryPairs(u);
+    // Swap in the template’s pairs where the first old one was, so the
+    // key keeps its place in the entry.
+    const templatePairs = templateEntry.items
+      .filter(isDirectoryPair)
+      .map((pair) => {
+        const cloned = pair.clone();
+        if (yaml.isNode(cloned.value)) {
+          clearScalarQuoting(cloned.value);
+        }
+        return cloned;
+      });
+    const index = u.items.findIndex(isDirectoryPair);
+    u.items = u.items.filter((pair) => !isDirectoryPair(pair));
+    u.items.splice(index === -1 ? 1 : index, 0, ...templatePairs);
+    if (serialiseDirectoryPairs(u) !== before) {
+      fixes.push(`set \`directories\` on \`${eco}\` to match the template`);
+    }
+  }
+  return fixes;
+}
+
 /**
  * Append template entries for `detected` ecosystems `updates` lacks.
  *
@@ -327,14 +422,16 @@ function addMissingEcosystems(
 }
 
 /**
- * Add missing ecosystems from the template, set a missing `version`
- * and enforce a cooldown on every entry. Returns null when the file is
- * fine, unparseable, or has an `updates` that is not a list.
+ * Add missing ecosystems from the template, set a missing `version`,
+ * enforce a cooldown on every entry and make entries cover manifests
+ * in subdirectories. Returns null when the file is fine, unparseable,
+ * or has an `updates` that is not a list.
  */
 function updateExisting(
   existing: FileContent,
   template: DependabotTemplate,
   detected: Set<string>,
+  manifestDirsByEcosystem: Map<string, Set<string>>,
   log: Logger,
 ): Change | null {
   const parsed = parseExisting(existing, log);
@@ -358,6 +455,9 @@ function updateExisting(
   }
 
   fixes.push(...ensureCooldowns(parsed, updates));
+  fixes.push(
+    ...ensureTemplateDirectories(updates, template, manifestDirsByEcosystem),
+  );
   const added = addMissingEcosystems(updates, template, detected);
   if (fixes.length === 0 && added.length === 0) {
     return null;
@@ -378,6 +478,7 @@ function updateExisting(
 
 interface PlanDependabotParams {
   detected: Set<string>;
+  manifestDirsByEcosystem?: Map<string, Set<string>>;
   existing: FileContent | null;
   template: DependabotTemplate;
   log: Logger;
@@ -390,6 +491,7 @@ interface PlanDependabotParams {
  */
 export function planDependabotChange({
   detected,
+  manifestDirsByEcosystem = new Map(),
   existing,
   template,
   log,
@@ -401,5 +503,11 @@ export function planDependabotChange({
   if (!existing) {
     return createFromTemplate(template, detected);
   }
-  return updateExisting(existing, template, detected, log);
+  return updateExisting(
+    existing,
+    template,
+    detected,
+    manifestDirsByEcosystem,
+    log,
+  );
 }
