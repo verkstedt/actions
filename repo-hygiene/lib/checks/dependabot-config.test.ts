@@ -71,7 +71,7 @@ describe('dependabotConfig', () => {
     assert.match(finding.fix.content, /package-ecosystem: 'docker'/);
     assert.equal(
       finding.fix.describe,
-      'updated `.github/dependabot.yml`: added sections: `docker`',
+      'updated `.github/dependabot.yml`: added sections: `docker`; set `directories` on `npm` to match the template',
     );
   });
 

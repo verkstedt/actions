@@ -49114,11 +49114,7 @@ function detectEcosystem(paths, ecosystem, re) {
     if (manifestPaths.length === 0) {
         return null;
     }
-    return {
-        ecosystem,
-        manifestDirs: new Set(manifestPaths.map((p) => external_node_path_namespaceObject.posix.dirname(p))),
-        requiredCodeowners: listUniqueBasenames(manifestPaths),
-    };
+    return { ecosystem, requiredCodeowners: listUniqueBasenames(manifestPaths) };
 }
 /** `npm`, when the repo has an npm, Yarn or pnpm lockfile. */
 function detectNpmEcosystem(paths) {
@@ -49154,15 +49150,12 @@ function detectDockerComposeEcosystem(paths) {
 }
 /**
  * Which dependabot ecosystems a repo uses, judged from the paths in
- * its tree (each prefixed with `/`), the CODEOWNERS patterns that
- * must have an owner so the resulting Dependabot PRs get reviewers,
- * and, for ecosystems found by their manifests, the directories those
- * manifests are in.
+ * its tree (each prefixed with `/`), and the CODEOWNERS patterns that
+ * must have an owner so the resulting Dependabot PRs get reviewers.
  */
 function detectEcosystems(paths) {
     const hasFile = (predicate) => paths.some(predicate);
     const detected = new Set();
-    const manifestDirsByEcosystem = new Map();
     const requiredCodeowners = [];
     for (const found of [
         detectNpmEcosystem(paths),
@@ -49173,7 +49166,6 @@ function detectEcosystems(paths) {
     ]) {
         if (found) {
             detected.add(found.ecosystem);
-            manifestDirsByEcosystem.set(found.ecosystem, found.manifestDirs);
             requiredCodeowners.push(...found.requiredCodeowners);
         }
     }
@@ -49185,7 +49177,7 @@ function detectEcosystems(paths) {
         detected.add('github-actions');
         requiredCodeowners.push('/.github/workflows/');
     }
-    return { detected, manifestDirsByEcosystem, requiredCodeowners };
+    return { detected, requiredCodeowners };
 }
 /** The `package-ecosystem` of an `updates` entry, or `undefined`. */
 function readEcosystem(entry) {
@@ -49280,35 +49272,18 @@ function serialiseDirectoryPairs(entry) {
     ]));
 }
 /**
- * Every `directory` / `directories` pattern of `entry`.
- */
-function listDirectoryPatterns(entry) {
-    const directories = entry.get('directories');
-    const patterns = dist.isSeq(directories)
-        ? directories.items.map((item) => (dist.isScalar(item) ? item.value : item))
-        : [entry.get('directory')];
-    return patterns.filter((p) => typeof p === 'string');
-}
-/**
  * Give every entry the `directory` / `directories` of its template
  * entry.
  *
  * @param updates The `updates` list. Mutated.
  * @returns A description of each fix made.
  */
-function ensureTemplateDirectories(updates, template, manifestDirsByEcosystem) {
+function ensureTemplateDirectories(updates, template) {
     const fixes = [];
     for (const u of updates.items.filter((item) => dist.isMap(item))) {
         const eco = readEcosystem(u);
         const templateEntry = eco ? template.entryByEcosystem.get(eco) : undefined;
         if (!templateEntry) {
-            continue;
-        }
-        // Keep entries that already cover every manifest, to open fewer PRs.
-        const manifestDirs = eco ? manifestDirsByEcosystem.get(eco) : undefined;
-        const patterns = listDirectoryPatterns(u);
-        if (!manifestDirs ||
-            [...manifestDirs].every((dir) => patterns.some((pattern) => external_node_path_namespaceObject.posix.matchesGlob(dir, pattern)))) {
             continue;
         }
         const before = serialiseDirectoryPairs(u);
@@ -49358,11 +49333,11 @@ function addMissingEcosystems(updates, template, detected) {
 }
 /**
  * Add missing ecosystems from the template, set a missing `version`,
- * enforce a cooldown on every entry and make entries cover manifests
- * in subdirectories. Returns null when the file is fine, unparseable,
- * or has an `updates` that is not a list.
+ * enforce a cooldown on every entry and take directories from the
+ * template. Returns null when the file is fine, unparseable, or has an
+ * `updates` that is not a list.
  */
-function updateExisting(existing, template, detected, manifestDirsByEcosystem, log) {
+function updateExisting(existing, template, detected, log) {
     const parsed = parseExisting(existing, log);
     if (!parsed) {
         return null;
@@ -49382,7 +49357,7 @@ function updateExisting(existing, template, detected, manifestDirsByEcosystem, l
         return null;
     }
     fixes.push(...ensureCooldowns(parsed, updates));
-    fixes.push(...ensureTemplateDirectories(updates, template, manifestDirsByEcosystem));
+    fixes.push(...ensureTemplateDirectories(updates, template));
     const added = addMissingEcosystems(updates, template, detected);
     if (fixes.length === 0 && added.length === 0) {
         return null;
@@ -49404,7 +49379,7 @@ function updateExisting(existing, template, detected, manifestDirsByEcosystem, l
  * nothing needs doing. `existing` is the current file as returned by
  * `tryGetContent`, or `null`. Problems that are not fatal go to `log`.
  */
-function planDependabotChange({ detected, manifestDirsByEcosystem = new Map(), existing, template, log, }) {
+function planDependabotChange({ detected, existing, template, log, }) {
     if (detected.size === 0) {
         // No detected ecosystems — nothing to add.
         return null;
@@ -49412,7 +49387,7 @@ function planDependabotChange({ detected, manifestDirsByEcosystem = new Map(), e
     if (!existing) {
         return createFromTemplate(template, detected);
     }
-    return updateExisting(existing, template, detected, manifestDirsByEcosystem, log);
+    return updateExisting(existing, template, detected, log);
 }
 
 ;// CONCATENATED MODULE: ./lib/checks/codeowners.ts
@@ -49562,11 +49537,10 @@ const dependabotConfig = {
         template = await loadDependabotTemplate(octokit);
     },
     run: async (snapshot) => {
-        const { detected, manifestDirsByEcosystem } = detectEcosystems(await snapshot.listPaths());
+        const { detected } = detectEcosystems(await snapshot.listPaths());
         const existing = await snapshot.readFirstExistingFile(DEPENDABOT_PATHS);
         const change = planDependabotChange({
             detected,
-            manifestDirsByEcosystem,
             existing,
             template: requireLoadedTemplate(),
             log: snapshot.log,
