@@ -1,0 +1,196 @@
+name: Dependabot auto-merge
+
+# Automatically merge Dependabot PRs that update just the patch version.
+#
+# It enables GitHub auto-merge and approves the PR. Auto-merge is
+# disabled if somebody else pushes to the branch, or when the update is
+# no longer just a patch. When Dependabot pushes again, the PR is
+# approved again if needed.
+#
+# Fails when no ruleset requires status checks on the base branch —
+# without them auto-merge would merge without anything verifying the
+# update. Classic branch protection not supported.
+#
+# Requirements:
+# - Repository settings:
+#   - General → “Allow auto-merge”
+#   - Rulesets → … → Require a pull request before merging →
+#     → DISABLE “Require review from Code Owners”
+#       - The app’s approval doesn’t count as a code owner review.
+# - GitHub App installed on the repository, with read/write access to
+#   Contents, Pull requests and Workflows.
+# - The app’s client ID in an Actions variable and its secret in a
+#   _Dependabot_ secret. It’s a good idea to set them on organisation
+#   level.
+#
+# Usage:
+#
+# ```yaml
+# on:
+#   pull_request:
+#     types:
+#       - opened
+#       - synchronize
+#
+# jobs:
+#   dependabot-auto-merge:
+#     permissions:
+#       contents: write
+#       pull-requests: write
+#     uses: verkstedt/actions/.github/workflows/dependabot-auto-merge.yaml@v1
+#     with:
+#       gh-auth-app-client-id: ${{ vars.DEPENDABOT_AUTO_MERGE_CLIENT_ID }}
+#     secrets:
+#       gh-auth-app-private-key: ${{ secrets.DEPENDABOT_AUTO_MERGE_APP_PRIVATE_KEY }}
+# ```
+
+on:
+  workflow_call:
+    inputs:
+      gh-auth-app-client-id:
+        description: >
+          Client ID of the GitHub App used to approve and merge PRs.
+        required: true
+        type: string
+    secrets:
+      gh-auth-app-private-key:
+        description: >
+          Private key for the GitHub App identified by
+          `gh-auth-app-client-id`.
+          Needed whenever Dependabot triggers the workflow.
+        required: false
+
+jobs:
+  handle-dependabot:
+    name: Handle Dependabot
+    if: >
+      github.event.pull_request.user.login == 'dependabot[bot]'
+      && (
+        github.event.action == 'opened'
+        || (
+          github.event.action == 'synchronize'
+          && github.actor == 'dependabot[bot]'
+        )
+      )
+    runs-on: ubuntu-latest
+    steps:
+      - name: GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ inputs.gh-auth-app-client-id }}
+          private-key: ${{ secrets.gh-auth-app-private-key }}
+
+      - name: Check if base branch has any required status checks
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          REPO: ${{ github.repository }}
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+        shell: bash
+        run: |
+          # Rulesets (repository and organisation) active on the branch.
+          count="$(
+            gh api -X GET --paginate "repos/$REPO/rules/branches/$BASE_REF" \
+              --jq '
+                .[]
+                | select(.type == "required_status_checks")
+                | .parameters.required_status_checks[]
+                | .context
+              ' \
+            | sort -u \
+            | wc -l
+          )"
+
+          if [ "$count" -eq 0 ]
+          then
+            printf "::error::Branch \`%s\` has no required status checks in rulesets, so auto-merge would merge without verifying anything. Require CI checks in a ruleset first.\n" \
+              "$BASE_REF"
+            exit 78 # EX_CONFIG
+          else
+            printf "Required status checks on \`%s\`: %s.\n" "$BASE_REF" "$count"
+          fi
+
+      - name: Fetch Dependabot metadata
+        id: metadata
+        uses: dependabot/fetch-metadata@25dd0e34f4fe68f24cc83900b1fe3fe149efef98 # v3.1.0
+
+      - name: Check if PR should be auto-merged
+        id: update-type
+        env:
+          UPDATE_TYPE: ${{ steps.metadata.outputs.update-type }}
+        shell: bash
+        run: |
+          # Possible values are the same as for `update-types` in
+          # https://docs.github.com/en/code-security/reference/supply-chain-security/dependabot-options-reference#ignore--
+          if [ "$UPDATE_TYPE" = "version-update:semver-patch" ]
+          then
+            echo "should-automerge=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "should-automerge=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Enable auto-merge
+        if: >
+          github.event.action == 'opened'
+          && github.event.pull_request.auto_merge == null
+          && fromJSON(steps.update-type.outputs.should-automerge)
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+        shell: bash
+        run: |
+          gh pr merge --auto --merge "$PR_URL"
+
+      - name: Disable auto-merge
+        if: >
+          github.event.pull_request.auto_merge != null
+          && !fromJSON(steps.update-type.outputs.should-automerge)
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+        shell: bash
+        run: |
+          gh pr merge --disable-auto "$PR_URL"
+          printf "::notice::This PR no longer updates just the patch version, so auto-merge has been disabled.\n"
+
+      - name: Approve PR
+        if: fromJSON(steps.update-type.outputs.should-automerge)
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+        shell: bash
+        run: |
+          # Approval might have been dismissed as stale after a push.
+          decision="$( gh pr view --json reviewDecision --jq .reviewDecision "$PR_URL" )"
+          if [ "$decision" = "APPROVED" ]
+          then
+            printf "::notice::Already approved.\n"
+          else
+            gh pr review \
+              --approve \
+              --body 'Auto-approved, because it only updates the patch version. Will be merged once required checks pass.' \
+              "$PR_URL"
+          fi
+
+  handle-other:
+    name: Handle someone else
+    if: >
+      github.event.action == 'synchronize'
+      && github.event.pull_request.user.login == 'dependabot[bot]'
+      && github.actor != 'dependabot[bot]'
+      && github.event.pull_request.auto_merge != null
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Disable auto-merge
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          ACTOR: ${{ github.actor }}
+        shell: bash
+        run: |
+          gh pr merge --disable-auto "$PR_URL"
+          printf "::notice::\`%s\` changed this PR, so auto-merge has been disabled.\n" \
+            "$ACTOR"
