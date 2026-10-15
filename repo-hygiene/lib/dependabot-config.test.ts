@@ -57,8 +57,33 @@ describe('detectEcosystems', () => {
   it('finds nothing in an empty tree', () => {
     assert.deepEqual(detectEcosystems([]), {
       detected: new Set(),
+      manifestDirsByEcosystem: new Map(),
       requiredCodeowners: [],
     });
+  });
+
+  it('collects the directories manifests are in', () => {
+    const { manifestDirsByEcosystem } = detectEcosystems([
+      '/package.json',
+      '/packages/a/package.json',
+      '/pnpm-lock.yaml',
+      '/Cargo.lock',
+      '/api/requirements.txt',
+      '/.docker/Dockerfile.build',
+      '/deploy/docker-compose.yml',
+      '/.devcontainer/devcontainer.json',
+      '/.github/workflows/ci.yaml',
+    ]);
+    assert.deepEqual(
+      manifestDirsByEcosystem,
+      new Map([
+        ['npm', new Set(['/'])],
+        ['cargo', new Set(['/'])],
+        ['pip', new Set(['/api'])],
+        ['docker', new Set(['/.docker'])],
+        ['docker-compose', new Set(['/deploy'])],
+      ]),
+    );
   });
 
   it('detects npm from lockfiles and requires an owner for them', () => {
@@ -74,6 +99,7 @@ describe('detectEcosystems', () => {
   it('ignores manifests without lockfiles', () => {
     assert.deepEqual(detectEcosystems(['/package.json', '/Cargo.toml']), {
       detected: new Set(),
+      manifestDirsByEcosystem: new Map(),
       requiredCodeowners: [],
     });
   });
@@ -105,6 +131,7 @@ describe('detectEcosystems', () => {
   it('ignores Python projects without requirements files', () => {
     assert.deepEqual(detectEcosystems(['/pyproject.toml', '/uv.lock']), {
       detected: new Set(),
+      manifestDirsByEcosystem: new Map(),
       requiredCodeowners: [],
     });
   });
@@ -169,6 +196,7 @@ describe('planDependabotChange', () => {
       change.newContent,
       /# JavaScript\n\s+- package-ecosystem: 'npm'/,
     );
+    assert.match(change.newContent, /\n {4}exclude-paths: \[\]\n/);
     assert.doesNotMatch(change.newContent, /docker|github-actions/);
     assert.equal(
       change.summary,
@@ -258,6 +286,103 @@ describe('planDependabotChange', () => {
     assert.ok(change);
     assert.match(change.newContent, /^version: 2\n/m);
     assert.equal(change.summary, 'updated `x`: set `version: 2`');
+  });
+
+  describe('directories', () => {
+    const createExisting = (...entryLines: Array<string>) => ({
+      path: 'x',
+      sha: 's',
+      content: [
+        'version: 2',
+        'updates:',
+        "  - package-ecosystem: 'npm'",
+        ...entryLines.map((line) => `    ${line}`),
+        '    cooldown:',
+        '      default-days: 7',
+        '',
+      ].join('\n'),
+    });
+
+    it('copies the template’s directories in place when manifests are not covered', () => {
+      const change = planDependabotChange({
+        detected: new Set(['npm']),
+        manifestDirsByEcosystem: new Map([['npm', new Set(['/', '/web'])]]),
+        existing: createExisting(
+          "directory: '/'",
+          "versioning-strategy: 'increase'",
+        ),
+        template,
+        log,
+      });
+      assert.ok(change);
+      assert.doesNotMatch(change.newContent, /directory:|exclude-paths/);
+      assert.match(
+        change.newContent,
+        /'npm'\n {4}directories:\n {6}- '\/\*\*'\n {4}versioning-strategy:/,
+      );
+      assert.equal(
+        change.summary,
+        'updated `x`: set `directories` on `npm` to match the template',
+      );
+    });
+
+    it('replaces a list of directories that misses some manifests', () => {
+      const change = planDependabotChange({
+        detected: new Set(['npm']),
+        manifestDirsByEcosystem: new Map([['npm', new Set(['/a', '/b'])]]),
+        existing: createExisting('directories:', "  - '/a'"),
+        template,
+        log,
+      });
+      assert.ok(change);
+      assert.match(change.newContent, /directories:\n {6}- '\/\*\*'\n/);
+      assert.doesNotMatch(change.newContent, /'\/a'/);
+    });
+
+    it('keeps a directory that covers every manifest', () => {
+      const change = planDependabotChange({
+        detected: new Set(['npm']),
+        manifestDirsByEcosystem: new Map([['npm', new Set(['/'])]]),
+        existing: createExisting("directory: '/'"),
+        template,
+        log,
+      });
+      assert.equal(change, null);
+    });
+
+    it('keeps globbed directories that cover every manifest', () => {
+      const change = planDependabotChange({
+        detected: new Set(['npm']),
+        manifestDirsByEcosystem: new Map([
+          ['npm', new Set(['/', '/apps/a', '/apps/b'])],
+        ]),
+        existing: createExisting('directories:', "  - '/'", "  - '/apps/*'"),
+        template,
+        log,
+      });
+      assert.equal(change, null);
+    });
+
+    it('leaves `/**` alone', () => {
+      const change = planDependabotChange({
+        detected: new Set(['npm']),
+        manifestDirsByEcosystem: new Map([['npm', new Set(['/', '/web'])]]),
+        existing: createExisting('directories:', "  - '/**'"),
+        template,
+        log,
+      });
+      assert.equal(change, null);
+    });
+
+    it('leaves ecosystems without tracked directories alone', () => {
+      const change = planDependabotChange({
+        detected: new Set(['npm']),
+        existing: createExisting("directory: '/web'"),
+        template,
+        log,
+      });
+      assert.equal(change, null);
+    });
   });
 
   it('warns and skips a file whose updates is not a list', () => {

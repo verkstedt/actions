@@ -75,6 +75,27 @@ describe('dependabotConfig', () => {
     );
   });
 
+  it('replaces a root directory that misses a lockfile in a subdirectory', async () => {
+    await setup(templateOctokit(DEPENDABOT_TEMPLATE));
+    const snapshot = await fakeSnapshot({
+      paths: ['web/package.json', 'web/package-lock.json'],
+      files: {
+        '.github/dependabot.yml':
+          "version: 2\nupdates:\n  - package-ecosystem: 'npm'\n    directory: '/'\n    schedule:\n      interval: 'weekly'\n    cooldown:\n      default-days: 7\n",
+      },
+    });
+    const [finding] = await dependabotConfig.run(snapshot);
+    if (finding.fix?.kind !== 'file') {
+      throw new Error('expected file fix');
+    }
+    assert.match(finding.fix.content, /\n {4}directories:\n {6}- '\/\*\*'\n/);
+    assert.doesNotMatch(finding.fix.content, /directory:/);
+    assert.equal(
+      finding.fix.describe,
+      'updated `.github/dependabot.yml`: set `directories` on `npm` to match the template',
+    );
+  });
+
   it('reports nothing to do when the config is complete', async () => {
     await setup(templateOctokit(DEPENDABOT_TEMPLATE));
     const snapshot = await fakeSnapshot({
