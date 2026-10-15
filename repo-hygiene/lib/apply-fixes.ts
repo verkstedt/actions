@@ -125,7 +125,10 @@ async function planPr(
     },
   );
   const reviewers = splitReviewers(reviewerTokens);
-  const describes = fileFindings.map((f) => f.fix.describe);
+  const describes = fileFindings.flatMap((f) => [
+    f.fix.describe,
+    ...(f.fix.warnings ?? []).map((w) => `⚠️ ${w}`),
+  ]);
   return {
     files: collectFinalFiles(fileFindings),
     langs: new Map(

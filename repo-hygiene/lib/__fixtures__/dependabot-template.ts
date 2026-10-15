@@ -3,13 +3,16 @@ version: 2
 updates:
   # JavaScript
   - package-ecosystem: 'npm'
-    directory: '/'
+    directories:
+      - '/**'
+    exclude-paths: []
     schedule:
       interval: 'weekly'
     cooldown:
       default-days: 7
   - package-ecosystem: 'docker'
-    directory: '/'
+    directories:
+      - '/**'
     schedule:
       interval: 'weekly'
     cooldown:
