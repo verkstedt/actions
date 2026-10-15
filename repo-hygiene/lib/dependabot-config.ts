@@ -275,7 +275,10 @@ function parseExisting(existing: FileContent, log: Logger): Document | null {
 
 /**
  * Make every `updates` entry wait at least 7 days before proposing a
- * new version. Returns a description of each fix made.
+ * new version.
+ *
+ * @param updates The `updates` list. Mutated.
+ * @returns A description of each fix made.
  */
 function ensureCooldowns(parsed: Document, updates: YAMLSeq): Array<string> {
   const fixes: Array<string> = [];
@@ -299,7 +302,9 @@ function ensureCooldowns(parsed: Document, updates: YAMLSeq): Array<string> {
 
 /**
  * Append template entries for `detected` ecosystems `updates` lacks.
- * Returns the ecosystems added.
+ *
+ * @param updates The `updates` list. Mutated.
+ * @returns The ecosystems added.
  */
 function addMissingEcosystems(
   updates: YAMLSeq,

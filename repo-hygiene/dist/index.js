@@ -49235,7 +49235,10 @@ function parseExisting(existing, log) {
 }
 /**
  * Make every `updates` entry wait at least 7 days before proposing a
- * new version. Returns a description of each fix made.
+ * new version.
+ *
+ * @param updates The `updates` list. Mutated.
+ * @returns A description of each fix made.
  */
 function ensureCooldowns(parsed, updates) {
     const fixes = [];
@@ -49259,7 +49262,9 @@ function ensureCooldowns(parsed, updates) {
 }
 /**
  * Append template entries for `detected` ecosystems `updates` lacks.
- * Returns the ecosystems added.
+ *
+ * @param updates The `updates` list. Mutated.
+ * @returns The ecosystems added.
  */
 function addMissingEcosystems(updates, template, detected) {
     const existingEcos = new Set(updates.items.map(readEcosystem));
