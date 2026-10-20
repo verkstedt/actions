@@ -44,6 +44,8 @@ export interface Change {
   newContent: string;
   sha?: string;
   summary: string;
+  /** See `FileFix.warnings`. */
+  warnings?: Array<string>;
 }
 
 /** One rule of a CODEOWNERS file; see `parseCodeowners`. */
@@ -127,6 +129,8 @@ export interface FileFix {
   /** Code fence language for the dry-run rendering. */
   lang: string;
   describe: string;
+  /** Things reviewers should double-check, one PR body bullet each. */
+  warnings?: Array<string>;
 }
 
 export interface ActionContext {

@@ -5,6 +5,7 @@
  * - has an entry for every package ecosystem the repo uses
  * - has a `version`
  * - has a cooldown
+ * - has directories that cover every manifest
  *
  * Entries are built from the org-wide template in `verkstedt/.github`
  * and written in the hygiene PR. Ecosystems the template has no entry
@@ -42,12 +43,16 @@ export const dependabotConfig: Check = {
     template = await loadDependabotTemplate(octokit);
   },
   run: async (snapshot) => {
-    const { detected } = detectEcosystems(await snapshot.listPaths());
+    const { detected, manifestDirsByEcosystem } = detectEcosystems(
+      await snapshot.listPaths(),
+    );
     const existing = await snapshot.readFirstExistingFile(DEPENDABOT_PATHS);
     const change = planDependabotChange({
       detected,
+      manifestDirsByEcosystem,
       existing,
       template: requireLoadedTemplate(),
+      defaultBranch: snapshot.defaultBranch,
       log: snapshot.log,
     });
     if (!change) {
@@ -65,6 +70,7 @@ export const dependabotConfig: Check = {
           content: change.newContent,
           lang: 'yaml',
           describe: change.summary,
+          warnings: change.warnings,
         },
       },
     ];
