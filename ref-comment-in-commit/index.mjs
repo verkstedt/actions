@@ -226,7 +226,7 @@ if (!commits?.length) {
 
         const longestBacktickRun = Math.max(
           0,
-          ...[...message.matchAll(/`+/g)].map((m) => m[0].length),
+          ...Array.from(message.matchAll(/`+/g), (m) => m[0].length),
         );
         const fence = '`'.repeat(Math.max(3, longestBacktickRun + 1));
 

@@ -123,9 +123,10 @@ export async function takeSnapshot(
   });
   const listPaths = async () => {
     const paths = await treePaths();
-    const created = [...workingCopy.pending.keys()]
-      .map((path) => `/${path}`)
-      .filter((path) => !paths.includes(path));
+    const created = Array.from(
+      workingCopy.pending.keys(),
+      (path) => `/${path}`,
+    ).filter((path) => !paths.includes(path));
     return [...paths, ...created];
   };
 

@@ -220,7 +220,7 @@ function spliceLines(
   const baseLines = text.split('\n');
   // split on a string ending with \n leaves a trailing empty element;
   // drop it for clean splicing.
-  if (baseLines.length > 0 && baseLines[baseLines.length - 1] === '') {
+  if (baseLines.length > 0 && baseLines.at(-1) === '') {
     baseLines.pop();
   }
 
