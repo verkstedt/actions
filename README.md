@@ -84,7 +84,7 @@ things handy in the command like, we aim to have `npm run lint` run all
 of the linters, but in the CI we want to run them separately to be able
 to see what’s failing more clearly.
 
-What you’ll want to do is install `npm-run-all` in your project and
+What you’ll want to do is install `npm-run-all2` in your project and
 have something like:
 
 ```json
