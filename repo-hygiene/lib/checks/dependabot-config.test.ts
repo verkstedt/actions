@@ -34,7 +34,7 @@ describe('dependabotConfig', () => {
   it('creates the file from the template for detected ecosystems', async () => {
     await setup(templateOctokit(DEPENDABOT_TEMPLATE));
     const snapshot = await fakeSnapshot({
-      paths: ['package.json', '.github/workflows/ci.yaml'],
+      paths: ['package.json', 'package-lock.json', '.github/workflows/ci.yaml'],
     });
     const findings = await dependabotConfig.run(snapshot);
     assert.equal(findings.length, 1);
@@ -56,7 +56,7 @@ describe('dependabotConfig', () => {
   it('extends an existing .yml in place', async () => {
     await setup(templateOctokit(DEPENDABOT_TEMPLATE));
     const snapshot = await fakeSnapshot({
-      paths: ['package.json', 'Dockerfile'],
+      paths: ['package.json', 'package-lock.json', 'Dockerfile'],
       files: {
         '.github/dependabot.yml':
           "version: 2\nupdates:\n  - package-ecosystem: 'npm'\n    directory: '/'\n    schedule:\n      interval: 'weekly'\n    cooldown:\n      default-days: 7\n",
@@ -78,7 +78,7 @@ describe('dependabotConfig', () => {
   it('reports nothing to do when the config is complete', async () => {
     await setup(templateOctokit(DEPENDABOT_TEMPLATE));
     const snapshot = await fakeSnapshot({
-      paths: ['package.json'],
+      paths: ['package.json', 'package-lock.json'],
       files: { '.github/dependabot.yaml': DEPENDABOT_TEMPLATE },
     });
     assert.deepEqual(await dependabotConfig.run(snapshot), [
