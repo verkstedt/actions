@@ -24,6 +24,13 @@ on:
         type: string
         required: false
         default: ''
+      only-changed:
+        description: >
+          Take screenshots only of stories affected by changed files
+          (TurboSnap).
+        type: boolean
+        required: false
+        default: true
     secrets:
       CHROMATIC_PROJECT_TOKEN:
         description: >
@@ -46,7 +53,10 @@ on:
 jobs:
   chromatic:
     name: 'Chromatic'
-    if: github.ref == 'refs/heads/main' || github.event.pull_request.draft == false
+    if: >-
+      github.event_name == 'workflow_dispatch'
+      || github.ref == 'refs/heads/main'
+      || github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     environment:
       name: ${{ github.ref == 'refs/heads/main' && 'storybook' || 'PR storybook' }}${{ inputs.environment-suffix && format(' ({0})', inputs.environment-suffix) }}
@@ -126,8 +136,10 @@ jobs:
         with:
           workingDir: ${{ steps.sb-dir.outputs.relative-dir }}
           projectToken: ${{ secrets.CHROMATIC_PROJECT_TOKEN }}
-          # Take screenshots only of components that changed
-          onlyChanged: true
+          onlyChanged: ${{ inputs.only-changed }}
+          # “Rebuild” = Chromatic build, not Storybook; without it,
+          # commits that already passed are skipped
+          forceRebuild: ${{ !inputs.only-changed }}
           # We assume that everything that goes to main has already been
           # approved on the PR level
           autoAcceptChanges: main
