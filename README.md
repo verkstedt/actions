@@ -102,7 +102,7 @@ Template:
 
 Builds [StoryBook] and publishes to [Chromatic].
 
-Runs only on `main` branch and published PRs.
+Runs on `main` branch, published PRs and can be triggered manually.
 
 Requires some vars and/or secrets.
 See [./.github/workflows/chromatic.yaml][workflow-chromatic] for details.
