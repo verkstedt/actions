@@ -8,6 +8,7 @@ name: 'CI'
 # - Main branch is `v1`.
 # - Uses local reusable workflows (`./.github/workflows/…`), so changes
 #   to them are exercised in the PR that makes them.
+# - Added `lint:actions`
 
 on:
   push:
@@ -37,10 +38,25 @@ jobs:
     with:
       working-directory: .
 
+  lint-actions:
+    name: 'Lint actions'
+    runs-on: ubuntu-latest
+    needs:
+      - ci
+    steps:
+      - name: Setup
+        uses: verkstedt/actions/setup@v1
+        with:
+          working-directory: .
+      - name: Lint something else
+        working-directory: .
+        run: npm run lint:actions
+
   notify-main-branch-failure:
     name: Notify about failure on main branch
     needs:
       - ci
+      - lint-actions
     if: ${{ !cancelled() && !contains(needs.*.result, 'cancelled') && github.event_name == 'push' && github.ref_name == github.event.repository.default_branch }}
     uses: ./.github/workflows/notify-main-branch-failure.yaml
     with:
