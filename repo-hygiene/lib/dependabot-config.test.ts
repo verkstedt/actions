@@ -57,33 +57,8 @@ describe('detectEcosystems', () => {
   it('finds nothing in an empty tree', () => {
     assert.deepEqual(detectEcosystems([]), {
       detected: new Set(),
-      manifestDirsByEcosystem: new Map(),
       requiredCodeowners: [],
     });
-  });
-
-  it('collects the directories manifests are in', () => {
-    const { manifestDirsByEcosystem } = detectEcosystems([
-      '/package.json',
-      '/packages/a/package.json',
-      '/pnpm-lock.yaml',
-      '/Cargo.lock',
-      '/api/requirements.txt',
-      '/.docker/Dockerfile.build',
-      '/deploy/docker-compose.yml',
-      '/.devcontainer/devcontainer.json',
-      '/.github/workflows/ci.yaml',
-    ]);
-    assert.deepEqual(
-      manifestDirsByEcosystem,
-      new Map([
-        ['npm', new Set(['/'])],
-        ['cargo', new Set(['/'])],
-        ['pip', new Set(['/api'])],
-        ['docker', new Set(['/.docker'])],
-        ['docker-compose', new Set(['/deploy'])],
-      ]),
-    );
   });
 
   it('detects npm from lockfiles and requires an owner for them', () => {
@@ -99,7 +74,6 @@ describe('detectEcosystems', () => {
   it('ignores manifests without lockfiles', () => {
     assert.deepEqual(detectEcosystems(['/package.json', '/Cargo.toml']), {
       detected: new Set(),
-      manifestDirsByEcosystem: new Map(),
       requiredCodeowners: [],
     });
   });
@@ -131,7 +105,6 @@ describe('detectEcosystems', () => {
   it('ignores Python projects without requirements files', () => {
     assert.deepEqual(detectEcosystems(['/pyproject.toml', '/uv.lock']), {
       detected: new Set(),
-      manifestDirsByEcosystem: new Map(),
       requiredCodeowners: [],
     });
   });
@@ -176,7 +149,6 @@ describe('planDependabotChange', () => {
   it('does nothing when no ecosystem was detected', () => {
     const change = planDependabotChange({
       detected: new Set(),
-      manifestDirsByEcosystem: new Map(),
       existing: null,
       template,
       defaultBranch: 'main',
@@ -188,7 +160,6 @@ describe('planDependabotChange', () => {
   it('creates a config from the template with only detected ecosystems', () => {
     const change = planDependabotChange({
       detected: new Set(['npm']),
-      manifestDirsByEcosystem: new Map(),
       existing: null,
       template,
       defaultBranch: 'main',
@@ -213,7 +184,6 @@ describe('planDependabotChange', () => {
   it('does nothing for an unknown ecosystem with no file', () => {
     const change = planDependabotChange({
       detected: new Set(['devcontainers']),
-      manifestDirsByEcosystem: new Map(),
       existing: null,
       template,
       defaultBranch: 'main',
@@ -240,7 +210,6 @@ describe('planDependabotChange', () => {
     };
     const change = planDependabotChange({
       detected: new Set(['npm', 'docker']),
-      manifestDirsByEcosystem: new Map(),
       existing,
       template,
       defaultBranch: 'main',
@@ -255,14 +224,13 @@ describe('planDependabotChange', () => {
     assert.doesNotMatch(change.newContent, /'/);
     assert.equal(
       change.summary,
-      'updated `.github/dependabot.yml`: added sections: `docker`; set `cooldown.default-days: 7` on `npm`',
+      'updated `.github/dependabot.yml`: added sections: `docker`; set `cooldown.default-days: 7` on `npm`; set directories on `npm` to match the template',
     );
   });
 
   it('leaves a complete config alone', () => {
     const change = planDependabotChange({
       detected: new Set(['npm', 'docker']),
-      manifestDirsByEcosystem: new Map(),
       existing: { path: 'x', sha: 's', content: DEPENDABOT_TEMPLATE },
       template,
       defaultBranch: 'main',
@@ -274,7 +242,6 @@ describe('planDependabotChange', () => {
   it('adds an updates list to a file without one', () => {
     const change = planDependabotChange({
       detected: new Set(['npm']),
-      manifestDirsByEcosystem: new Map(),
       existing: { path: 'x', sha: 's', content: 'version: 2\n' },
       template,
       defaultBranch: 'main',
@@ -289,7 +256,6 @@ describe('planDependabotChange', () => {
   it('adds a missing version to an otherwise complete file', () => {
     const change = planDependabotChange({
       detected: new Set(['npm', 'docker']),
-      manifestDirsByEcosystem: new Map(),
       existing: {
         path: 'x',
         sha: 's',
@@ -319,10 +285,9 @@ describe('planDependabotChange', () => {
       ].join('\n'),
     });
 
-    it('copies the template’s directories in place when manifests are not covered', () => {
+    it('copies the template’s directories in place', () => {
       const change = planDependabotChange({
         detected: new Set(['npm']),
-        manifestDirsByEcosystem: new Map([['npm', new Set(['/', '/web'])]]),
         existing: createExisting(
           "directory: '/'",
           "versioning-strategy: 'increase'",
@@ -343,10 +308,9 @@ describe('planDependabotChange', () => {
       );
     });
 
-    it('replaces a list of directories that misses some manifests', () => {
+    it('replaces a list of directories', () => {
       const change = planDependabotChange({
         detected: new Set(['npm']),
-        manifestDirsByEcosystem: new Map([['npm', new Set(['/a', '/b'])]]),
         existing: createExisting('directories:', "  - '/a'"),
         template,
         defaultBranch: 'main',
@@ -357,60 +321,9 @@ describe('planDependabotChange', () => {
       assert.doesNotMatch(change.newContent, /'\/a'/);
     });
 
-    it('keeps a directory that covers every manifest', () => {
+    it('leaves directories that match the template alone', () => {
       const change = planDependabotChange({
         detected: new Set(['npm']),
-        manifestDirsByEcosystem: new Map([['npm', new Set(['/'])]]),
-        existing: createExisting("directory: '/'"),
-        template,
-        defaultBranch: 'main',
-        log,
-      });
-      assert.equal(change, null);
-    });
-
-    it('matches a directory literally', () => {
-      const change = planDependabotChange({
-        detected: new Set(['npm']),
-        manifestDirsByEcosystem: new Map([['npm', new Set(['/apps/[web]'])]]),
-        existing: createExisting("directory: '/apps/[web]'"),
-        template,
-        defaultBranch: 'main',
-        log,
-      });
-      assert.equal(change, null);
-    });
-
-    it('keeps globbed directories that cover every manifest', () => {
-      const change = planDependabotChange({
-        detected: new Set(['npm']),
-        manifestDirsByEcosystem: new Map([
-          ['npm', new Set(['/', '/apps/a', '/apps/b'])],
-        ]),
-        existing: createExisting('directories:', "  - '/'", "  - '/apps/*'"),
-        template,
-        defaultBranch: 'main',
-        log,
-      });
-      assert.equal(change, null);
-    });
-
-    it('keeps directories written without a leading or with a trailing slash', () => {
-      const change = planDependabotChange({
-        detected: new Set(['npm']),
-        manifestDirsByEcosystem: new Map([['npm', new Set(['/web', '/api'])]]),
-        existing: createExisting('directories:', "  - 'web'", "  - '/api/'"),
-        template,
-        defaultBranch: 'main',
-        log,
-      });
-      assert.equal(change, null);
-    });
-
-    it('leaves `/**` alone', () => {
-      const change = planDependabotChange({
-        detected: new Set(['npm']),
-        manifestDirsByEcosystem: new Map([['npm', new Set(['/', '/web'])]]),
         existing: createExisting('directories:', "  - '/**'"),
         template,
         defaultBranch: 'main',
@@ -419,16 +332,20 @@ describe('planDependabotChange', () => {
       assert.equal(change, null);
     });
 
-    it('leaves ecosystems without tracked directories alone', () => {
+    it('replaces a directory below the root', () => {
       const change = planDependabotChange({
         detected: new Set(['npm']),
-        manifestDirsByEcosystem: new Map(),
         existing: createExisting("directory: '/web'"),
         template,
         defaultBranch: 'main',
         log,
       });
-      assert.equal(change, null);
+      assert.ok(change);
+      assert.match(
+        change.newContent,
+        /'npm'\n {4}directories:\n {6}- '\/\*\*'\n/,
+      );
+      assert.doesNotMatch(change.newContent, /directory:|'\/web'/);
     });
 
     describe('with several entries per ecosystem', () => {
@@ -445,12 +362,9 @@ describe('planDependabotChange', () => {
         content: ['version: 2', 'updates:', ...entries.flat(), ''].join('\n'),
       });
 
-      it('merges entries that miss a manifest into the first', () => {
+      it('merges entries into the first', () => {
         const change = planDependabotChange({
           detected: new Set(['npm']),
-          manifestDirsByEcosystem: new Map([
-            ['npm', new Set(['/web', '/api', '/worker'])],
-          ]),
           existing: createExistingEntries(
             createEntry('/web', "versioning-strategy: 'increase'"),
             createEntry('/api', "versioning-strategy: 'lockfile-only'"),
@@ -478,7 +392,6 @@ describe('planDependabotChange', () => {
       it('keeps entries for other target branches apart', () => {
         const change = planDependabotChange({
           detected: new Set(['npm']),
-          manifestDirsByEcosystem: new Map([['npm', new Set(['/', '/web'])]]),
           existing: createExistingEntries(
             createEntry('/', "target-branch: 'release'"),
             createEntry('/'),
@@ -497,9 +410,6 @@ describe('planDependabotChange', () => {
       it('treats entries without a target branch as for the default one', () => {
         const change = planDependabotChange({
           detected: new Set(['npm']),
-          manifestDirsByEcosystem: new Map([
-            ['npm', new Set(['/web', '/api', '/worker'])],
-          ]),
           existing: createExistingEntries(
             createEntry('/web'),
             createEntry('/api', "target-branch: 'main'"),
@@ -514,24 +424,6 @@ describe('planDependabotChange', () => {
           'merged `npm` entries for `/web` and `/api` into one in `x`',
         ]);
       });
-
-      it('checks coverage per target branch', () => {
-        const change = planDependabotChange({
-          detected: new Set(['npm']),
-          manifestDirsByEcosystem: new Map([['npm', new Set(['/web'])]]),
-          existing: createExistingEntries(
-            createEntry('/', "target-branch: 'release'"),
-            createEntry('/web'),
-          ),
-          template,
-          defaultBranch: 'main',
-          log,
-        });
-        assert.ok(change);
-        assert.match(change.newContent, /target-branch: 'release'\n/);
-        assert.equal(change.newContent.match(/'\/\*\*'/g)?.length, 1);
-        assert.match(change.newContent, /directory: '\/web'/);
-      });
     });
   });
 
@@ -539,7 +431,6 @@ describe('planDependabotChange', () => {
     const warningsBefore = warnings.length;
     const change = planDependabotChange({
       detected: new Set(['npm']),
-      manifestDirsByEcosystem: new Map(),
       existing: {
         path: 'x',
         sha: 's',
@@ -558,7 +449,6 @@ describe('planDependabotChange', () => {
     const warningsBefore = warnings.length;
     const change = planDependabotChange({
       detected: new Set(['npm']),
-      manifestDirsByEcosystem: new Map(),
       existing: { path: 'x', sha: 's', content: 'version: [\n' },
       template,
       defaultBranch: 'main',
