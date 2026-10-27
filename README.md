@@ -193,6 +193,14 @@ See [repo-hygiene.yaml](./.github/workflows/repo-hygiene.yaml) for details.
 
 - [🔍 Repositories using this workflow](https://github.com/search?q=-is:archived+path:.github/workflows/+%22verkstedt/actions/.github/workflows/repo-hygiene.yaml%22&type=code)
 
+> [!WARNING]
+> We sometimes introduce changes that will result in a lot of pull
+> requests created. To avoid doing that too often, such PRs are merged
+> to [`repo-hygiene-avalanche` branch] first and only after we collect a
+> few, merged to the main branch.
+
+[`repo-hygiene-avalanche` branch]: https://github.com/verkstedt/actions/tree/repo-hygiene-avalanche
+
 ## Deploying new versions of actions and workflows
 
 You might have noticed that main branch in this repository is called
