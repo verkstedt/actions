@@ -13,7 +13,7 @@ import type { LogSink } from './lib/types.ts';
 
 const HELP = `Audit the org’s repos the way the GitHub Action does, as a dry run.
 
-Usage: repo-hygiene --org <org> [--repos <globs>]
+Usage: repo-hygiene --org <org> [--repos '<glob> [<glob>…]']
 
 Nothing is created or requested. Prints the progress, then the job summary the action would write, pull requests it would open included.
 
@@ -22,8 +22,8 @@ The GitHub token comes from $GITHUB_TOKEN, or from \`gh auth token\`.
 Options:
   --org <org>
       GitHub organisation to audit (required)
-  --repos <globs>
-      Only repos matching these picomatch globs, comma-, semicolon- or whitespace-separated. Single-quote them to avoid shell expansion.
+  --repos '<glob> [<glob>…]'
+      Only repos matching these picomatch globs, whitespace-separated. Single-quote them to avoid shell expansion.
   -h, --help
       Show this help
 

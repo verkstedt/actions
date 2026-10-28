@@ -48337,7 +48337,7 @@ function spliceLines(text, addedLines, insertAfterIdx) {
     const baseLines = text.split('\n');
     // split on a string ending with \n leaves a trailing empty element;
     // drop it for clean splicing.
-    if (baseLines.length > 0 && baseLines[baseLines.length - 1] === '') {
+    if (baseLines.length > 0 && baseLines.at(-1) === '') {
         baseLines.pop();
     }
     if (insertAfterIdx >= 0) {
@@ -48942,9 +48942,7 @@ async function takeSnapshot(octokit, repoMeta, { org, log }) {
     });
     const listPaths = async () => {
         const paths = await treePaths();
-        const created = [...workingCopy.pending.keys()]
-            .map((path) => `/${path}`)
-            .filter((path) => !paths.includes(path));
+        const created = Array.from(workingCopy.pending.keys(), (path) => `/${path}`).filter((path) => !paths.includes(path));
         return [...paths, ...created];
     };
     const listOpenPrs = memoise(() => octokit.paginate(octokit.rest.pulls.list, {
@@ -49859,8 +49857,9 @@ const allChecks = [
     dependabotConfig,
     codeowners,
 ];
-const REPOS_SEPARATOR_RE = /[,;\s]/;
-/** Repo globs from a comma-, semicolon- or whitespace-separated list. */
+/** Only whitespace, so commas in brace globs like `{a,b}` survive. */
+const REPOS_SEPARATOR_RE = /\s+/;
+/** Repo globs from a whitespace-separated list. */
 function parseReposFilter(value) {
     return value.split(REPOS_SEPARATOR_RE).filter(Boolean);
 }

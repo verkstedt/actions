@@ -19,9 +19,10 @@ export const allChecks: Array<Check> = [
   codeowners,
 ];
 
-const REPOS_SEPARATOR_RE = /[,;\s]/;
+/** Only whitespace, so commas in brace globs like `{a,b}` survive. */
+const REPOS_SEPARATOR_RE = /\s+/;
 
-/** Repo globs from a comma-, semicolon- or whitespace-separated list. */
+/** Repo globs from a whitespace-separated list. */
 export function parseReposFilter(value: string): Array<string> {
   return value.split(REPOS_SEPARATOR_RE).filter(Boolean);
 }

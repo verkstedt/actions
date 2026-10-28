@@ -19,8 +19,8 @@ inputs:
   repos:
     description: >
       List of repo names to process, without org prefix
-      (comma-, semicolon- or whitespace-separated).
-      Wildcards (`*`) are allowed.
+      (whitespace-separated).
+      picomatch globs (e.g. `*`, `{a,b}`) are allowed.
       Leave empty to process all repos in the org.
     required: false
     default: ''

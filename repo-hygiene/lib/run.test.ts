@@ -97,8 +97,12 @@ describe('runAudit', () => {
 });
 
 describe('parseReposFilter', () => {
-  it('splits on commas, semicolons and whitespace', () => {
-    assert.deepEqual(parseReposFilter('a, b;c\n d*'), ['a', 'b', 'c', 'd*']);
+  it('splits on whitespace only, keeping brace globs whole', () => {
+    assert.deepEqual(parseReposFilter(' a\n b-{c,d}\t e* '), [
+      'a',
+      'b-{c,d}',
+      'e*',
+    ]);
   });
 
   it('returns nothing for an empty value', () => {
