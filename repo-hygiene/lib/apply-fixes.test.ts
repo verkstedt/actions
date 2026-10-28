@@ -331,6 +331,48 @@ describe('applyFixes', () => {
     assert.equal(result.findings[0].outcome?.status, 'fixed');
   });
 
+  it('defers onlyWithOthers file fixes when nothing else needs a PR', async () => {
+    const log = fakeLog();
+    const snapshot = await fakeSnapshot({ log });
+    const result = await applyFixes(
+      [
+        finding({
+          summary: 'outdated',
+          check: 'ci-workflow',
+          fix: { ...file('x', '1'), onlyWithOthers: true },
+        }),
+      ],
+      snapshot,
+      run,
+    );
+    assert.deepEqual(result.findings[0].outcome, { status: 'deferred' });
+    assert.deepEqual(log.calls.info, [
+      'ci-workflow: outdated; will be applied once another fix opens a PR',
+    ]);
+    assert.equal(
+      listCallsTo(snapshot.octokit as never, 'pulls.create').length,
+      0,
+    );
+  });
+
+  it('applies onlyWithOthers file fixes alongside other file fixes', async () => {
+    const snapshot = await fakeSnapshot();
+    snapshot.workingCopy.attach('x', '1');
+    snapshot.workingCopy.attach('y', '2');
+    const result = await applyFixes(
+      [
+        finding({ fix: { ...file('x', '1'), onlyWithOthers: true } }),
+        finding({ fix: file('y', '2') }),
+      ],
+      snapshot,
+      run,
+    );
+    assert.deepEqual(
+      result.findings.map((f) => f.outcome?.status),
+      ['fixed', 'fixed'],
+    );
+  });
+
   it('leaves findings the runner already failed alone', async () => {
     const snapshot = await fakeSnapshot();
     const conflicted = finding({

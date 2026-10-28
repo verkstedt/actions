@@ -189,6 +189,13 @@ describe('report', () => {
       fix: { kind: 'file', path: 'x', content: '', lang: '', describe: 'x' },
       outcome: { status: 'failed', detail: 'forbidden' },
     },
+    {
+      repo: 'org/later',
+      level: 'info',
+      summary: 'outdated CI template',
+      fix: { kind: 'file', path: 'y', content: '', lang: '', describe: 'y' },
+      outcome: { status: 'deferred' },
+    },
   ];
 
   it('renders the job summary grouped by importance', () => {
@@ -218,6 +225,9 @@ describe('report', () => {
         '*🥶 Previously opened PRs:*',
         '1. docs: <https://p/7> — reviewer: @carol',
         '',
+        '*⏳ Will be applied once another fix opens a PR:*',
+        '1. later — outdated CI template',
+        '',
       ].join('\n'),
     );
   });
@@ -232,6 +242,7 @@ describe('report', () => {
     );
     assert.match(outputs.slack_text, /names nobody\n2\. api/);
     assert.doesNotMatch(outputs.slack_text, /names nobody — a, b/);
+    assert.doesNotMatch(outputs.slack_text, /Will be applied|later/);
     assert.match(
       outputs.slack_text,
       /<https:\/\/example\.test\/run\/1\|See full list with more details>$/,

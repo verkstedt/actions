@@ -48001,8 +48001,12 @@ const HEADINGS = {
     opened: '*🆕 Opened PRs:*',
     fixed: '*🔧 Fixed:*',
     previous: '*🥶 Previously opened PRs:*',
+    deferred: '*⏳ Will be applied once another fix opens a PR:*',
 };
 const GROUP_ORDER = Object.keys(HEADINGS);
+/** Groups left out of Slack; the job summary lists them. */
+const SUMMARY_ONLY = ['deferred'];
+const SLACK_GROUP_ORDER = GROUP_ORDER.filter((key) => !SUMMARY_ONLY.includes(key));
 const DRY_RUN_HEADINGS = {
     opened: '*🆕 Would open PRs (dry run):*',
     fixed: '*🔧 Would fix (dry run):*',
@@ -48014,21 +48018,27 @@ const PARTIAL = {
     opened: true,
     fixed: true,
     previous: false,
+    deferred: false,
 };
 const MAX_DETAILS = 5;
 function classifyFixedFinding(finding) {
     return finding.fix?.kind === 'file' ? 'opened' : 'fixed';
 }
+/** Statuses that decide the group on their own. */
+const CLASSIFY_BY_STATUS = {
+    'skipped': () => 'previous',
+    'deferred': () => 'deferred',
+    'fixed': classifyFixedFinding,
+    'would-fix': classifyFixedFinding,
+};
 function classifyFinding(finding) {
     const status = finding.outcome?.status ?? 'none';
     if (status === 'failed' || finding.level === 'error') {
         return 'failed';
     }
-    if (status === 'skipped') {
-        return 'previous';
-    }
-    if (status === 'fixed' || status === 'would-fix') {
-        return classifyFixedFinding(finding);
+    const classifyByStatus = CLASSIFY_BY_STATUS[status];
+    if (classifyByStatus) {
+        return classifyByStatus(finding);
     }
     if (finding.level === 'warning' || finding.fix) {
         return 'attention';
@@ -48099,7 +48109,7 @@ function report(findings, { repoCount, dryRun, previews, runUrl }) {
         ? renderList(pickGroupHeading(key, groups[key]), renderGroupItems(key, groups[key], { details: true }))
         : []);
     const slackText = renderSlackText({
-        sections: Object.fromEntries(GROUP_ORDER.map((key) => [
+        sections: Object.fromEntries(SLACK_GROUP_ORDER.map((key) => [
             key,
             {
                 heading: pickGroupHeading(key, groups[key]),
@@ -48111,8 +48121,11 @@ function report(findings, { repoCount, dryRun, previews, runUrl }) {
                 }),
             },
         ])),
-        fillOrder: GROUP_ORDER.map((key) => ({ key, partial: PARTIAL[key] })),
-        showOrder: GROUP_ORDER,
+        fillOrder: SLACK_GROUP_ORDER.map((key) => ({
+            key,
+            partial: PARTIAL[key],
+        })),
+        showOrder: SLACK_GROUP_ORDER,
         runUrl,
     });
     const notify = groups.failed.length + groups.opened.length + groups.fixed.length > 0;
@@ -48337,7 +48350,7 @@ function spliceLines(text, addedLines, insertAfterIdx) {
     const baseLines = text.split('\n');
     // split on a string ending with \n leaves a trailing empty element;
     // drop it for clean splicing.
-    if (baseLines.length > 0 && baseLines[baseLines.length - 1] === '') {
+    if (baseLines.length > 0 && baseLines.at(-1) === '') {
         baseLines.pop();
     }
     if (insertAfterIdx >= 0) {
@@ -48758,13 +48771,30 @@ async function applyActionFixes(findings, { snapshot, run, pr, files }) {
     }
 }
 /**
+ * Mark the file findings deferred when every one of them is
+ * `onlyWithOthers`; returns the ones left to apply.
+ */
+function dropLoneOnlyWithOthers(fileFindings, snapshot) {
+    if (!fileFindings.every((f) => f.fix.onlyWithOthers)) {
+        return fileFindings;
+    }
+    for (const f of fileFindings) {
+        f.outcome = { status: 'deferred' };
+        const log = f.check
+            ? log_createLogger({ check: f.check }, snapshot.log)
+            : snapshot.log;
+        log.info(`${f.summary}; will be applied once another fix opens a PR`);
+    }
+    return [];
+}
+/**
  * Give every finding an outcome: compose one PR from the file fixes
  * (or render it in a dry run), then run the action fixes, `afterPr`
- * ones with the PR. Findings that already carry an outcome are left
- * as they are.
+ * ones with the PR. File fixes that are all `onlyWithOthers` are
+ * deferred. Findings that already carry an outcome are left as they are.
  */
 async function applyFixes(findings, snapshot, run) {
-    const fileFindings = findings.filter(isPending).filter(hasFileFix);
+    const fileFindings = dropLoneOnlyWithOthers(findings.filter(isPending).filter(hasFileFix), snapshot);
     const { pr, files, preview } = await applyFileFixes(fileFindings, findings, snapshot, run);
     await applyActionFixes(findings, { snapshot, run, pr, files });
     for (const finding of findings.filter(isPending)) {
@@ -48942,9 +48972,7 @@ async function takeSnapshot(octokit, repoMeta, { org, log }) {
     });
     const listPaths = async () => {
         const paths = await treePaths();
-        const created = [...workingCopy.pending.keys()]
-            .map((path) => `/${path}`)
-            .filter((path) => !paths.includes(path));
+        const created = Array.from(workingCopy.pending.keys(), (path) => `/${path}`).filter((path) => !paths.includes(path));
         return [...paths, ...created];
     };
     const listOpenPrs = memoise(() => octokit.paginate(octokit.rest.pulls.list, {

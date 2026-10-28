@@ -1,6 +1,6 @@
 import * as core from '@actions/core';
 
-import type { Finding } from './types.ts';
+import type { Finding, OutcomeStatus } from './types.ts';
 
 /**
  * Slack renders the whole summary inside a single Block Kit `section`
@@ -143,11 +143,22 @@ const HEADINGS = {
   opened: '*🆕 Opened PRs:*',
   fixed: '*🔧 Fixed:*',
   previous: '*🥶 Previously opened PRs:*',
+  deferred: '*⏳ Will be applied once another fix opens a PR:*',
 } satisfies Record<string, string>;
 
 type GroupKey = keyof typeof HEADINGS;
 
 const GROUP_ORDER = Object.keys(HEADINGS) as ReadonlyArray<GroupKey>;
+
+/** Groups left out of Slack; the job summary lists them. */
+const SUMMARY_ONLY = ['deferred'] as const satisfies ReadonlyArray<GroupKey>;
+
+type SlackGroupKey = Exclude<GroupKey, (typeof SUMMARY_ONLY)[number]>;
+
+const SLACK_GROUP_ORDER = GROUP_ORDER.filter(
+  (key): key is SlackGroupKey =>
+    !(SUMMARY_ONLY as ReadonlyArray<GroupKey>).includes(key),
+);
 
 const DRY_RUN_HEADINGS: Partial<Record<GroupKey, string>> = {
   opened: '*🆕 Would open PRs (dry run):*',
@@ -161,6 +172,7 @@ const PARTIAL: Record<GroupKey, boolean> = {
   opened: true,
   fixed: true,
   previous: false,
+  deferred: false,
 };
 
 const MAX_DETAILS = 5;
@@ -169,16 +181,24 @@ function classifyFixedFinding(finding: Finding): GroupKey {
   return finding.fix?.kind === 'file' ? 'opened' : 'fixed';
 }
 
+/** Statuses that decide the group on their own. */
+const CLASSIFY_BY_STATUS: Partial<
+  Record<OutcomeStatus, (finding: Finding) => GroupKey>
+> = {
+  'skipped': () => 'previous',
+  'deferred': () => 'deferred',
+  'fixed': classifyFixedFinding,
+  'would-fix': classifyFixedFinding,
+};
+
 function classifyFinding(finding: Finding): GroupKey | null {
   const status = finding.outcome?.status ?? 'none';
   if (status === 'failed' || finding.level === 'error') {
     return 'failed';
   }
-  if (status === 'skipped') {
-    return 'previous';
-  }
-  if (status === 'fixed' || status === 'would-fix') {
-    return classifyFixedFinding(finding);
+  const classifyByStatus = CLASSIFY_BY_STATUS[status];
+  if (classifyByStatus) {
+    return classifyByStatus(finding);
   }
   if (finding.level === 'warning' || finding.fix) {
     return 'attention';
@@ -285,7 +305,7 @@ export function report(
 
   const slackText = renderSlackText({
     sections: Object.fromEntries(
-      GROUP_ORDER.map((key) => [
+      SLACK_GROUP_ORDER.map((key) => [
         key,
         {
           heading: pickGroupHeading(key, groups[key]),
@@ -297,9 +317,12 @@ export function report(
           }),
         },
       ]),
-    ) as Record<GroupKey, { heading: string; items: Array<string> }>,
-    fillOrder: GROUP_ORDER.map((key) => ({ key, partial: PARTIAL[key] })),
-    showOrder: GROUP_ORDER,
+    ) as Record<SlackGroupKey, { heading: string; items: Array<string> }>,
+    fillOrder: SLACK_GROUP_ORDER.map((key) => ({
+      key,
+      partial: PARTIAL[key],
+    })),
+    showOrder: SLACK_GROUP_ORDER,
     runUrl,
   });
 
