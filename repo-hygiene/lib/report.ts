@@ -341,6 +341,14 @@ export function report(
   return { outputs, summary };
 }
 
+/** Whether any finding is an error or a fix that failed; such a run fails. */
+export function hasFailures(findings: Array<Finding>): boolean {
+  return findings.some(
+    (finding) =>
+      finding.level === 'error' || finding.outcome?.status === 'failed',
+  );
+}
+
 /** Write the outputs and the job summary for the run. */
 export async function publish(
   findings: Array<Finding>,

@@ -132,11 +132,6 @@ jobs:
           slack-channel-id: ${{ inputs.slack-channel-id }}
           text: '`repo-hygiene` run failed before summary — see workflow logs'
 
-      - name: Fail on failed repository checks
-        if: inputs.notify-slack && !inputs.dry-run && steps.audit.outputs.slack_status == 'failure'
-        shell: sh
-        run: exit 1
-
       - name: Notify Slack (back to normal)
         if: inputs.notify-slack && !inputs.dry-run && steps.audit.conclusion == 'success'
         uses: verkstedt/actions/notify-status@v1

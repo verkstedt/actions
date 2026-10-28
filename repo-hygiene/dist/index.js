@@ -48149,6 +48149,10 @@ function report(findings, { repoCount, dryRun, previews, runUrl }) {
     ].join('\n');
     return { outputs, summary };
 }
+/** Whether any finding is an error or a fix that failed; such a run fails. */
+function hasFailures(findings) {
+    return findings.some((finding) => finding.level === 'error' || finding.outcome?.status === 'failed');
+}
 /** Write the outputs and the job summary for the run. */
 async function publish(findings, options) {
     const runUrl = [
@@ -49967,6 +49971,9 @@ async function main() {
         log: actionsLog,
     });
     await publish(findings, { repoCount, dryRun: inputs.dryRun, previews });
+    if (hasFailures(findings)) {
+        setFailed('Some repos failed; see the summary.');
+    }
 }
 main().catch((error) => {
     setFailed(getErrorMessage(error));
