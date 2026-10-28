@@ -77,6 +77,7 @@ jobs:
     if: github.ref == 'refs/heads/main' || github.event.pull_request.draft == false
     outputs:
       scripts: ${{ steps.setup.outputs.scripts }}
+      other-lint-scripts: ${{ steps.other-lint-scripts.outputs.scripts }}
     steps:
       - name: Set environment variables
         env:
@@ -98,6 +99,22 @@ jobs:
           working-directory: ${{ inputs.working-directory }}
           token: ${{ steps.app-token.outputs.token }}
           github-npm-registry-personal-access-token: ${{ secrets.GH_NPM_REGISTRY_PERSONAL_ACCESS_TOKEN }}
+
+      # lint:* scripts that don’t have a dedicated job, run by lint-other
+      - name: List other lint scripts
+        id: other-lint-scripts
+        env:
+          SCRIPTS: ${{ steps.setup.outputs.scripts }}
+        run: |
+          other_scripts=$(
+            echo "$SCRIPTS" \
+              | tr ',' '\n' \
+              | grep '^lint:' \
+              | grep -vxE 'lint:(js|ts|css|sh|missing-translations)' \
+              | tr '\n' ' ' \
+              || true
+          )
+          echo "scripts=$other_scripts" >> "$GITHUB_OUTPUT"
 
   lint-js:
     name: 'Lint JS'
@@ -513,6 +530,48 @@ jobs:
         working-directory: ${{ inputs.working-directory }}
         run: npm run lint
 
+  # Runs lint:* scripts that don’t have a dedicated job above
+  lint-other:
+    name: 'Lint other'
+    runs-on: ubuntu-latest
+    if: needs.initial-setup.outputs.other-lint-scripts != ''
+    needs:
+      - initial-setup
+    steps:
+      - name: Set environment variables
+        env:
+          ENV_VARS: ${{ secrets.env_vars }}
+        run: |
+          echo "$ENV_VARS" >> "$GITHUB_ENV"
+
+      - name: GitHub App token
+        id: app-token
+        uses: verkstedt/actions/create-github-app-token@v1
+        with:
+          app-id: ${{ vars.GH_AUTH_APP_ID }}
+          private-key: ${{ secrets.GH_AUTH_APP_SECRET }}
+
+      - name: Setup
+        uses: verkstedt/actions/setup@v1
+        with:
+          working-directory: ${{ inputs.working-directory }}
+          token: ${{ steps.app-token.outputs.token }}
+          github-npm-registry-personal-access-token: ${{ secrets.GH_NPM_REGISTRY_PERSONAL_ACCESS_TOKEN }}
+
+      - name: Lint other
+        working-directory: ${{ inputs.working-directory }}
+        env:
+          OTHER_SCRIPTS: ${{ needs.initial-setup.outputs.other-lint-scripts }}
+        run: |
+          status=0
+          for script in $OTHER_SCRIPTS
+          do
+            echo "::group::npm run $script"
+            npm run "$script" || status=1
+            echo "::endgroup::"
+          done
+          exit "$status"
+
   test-unit:
     name: 'Unit tests'
     runs-on: ubuntu-latest
@@ -527,6 +586,7 @@ jobs:
       - lint-js
       - lint-ts
       - lint-fallback
+      - lint-other
     steps:
       - name: Set environment variables
         env:
@@ -664,6 +724,7 @@ jobs:
       - lint-js
       - lint-ts
       - lint-fallback
+      - lint-other
     steps:
       - name: Set environment variables
         env:
@@ -707,6 +768,7 @@ jobs:
       - lint-sh
       - lint-missing-translations
       - lint-fallback
+      - lint-other
       # all testers:
       - test-unit
       - test-fallback
