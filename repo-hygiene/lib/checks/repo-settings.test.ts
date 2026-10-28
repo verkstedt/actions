@@ -43,6 +43,56 @@ describe('repoSettings', () => {
     ]);
   });
 
+  it('reports only the error when every readable setting is as wanted', async () => {
+    const { findings } = await findingsFor({
+      ...wanted,
+      allow_auto_merge: null,
+    });
+    assert.deepEqual(findings, [
+      {
+        level: 'error',
+        summary:
+          'cannot read repository settings with the current GitHub token',
+        details: ['`allow_auto_merge`'],
+      },
+    ]);
+  });
+
+  it('reports settings the token cannot read as an error and leaves them alone', async () => {
+    const { octokit, findings } = await findingsFor({
+      ...wanted,
+      has_wiki: true,
+      allow_auto_merge: null,
+      delete_branch_on_merge: undefined,
+    });
+    assert.deepEqual(
+      findings.map(({ level, summary, details }) => ({
+        level,
+        summary,
+        details,
+      })),
+      [
+        {
+          level: 'error',
+          summary:
+            'cannot read repository settings with the current GitHub token',
+          details: ['`allow_auto_merge`', '`delete_branch_on_merge`'],
+        },
+        {
+          level: 'info',
+          summary: 'repository settings differ from the wanted ones',
+          details: ['disable the wiki'],
+        },
+      ],
+    );
+    const fix = findings[1].fix;
+    assert.equal(fix?.kind, 'action');
+    await fix.run(actionContext(octokit));
+    assert.deepEqual(listCallsTo(octokit, 'repos.update'), [
+      { owner: 'org', repo: 'r', has_wiki: false },
+    ]);
+  });
+
   it('proposes one action fixing every differing setting', async () => {
     const { octokit, findings } = await findingsFor({});
     assert.equal(findings.length, 1);

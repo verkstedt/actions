@@ -48337,7 +48337,7 @@ function spliceLines(text, addedLines, insertAfterIdx) {
     const baseLines = text.split('\n');
     // split on a string ending with \n leaves a trailing empty element;
     // drop it for clean splicing.
-    if (baseLines.length > 0 && baseLines[baseLines.length - 1] === '') {
+    if (baseLines.length > 0 && baseLines.at(-1) === '') {
         baseLines.pop();
     }
     if (insertAfterIdx >= 0) {
@@ -48942,9 +48942,7 @@ async function takeSnapshot(octokit, repoMeta, { org, log }) {
     });
     const listPaths = async () => {
         const paths = await treePaths();
-        const created = [...workingCopy.pending.keys()]
-            .map((path) => `/${path}`)
-            .filter((path) => !paths.includes(path));
+        const created = Array.from(workingCopy.pending.keys(), (path) => `/${path}`).filter((path) => !paths.includes(path));
         return [...paths, ...created];
     };
     const listOpenPrs = memoise(() => octokit.paginate(octokit.rest.pulls.list, {
@@ -49817,13 +49815,20 @@ const repoSettings = {
     name: 'repo-settings',
     run: async (snapshot) => {
         const repository = await snapshot.getRepository();
-        const changes = listWantedSettings(repository).filter(({ setting, value }) => repository[setting] !== value);
-        if (changes.length === 0) {
-            return [{ level: 'info', summary: 'repository settings are as wanted' }];
+        const wanted = listWantedSettings(repository);
+        const unreadable = wanted.filter(({ setting }) => repository[setting] == null);
+        const findings = [];
+        if (unreadable.length > 0) {
+            findings.push({
+                level: 'error',
+                summary: 'cannot read repository settings with the current GitHub token',
+                details: unreadable.map((w) => `\`${w.setting}\``),
+            });
         }
-        const describes = changes.map((c) => c.describe);
-        return [
-            {
+        const changes = wanted.filter(({ setting, value }) => repository[setting] != null && repository[setting] !== value);
+        if (changes.length > 0) {
+            const describes = changes.map((c) => c.describe);
+            findings.push({
                 level: 'info',
                 summary: 'repository settings differ from the wanted ones',
                 details: describes,
@@ -49839,8 +49844,11 @@ const repoSettings = {
                         return 'updated repository settings';
                     },
                 },
-            },
-        ];
+            });
+        }
+        return findings.length > 0
+            ? findings
+            : [{ level: 'info', summary: 'repository settings are as wanted' }];
     },
 };
 

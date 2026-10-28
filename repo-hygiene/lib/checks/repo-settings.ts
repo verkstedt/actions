@@ -11,7 +11,7 @@
  * is involved.
  */
 
-import type { Check, GitHub } from '../types.ts';
+import type { Check, CheckFinding, GitHub } from '../types.ts';
 
 /** The settings `PATCH /repos/{owner}/{repo}` accepts that we care about. */
 type Settings = Pick<
@@ -65,15 +65,26 @@ export const repoSettings: Check = {
   name: 'repo-settings',
   run: async (snapshot) => {
     const repository = await snapshot.getRepository();
-    const changes = listWantedSettings(repository).filter(
-      ({ setting, value }) => repository[setting] !== value,
+    const wanted = listWantedSettings(repository);
+    const unreadable = wanted.filter(
+      ({ setting }) => repository[setting] == null,
     );
-    if (changes.length === 0) {
-      return [{ level: 'info', summary: 'repository settings are as wanted' }];
+    const findings: Array<CheckFinding> = [];
+    if (unreadable.length > 0) {
+      findings.push({
+        level: 'error',
+        summary:
+          'cannot read repository settings with the current GitHub token',
+        details: unreadable.map((w) => `\`${w.setting}\``),
+      });
     }
-    const describes = changes.map((c) => c.describe);
-    return [
-      {
+    const changes = wanted.filter(
+      ({ setting, value }) =>
+        repository[setting] != null && repository[setting] !== value,
+    );
+    if (changes.length > 0) {
+      const describes = changes.map((c) => c.describe);
+      findings.push({
         level: 'info',
         summary: 'repository settings differ from the wanted ones',
         details: describes,
@@ -89,7 +100,10 @@ export const repoSettings: Check = {
             return 'updated repository settings';
           },
         },
-      },
-    ];
+      });
+    }
+    return findings.length > 0
+      ? findings
+      : [{ level: 'info', summary: 'repository settings are as wanted' }];
   },
 };
