@@ -49859,6 +49859,11 @@ const allChecks = [
     dependabotConfig,
     codeowners,
 ];
+const REPOS_SEPARATOR_RE = /[,;\s]/;
+/** Repo globs from a comma-, semicolon- or whitespace-separated list. */
+function parseReposFilter(value) {
+    return value.split(REPOS_SEPARATOR_RE).filter(Boolean);
+}
 function createFailedRepoFinding(org, repoMeta, error) {
     return {
         repo: `${org}/${repoMeta.name}`,
@@ -49872,10 +49877,11 @@ function createFailedRepoFinding(org, repoMeta, error) {
  * Audit every target repo of the org with the checks. A repo whose
  * audit throws becomes one error finding and the run carries on.
  */
-async function runAudit(octokit, { org, dryRun, reposFilter, runId, runAttempt, requireAppAccess, log, checks = allChecks, }) {
+async function runAudit(octokit, { org, dryRun, repos: reposInput, runId, runAttempt, requireAppAccess, log, checks = allChecks, }) {
     if (requireAppAccess) {
         await assertAppSeesAllRepos(octokit);
     }
+    const reposFilter = parseReposFilter(reposInput);
     const repos = await listTargetRepos(octokit, { org, reposFilter });
     for (const check of checks) {
         await check.setup?.(octokit);
@@ -49906,7 +49912,7 @@ async function runAudit(octokit, { org, dryRun, reposFilter, runId, runAttempt, 
             findings.push(createFailedRepoFinding(org, repoMeta, error));
         }
     }
-    return { findings, previews, repoCount: repos.length };
+    return { findings, previews, repoCount: repos.length, reposFilter };
 }
 
 ;// CONCATENATED MODULE: ./index.ts
@@ -49928,7 +49934,7 @@ function readInputs() {
         token: getInput('github-token', { required: true }),
         org: getInput('org') || context.repo.owner,
         dryRun: getBooleanInput('dry-run'),
-        reposFilter: (getInput('repos') || '').split(/[,;\s]/).filter(Boolean),
+        repos: getInput('repos'),
         runId: context.runId,
         runAttempt: Number(process.env.GITHUB_RUN_ATTEMPT) || 1,
     };
@@ -49939,25 +49945,25 @@ async function main() {
     if (inputs.dryRun) {
         await summary_summary.addRaw(DRY_RUN_NOTE).write();
     }
-    if (inputs.reposFilter.length > 0) {
-        await summary_summary
-            .addRaw([
-            'Running only for:',
-            '',
-            ...inputs.reposFilter.map((f) => `- \`${f}\``),
-            '',
-        ].join('\n'))
-            .write();
-    }
-    const { findings, previews, repoCount } = await runAudit(octokit, {
+    const { findings, previews, repoCount, reposFilter } = await runAudit(octokit, {
         org: inputs.org,
         dryRun: inputs.dryRun,
-        reposFilter: inputs.reposFilter,
+        repos: inputs.repos,
         runId: inputs.runId,
         runAttempt: inputs.runAttempt,
         requireAppAccess: true,
         log: actionsLog,
     });
+    if (reposFilter.length > 0) {
+        await summary_summary
+            .addRaw([
+            'Running only for:',
+            '',
+            ...reposFilter.map((f) => `- \`${f}\``),
+            '',
+        ].join('\n'))
+            .write();
+    }
     await publish(findings, { repoCount, dryRun: inputs.dryRun, previews });
 }
 main().catch((error) => {

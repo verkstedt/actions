@@ -19,11 +19,18 @@ export const allChecks: Array<Check> = [
   codeowners,
 ];
 
+const REPOS_SEPARATOR_RE = /[,;\s]/;
+
+/** Repo globs from a comma-, semicolon- or whitespace-separated list. */
+export function parseReposFilter(value: string): Array<string> {
+  return value.split(REPOS_SEPARATOR_RE).filter(Boolean);
+}
+
 export interface RunAuditOptions {
   org: string;
   dryRun: boolean;
-  /** picomatch globs narrowing the repos; empty means every repo. */
-  reposFilter: Array<string>;
+  /** Whitespace-separated picomatch globs narrowing the repos; empty means every repo. */
+  repos: string;
   runId: number;
   runAttempt: number;
   /** Fail unless the token is an App installation that sees every repo. */
@@ -37,6 +44,8 @@ export interface RunAuditResult {
   /** Rendered dry-run PRs, one per repo that would get one. */
   previews: Array<string>;
   repoCount: number;
+  /** The globs parsed from `repos`. */
+  reposFilter: Array<string>;
 }
 
 function createFailedRepoFinding(
@@ -62,7 +71,7 @@ export async function runAudit(
   {
     org,
     dryRun,
-    reposFilter,
+    repos: reposInput,
     runId,
     runAttempt,
     requireAppAccess,
@@ -73,6 +82,7 @@ export async function runAudit(
   if (requireAppAccess) {
     await assertAppSeesAllRepos(octokit);
   }
+  const reposFilter = parseReposFilter(reposInput);
   const repos = await listTargetRepos(octokit, { org, reposFilter });
   for (const check of checks) {
     await check.setup?.(octokit);
@@ -109,5 +119,5 @@ export async function runAudit(
     }
   }
 
-  return { findings, previews, repoCount: repos.length };
+  return { findings, previews, repoCount: repos.length, reposFilter };
 }

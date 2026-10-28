@@ -22,7 +22,7 @@ function readInputs() {
     token: core.getInput('github-token', { required: true }),
     org: core.getInput('org') || context.repo.owner,
     dryRun: core.getBooleanInput('dry-run'),
-    reposFilter: (core.getInput('repos') || '').split(/[,;\s]/).filter(Boolean),
+    repos: core.getInput('repos'),
     runId: context.runId,
     runAttempt: Number(process.env.GITHUB_RUN_ATTEMPT) || 1,
   };
@@ -35,28 +35,32 @@ async function main(): Promise<void> {
   if (inputs.dryRun) {
     await core.summary.addRaw(DRY_RUN_NOTE).write();
   }
-  if (inputs.reposFilter.length > 0) {
+
+  const { findings, previews, repoCount, reposFilter } = await runAudit(
+    octokit,
+    {
+      org: inputs.org,
+      dryRun: inputs.dryRun,
+      repos: inputs.repos,
+      runId: inputs.runId,
+      runAttempt: inputs.runAttempt,
+      requireAppAccess: true,
+      log: actionsLog,
+    },
+  );
+
+  if (reposFilter.length > 0) {
     await core.summary
       .addRaw(
         [
           'Running only for:',
           '',
-          ...inputs.reposFilter.map((f) => `- \`${f}\``),
+          ...reposFilter.map((f) => `- \`${f}\``),
           '',
         ].join('\n'),
       )
       .write();
   }
-
-  const { findings, previews, repoCount } = await runAudit(octokit, {
-    org: inputs.org,
-    dryRun: inputs.dryRun,
-    reposFilter: inputs.reposFilter,
-    runId: inputs.runId,
-    runAttempt: inputs.runAttempt,
-    requireAppAccess: true,
-    log: actionsLog,
-  });
 
   await publish(findings, { repoCount, dryRun: inputs.dryRun, previews });
 }
