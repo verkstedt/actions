@@ -4,6 +4,7 @@ import yaml from 'yaml';
 import type { Document, Pair, Scalar, YAMLMap, YAMLSeq } from 'yaml';
 
 import { getErrorMessage, tryGetContent } from './github.ts';
+import { TEMPLATE_REPO } from './templates.ts';
 import type {
   Change,
   DependabotTemplate,
@@ -89,8 +90,7 @@ export async function loadDependabotTemplate(
   octokit: Octokit,
 ): Promise<DependabotTemplate> {
   const file = await tryGetContent(octokit, {
-    owner: 'verkstedt',
-    repo: '.github',
+    ...TEMPLATE_REPO,
     paths: ['templates/dependabot.yaml'],
   });
   if (!file) {

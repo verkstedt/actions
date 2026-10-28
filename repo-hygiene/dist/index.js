@@ -49049,11 +49049,123 @@ async function auditRepo(octokit, repoMeta, { org, checks, log, ...run }) {
     };
 }
 
-;// CONCATENATED MODULE: external "node:path"
-const external_node_path_namespaceObject = __WEBPACK_EXTERNAL_createRequire(import.meta.url)("node:path");
 // EXTERNAL MODULE: ../node_modules/yaml/dist/index.js
 var dist = __nccwpck_require__(6637);
+;// CONCATENATED MODULE: ./lib/templates.ts
+/** The repo holding the org-wide templates the checks build from. */
+const TEMPLATE_REPO = { owner: 'verkstedt', repo: '.github' };
+
+;// CONCATENATED MODULE: ./lib/checks/ci-workflow.ts
+/**
+ * Keeps workflows created from the org-wide CI template in
+ * `verkstedt/.github` up to date.
+ *
+ * A workflow in `.github/workflows/` that, ignoring comments,
+ * formatting and key order, equals an earlier version of the template
+ * is replaced with the current one. That alone does not open a PR: the
+ * update is only applied alongside other fixes.
+ */
+
+
+
+const TEMPLATE_PATH = 'workflow-templates/ci.yaml';
+/** Matches tree paths, which start with `/`. */
+const WORKFLOW_RE = /^\/(\.github\/workflows\/[^/]+\.ya?ml)$/;
+let template = null;
+function requireLoadedTemplate() {
+    if (!template) {
+        throw new Error('ci-workflow check used before setup');
+    }
+    return template;
+}
+function sortKeys(value) {
+    if (Array.isArray(value)) {
+        return value.map(sortKeys);
+    }
+    if (value && typeof value === 'object') {
+        return Object.fromEntries(Object.entries(value)
+            .sort(([a], [b]) => a.localeCompare(b))
+            .map(([k, v]) => [k, sortKeys(v)]));
+    }
+    return value;
+}
+/**
+ * The YAML’s data as a string, so comments, formatting and key order
+ * do not matter; `null` when it does not parse.
+ */
+function canonicaliseYaml(content) {
+    try {
+        return JSON.stringify(sortKeys(dist.parse(content)));
+    }
+    catch {
+        return null;
+    }
+}
+/** The last 20 versions of the template, newest first, from its commit history. */
+async function loadCiTemplate(octokit) {
+    const { data: commits } = await octokit.rest.repos.listCommits({
+        ...TEMPLATE_REPO,
+        path: TEMPLATE_PATH,
+        per_page: 20,
+    });
+    const files = await Promise.all(commits.map(({ sha }) => tryGetContent(octokit, {
+        ...TEMPLATE_REPO,
+        paths: [TEMPLATE_PATH],
+        ref: sha,
+    })));
+    const versions = files.flatMap((file) => (file ? [file.content] : []));
+    if (versions.length === 0) {
+        throw new Error(`verkstedt/.github has no ${TEMPLATE_PATH}`);
+    }
+    const [content, ...earlier] = versions;
+    const current = canonicaliseYaml(content);
+    const outdated = new Set(earlier
+        .map(canonicaliseYaml)
+        .filter((c) => c !== null && c !== current));
+    return { content, outdated };
+}
+/**
+ * Workflows that equal an earlier version of the org-wide CI template
+ * get the current one, but only alongside other fixes.
+ */
+const ciWorkflow = {
+    name: 'ci-workflow',
+    opensPr: true,
+    setup: async (octokit) => {
+        template = await loadCiTemplate(octokit);
+    },
+    run: async (snapshot) => {
+        const { content, outdated } = requireLoadedTemplate();
+        const paths = (await snapshot.listPaths()).flatMap((p) => WORKFLOW_RE.exec(p)?.[1] ?? []);
+        const files = await Promise.all(paths.map((p) => snapshot.readFile(p)));
+        return paths.flatMap((path, i) => {
+            const file = files[i];
+            const canonical = file && canonicaliseYaml(file.content);
+            if (!canonical || !outdated.has(canonical)) {
+                return [];
+            }
+            return [
+                {
+                    level: 'info',
+                    summary: `\`${path}\` is based on an outdated CI template`,
+                    fix: {
+                        kind: 'file',
+                        path,
+                        content,
+                        lang: 'yaml',
+                        describe: `updated \`${path}\` to the latest [CI template](https://github.com/verkstedt/.github/blob/HEAD/${TEMPLATE_PATH})`,
+                        onlyWithOthers: true,
+                    },
+                },
+            ];
+        });
+    },
+};
+
+;// CONCATENATED MODULE: external "node:path"
+const external_node_path_namespaceObject = __WEBPACK_EXTERNAL_createRequire(import.meta.url)("node:path");
 ;// CONCATENATED MODULE: ./lib/dependabot-config.ts
+
 
 
 
@@ -49127,8 +49239,7 @@ function listUniqueBasenames(paths) {
  */
 async function loadDependabotTemplate(octokit) {
     const file = await tryGetContent(octokit, {
-        owner: 'verkstedt',
-        repo: '.github',
+        ...TEMPLATE_REPO,
         paths: ['templates/dependabot.yaml'],
     });
     if (!file) {
@@ -49613,12 +49724,12 @@ const codeowners = {
 
 /** Where dependabot looks for its config, in order of precedence. */
 const DEPENDABOT_PATHS = ['.github/dependabot.yaml', '.github/dependabot.yml'];
-let template = null;
-function requireLoadedTemplate() {
-    if (!template) {
+let dependabot_config_template = null;
+function dependabot_config_requireLoadedTemplate() {
+    if (!dependabot_config_template) {
         throw new Error('dependabot-config check used before setup');
     }
-    return template;
+    return dependabot_config_template;
 }
 /**
  * Every repo with a detected ecosystem has a dependabot config with an
@@ -49629,7 +49740,7 @@ const dependabotConfig = {
     name: 'dependabot-config',
     opensPr: true,
     setup: async (octokit) => {
-        template = await loadDependabotTemplate(octokit);
+        dependabot_config_template = await loadDependabotTemplate(octokit);
     },
     run: async (snapshot) => {
         const { detected, manifestDirsByEcosystem } = detectEcosystems(await snapshot.listPaths());
@@ -49638,7 +49749,7 @@ const dependabotConfig = {
             detected,
             manifestDirsByEcosystem,
             existing,
-            template: requireLoadedTemplate(),
+            template: dependabot_config_requireLoadedTemplate(),
             defaultBranch: snapshot.defaultBranch,
             log: snapshot.log,
         });
@@ -49880,12 +49991,15 @@ const repoSettings = {
 
 
 
+
 /** Every check the action runs, in order. */
 const allChecks = [
     repoSettings,
     dependabotReviewers,
     dependabotConfig,
     codeowners,
+    // Fixes from these are applied only when another fix opens a PR
+    ciWorkflow,
 ];
 function createFailedRepoFinding(org, repoMeta, error) {
     return {
