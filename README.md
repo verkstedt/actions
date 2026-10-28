@@ -84,7 +84,7 @@ things handy in the command like, we aim to have `npm run lint` run all
 of the linters, but in the CI we want to run them separately to be able
 to see what’s failing more clearly.
 
-What you’ll want to do is install `npm-run-all` in your project and
+What you’ll want to do is install `npm-run-all2` in your project and
 have something like:
 
 ```json
@@ -102,7 +102,7 @@ Template:
 
 Builds [StoryBook] and publishes to [Chromatic].
 
-Runs only on `main` branch and published PRs.
+Runs on `main` branch, published PRs and can be triggered manually.
 
 Requires some vars and/or secrets.
 See [./.github/workflows/chromatic.yaml][workflow-chromatic] for details.

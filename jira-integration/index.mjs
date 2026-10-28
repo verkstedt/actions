@@ -183,8 +183,8 @@ function extractResolvedIssueKeys(prBody, comments) {
   // Find all “Closes URL, URL…”
   const matches = text.match(new RegExp(closesRegExp, 'gi')) ?? [];
 
-  return Array.from(
-    new Set(
+  return [
+    ...new Set(
       matches.flatMap((match) => {
         // Find URLs
         const urlMatches = match.match(new RegExp(urlRegExp, 'gi'));
@@ -195,7 +195,7 @@ function extractResolvedIssueKeys(prBody, comments) {
         return issueKeys;
       }),
     ),
-  );
+  ];
 }
 
 /**
@@ -377,7 +377,7 @@ async function transitionIssues(issueKeys, newStatusNames) {
     );
     if (!newStatusName) {
       throw new Error(
-        `Failed to find a valid transition for issue ${issueData.issueKey}. Looked for statuses: ${newStatusNames.join(', ')}. Available transitions: ${Array.from(issueData.availableTransitions.keys()).join(', ')}`,
+        `Failed to find a valid transition for issue ${issueData.issueKey}. Looked for statuses: ${newStatusNames.join(', ')}. Available transitions: ${[...issueData.availableTransitions.keys()].join(', ')}`,
       );
     }
 
@@ -389,7 +389,8 @@ async function transitionIssues(issueKeys, newStatusNames) {
   });
 
   await Promise.all(
-    Array.from(issuesByNewStatusName.entries()).map(
+    Array.from(
+      issuesByNewStatusName.entries(),
       async ([newStatusName, issues]) => {
         const lastIssueInStatusKey =
           await getLastIssueInStatusKey(newStatusName);
@@ -407,7 +408,7 @@ async function transitionIssues(issueKeys, newStatusNames) {
                   issue.availableTransitions.get(newStatusName);
                 if (newStatusId == null) {
                   throw new Error(
-                    `List name “${newStatusName}” not found in JIRA. Available statuses: ${Array.from(issue.availableTransitions.keys()).join(', ')}`,
+                    `List name “${newStatusName}” not found in JIRA. Available statuses: ${[...issue.availableTransitions.keys()].join(', ')}`,
                   );
                 }
 

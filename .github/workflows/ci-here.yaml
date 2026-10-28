@@ -1,0 +1,66 @@
+name: 'CI'
+
+# Run this repository’s own reusable CI workflow on itself.
+#
+# Based on
+# https://github.com/verkstedt/.github/blob/main/workflow-templates/ci.yaml
+# with these modifications:
+# - Main branch is `v1`.
+# - Uses local reusable workflows (`./.github/workflows/…`), so changes
+#   to them are exercised in the PR that makes them.
+# - Added `lint:actions`
+
+on:
+  push:
+    branches:
+      - v1
+  pull_request:
+    types:
+      - opened
+      - reopened
+      - ready_for_review
+      - synchronize
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  ci:
+    name: 'CI'
+    uses: ./.github/workflows/ci.yaml
+    secrets: inherit
+    permissions:
+      actions: read
+      checks: write
+      contents: read
+      packages: read
+    with:
+      working-directory: .
+
+  lint-actions:
+    name: 'Lint actions'
+    runs-on: ubuntu-latest
+    needs:
+      - ci
+    steps:
+      - name: Setup
+        uses: verkstedt/actions/setup@v1
+        with:
+          working-directory: .
+      - name: Lint something else
+        working-directory: .
+        run: npm run lint:actions
+
+  notify-main-branch-failure:
+    name: Notify about failure on main branch
+    needs:
+      - ci
+      - lint-actions
+    if: ${{ !cancelled() && !contains(needs.*.result, 'cancelled') && github.event_name == 'push' && github.ref_name == github.event.repository.default_branch }}
+    uses: ./.github/workflows/notify-main-branch-failure.yaml
+    with:
+      status: ${{ contains(needs.*.result, 'failure') && 'failure' || 'success' }}
+    permissions:
+      actions: read
+    secrets: inherit
