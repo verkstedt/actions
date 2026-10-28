@@ -1,10 +1,30 @@
 import type {
+  Finding,
   LogContext,
   LogEntry,
   Logger,
   LogLevel,
   LogSink,
 } from './types.ts';
+
+/** `summary (url): detail, detail`, leaving out the parts it lacks. */
+export function formatFindingLog({ summary, url, details }: Finding): string {
+  const location = url ? ` (${url})` : '';
+  const rest = details?.length ? `: ${details.join(', ')}` : '';
+  return `${summary}${location}${rest}`;
+}
+
+/**
+ * `summary (url): reason`, or `summary (url): detail, detail — reason`,
+ * for a finding whose fix failed.
+ */
+export function formatFailureLog(
+  finding: Finding,
+  reason: string | undefined,
+): string {
+  const separator = finding.details?.length ? ' — ' : ': ';
+  return `${formatFindingLog(finding)}${separator}${(reason ?? '') || 'failed'}`;
+}
 
 /** `1/3. repo, check`, or as much of it as the context has. */
 export function formatLogPrefix({ repo, check }: LogContext): string {
