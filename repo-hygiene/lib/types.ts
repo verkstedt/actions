@@ -113,8 +113,9 @@ export namespace GitHub {
 
 export type Level = 'info' | 'warning' | 'error';
 
+/** `deferred`: an `onlyWithOthers` fix left for a run that opens a PR. */
 export type OutcomeStatus =
-  'fixed' | 'would-fix' | 'skipped' | 'failed' | 'none';
+  'fixed' | 'would-fix' | 'skipped' | 'deferred' | 'failed' | 'none';
 
 /** What the runner did about a finding. */
 export interface Outcome {
@@ -133,6 +134,8 @@ export interface FileFix {
   describe: string;
   /** Things reviewers should double-check, one PR body bullet each. */
   warnings?: Array<string>;
+  /** Not worth a PR on its own; applied only alongside other file fixes. */
+  onlyWithOthers?: boolean;
 }
 
 export interface ActionContext {

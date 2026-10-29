@@ -48001,8 +48001,12 @@ const HEADINGS = {
     opened: '*🆕 Opened PRs:*',
     fixed: '*🔧 Fixed:*',
     previous: '*🥶 Previously opened PRs:*',
+    deferred: '*⏳ Will be applied once another fix opens a PR:*',
 };
 const GROUP_ORDER = Object.keys(HEADINGS);
+/** Groups left out of Slack; the job summary lists them. */
+const SUMMARY_ONLY = ['deferred'];
+const SLACK_GROUP_ORDER = GROUP_ORDER.filter((key) => !SUMMARY_ONLY.includes(key));
 const DRY_RUN_HEADINGS = {
     opened: '*🆕 Would open PRs (dry run):*',
     fixed: '*🔧 Would fix (dry run):*',
@@ -48014,21 +48018,27 @@ const PARTIAL = {
     opened: true,
     fixed: true,
     previous: false,
+    deferred: false,
 };
 const MAX_DETAILS = 5;
 function classifyFixedFinding(finding) {
     return finding.fix?.kind === 'file' ? 'opened' : 'fixed';
 }
+/** Statuses that decide the group on their own. */
+const CLASSIFY_BY_STATUS = {
+    'skipped': () => 'previous',
+    'deferred': () => 'deferred',
+    'fixed': classifyFixedFinding,
+    'would-fix': classifyFixedFinding,
+};
 function classifyFinding(finding) {
     const status = finding.outcome?.status ?? 'none';
     if (status === 'failed' || finding.level === 'error') {
         return 'failed';
     }
-    if (status === 'skipped') {
-        return 'previous';
-    }
-    if (status === 'fixed' || status === 'would-fix') {
-        return classifyFixedFinding(finding);
+    const classifyByStatus = CLASSIFY_BY_STATUS[status];
+    if (classifyByStatus) {
+        return classifyByStatus(finding);
     }
     if (finding.level === 'warning' || finding.fix) {
         return 'attention';
@@ -48099,7 +48109,7 @@ function report(findings, { repoCount, dryRun, previews, runUrl }) {
         ? renderList(pickGroupHeading(key, groups[key]), renderGroupItems(key, groups[key], { details: true }))
         : []);
     const slackText = renderSlackText({
-        sections: Object.fromEntries(GROUP_ORDER.map((key) => [
+        sections: Object.fromEntries(SLACK_GROUP_ORDER.map((key) => [
             key,
             {
                 heading: pickGroupHeading(key, groups[key]),
@@ -48111,8 +48121,11 @@ function report(findings, { repoCount, dryRun, previews, runUrl }) {
                 }),
             },
         ])),
-        fillOrder: GROUP_ORDER.map((key) => ({ key, partial: PARTIAL[key] })),
-        showOrder: GROUP_ORDER,
+        fillOrder: SLACK_GROUP_ORDER.map((key) => ({
+            key,
+            partial: PARTIAL[key],
+        })),
+        showOrder: SLACK_GROUP_ORDER,
         runUrl,
     });
     const notify = groups.failed.length + groups.opened.length + groups.fixed.length > 0;
@@ -48762,13 +48775,30 @@ async function applyActionFixes(findings, { snapshot, run, pr, files }) {
     }
 }
 /**
+ * Mark the file findings deferred when every one of them is
+ * `onlyWithOthers`; returns the ones left to apply.
+ */
+function dropLoneOnlyWithOthers(fileFindings, snapshot) {
+    if (!fileFindings.every((f) => f.fix.onlyWithOthers)) {
+        return fileFindings;
+    }
+    for (const f of fileFindings) {
+        f.outcome = { status: 'deferred' };
+        const log = f.check
+            ? log_createLogger({ check: f.check }, snapshot.log)
+            : snapshot.log;
+        log.info(`${f.summary}; will be applied once another fix opens a PR`);
+    }
+    return [];
+}
+/**
  * Give every finding an outcome: compose one PR from the file fixes
  * (or render it in a dry run), then run the action fixes, `afterPr`
- * ones with the PR. Findings that already carry an outcome are left
- * as they are.
+ * ones with the PR. File fixes that are all `onlyWithOthers` are
+ * deferred. Findings that already carry an outcome are left as they are.
  */
 async function applyFixes(findings, snapshot, run) {
-    const fileFindings = findings.filter(isPending).filter(hasFileFix);
+    const fileFindings = dropLoneOnlyWithOthers(findings.filter(isPending).filter(hasFileFix), snapshot);
     const { pr, files, preview } = await applyFileFixes(fileFindings, findings, snapshot, run);
     await applyActionFixes(findings, { snapshot, run, pr, files });
     for (const finding of findings.filter(isPending)) {
@@ -49023,11 +49053,123 @@ async function auditRepo(octokit, repoMeta, { org, checks, log, ...run }) {
     };
 }
 
-;// CONCATENATED MODULE: external "node:path"
-const external_node_path_namespaceObject = __WEBPACK_EXTERNAL_createRequire(import.meta.url)("node:path");
 // EXTERNAL MODULE: ../node_modules/yaml/dist/index.js
 var dist = __nccwpck_require__(6637);
+;// CONCATENATED MODULE: ./lib/templates.ts
+/** The repo holding the org-wide templates the checks build from. */
+const TEMPLATE_REPO = { owner: 'verkstedt', repo: '.github' };
+
+;// CONCATENATED MODULE: ./lib/checks/ci-workflow.ts
+/**
+ * Keeps workflows created from the org-wide CI template in
+ * `verkstedt/.github` up to date.
+ *
+ * A workflow in `.github/workflows/` that, ignoring comments,
+ * formatting and key order, equals an earlier version of the template
+ * is replaced with the current one. That alone does not open a PR: the
+ * update is only applied alongside other fixes.
+ */
+
+
+
+const TEMPLATE_PATH = 'workflow-templates/ci.yaml';
+/** Matches tree paths, which start with `/`. */
+const WORKFLOW_RE = /^\/(\.github\/workflows\/[^/]+\.ya?ml)$/;
+let template = null;
+function requireLoadedTemplate() {
+    if (!template) {
+        throw new Error('ci-workflow check used before setup');
+    }
+    return template;
+}
+function sortKeys(value) {
+    if (Array.isArray(value)) {
+        return value.map(sortKeys);
+    }
+    if (value && typeof value === 'object') {
+        return Object.fromEntries(Object.entries(value)
+            .sort(([a], [b]) => a.localeCompare(b))
+            .map(([k, v]) => [k, sortKeys(v)]));
+    }
+    return value;
+}
+/**
+ * The YAML’s data as a string, so comments, formatting and key order
+ * do not matter; `null` when it does not parse.
+ */
+function canonicaliseYaml(content) {
+    try {
+        return JSON.stringify(sortKeys(dist.parse(content)));
+    }
+    catch {
+        return null;
+    }
+}
+/** The last 20 versions of the template, newest first, from its commit history. */
+async function loadCiTemplate(octokit) {
+    const { data: commits } = await octokit.rest.repos.listCommits({
+        ...TEMPLATE_REPO,
+        path: TEMPLATE_PATH,
+        per_page: 20,
+    });
+    const files = await Promise.all(commits.map(({ sha }) => tryGetContent(octokit, {
+        ...TEMPLATE_REPO,
+        paths: [TEMPLATE_PATH],
+        ref: sha,
+    })));
+    const versions = files.flatMap((file) => (file ? [file.content] : []));
+    if (versions.length === 0) {
+        throw new Error(`verkstedt/.github has no ${TEMPLATE_PATH}`);
+    }
+    const [content, ...earlier] = versions;
+    const current = canonicaliseYaml(content);
+    const outdated = new Set(earlier
+        .map(canonicaliseYaml)
+        .filter((c) => c !== null && c !== current));
+    return { content, outdated };
+}
+/**
+ * Workflows that equal an earlier version of the org-wide CI template
+ * get the current one, but only alongside other fixes.
+ */
+const ciWorkflow = {
+    name: 'ci-workflow',
+    opensPr: true,
+    setup: async (octokit) => {
+        template = await loadCiTemplate(octokit);
+    },
+    run: async (snapshot) => {
+        const { content, outdated } = requireLoadedTemplate();
+        const paths = (await snapshot.listPaths()).flatMap((p) => WORKFLOW_RE.exec(p)?.[1] ?? []);
+        const files = await Promise.all(paths.map((p) => snapshot.readFile(p)));
+        return paths.flatMap((path, i) => {
+            const file = files[i];
+            const canonical = file && canonicaliseYaml(file.content);
+            if (!canonical || !outdated.has(canonical)) {
+                return [];
+            }
+            return [
+                {
+                    level: 'info',
+                    summary: `\`${path}\` is based on an outdated CI template`,
+                    fix: {
+                        kind: 'file',
+                        path,
+                        content,
+                        lang: 'yaml',
+                        describe: `updated \`${path}\` to the latest [CI template](https://github.com/verkstedt/.github/blob/HEAD/${TEMPLATE_PATH})`,
+                        onlyWithOthers: true,
+                    },
+                },
+            ];
+        });
+    },
+};
+
+;// CONCATENATED MODULE: external "node:path"
+const external_node_path_namespaceObject = __WEBPACK_EXTERNAL_createRequire(import.meta.url)("node:path");
 ;// CONCATENATED MODULE: ./lib/dependabot-config.ts
+
 
 
 
@@ -49101,8 +49243,7 @@ function listUniqueBasenames(paths) {
  */
 async function loadDependabotTemplate(octokit) {
     const file = await tryGetContent(octokit, {
-        owner: 'verkstedt',
-        repo: '.github',
+        ...TEMPLATE_REPO,
         paths: ['templates/dependabot.yaml'],
     });
     if (!file) {
@@ -49587,12 +49728,12 @@ const codeowners = {
 
 /** Where dependabot looks for its config, in order of precedence. */
 const DEPENDABOT_PATHS = ['.github/dependabot.yaml', '.github/dependabot.yml'];
-let template = null;
-function requireLoadedTemplate() {
-    if (!template) {
+let dependabot_config_template = null;
+function dependabot_config_requireLoadedTemplate() {
+    if (!dependabot_config_template) {
         throw new Error('dependabot-config check used before setup');
     }
-    return template;
+    return dependabot_config_template;
 }
 /**
  * Every repo with a detected ecosystem has a dependabot config with an
@@ -49603,7 +49744,7 @@ const dependabotConfig = {
     name: 'dependabot-config',
     opensPr: true,
     setup: async (octokit) => {
-        template = await loadDependabotTemplate(octokit);
+        dependabot_config_template = await loadDependabotTemplate(octokit);
     },
     run: async (snapshot) => {
         const { detected, manifestDirsByEcosystem } = detectEcosystems(await snapshot.listPaths());
@@ -49612,7 +49753,7 @@ const dependabotConfig = {
             detected,
             manifestDirsByEcosystem,
             existing,
-            template: requireLoadedTemplate(),
+            template: dependabot_config_requireLoadedTemplate(),
             defaultBranch: snapshot.defaultBranch,
             log: snapshot.log,
         });
@@ -49864,12 +50005,15 @@ const repoSettings = {
 
 
 
+
 /** Every check the action runs, in order. */
 const allChecks = [
     repoSettings,
     dependabotReviewers,
     dependabotConfig,
     codeowners,
+    // Fixes from these are applied only when another fix opens a PR
+    ciWorkflow,
 ];
 /** Only whitespace, so commas in brace globs like `{a,b}` survive. */
 const REPOS_SEPARATOR_RE = /\s+/;

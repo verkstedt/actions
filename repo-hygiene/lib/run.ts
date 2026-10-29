@@ -1,4 +1,5 @@
 import { auditRepo } from './audit-repo.ts';
+import { ciWorkflow } from './checks/ci-workflow.ts';
 import { codeowners } from './checks/codeowners.ts';
 import { dependabotConfig } from './checks/dependabot-config.ts';
 import { dependabotReviewers } from './checks/dependabot-reviewers.ts';
@@ -17,6 +18,8 @@ export const allChecks: Array<Check> = [
   dependabotReviewers,
   dependabotConfig,
   codeowners,
+  // Fixes from these are applied only when another fix opens a PR
+  ciWorkflow,
 ];
 
 /** Only whitespace, so commas in brace globs like `{a,b}` survive. */

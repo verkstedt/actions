@@ -345,17 +345,41 @@ async function applyActionFixes(
 }
 
 /**
+ * Mark the file findings deferred when every one of them is
+ * `onlyWithOthers`; returns the ones left to apply.
+ */
+function dropLoneOnlyWithOthers(
+  fileFindings: Array<FileFinding>,
+  snapshot: RepoSnapshot,
+): Array<FileFinding> {
+  if (!fileFindings.every((f) => f.fix.onlyWithOthers)) {
+    return fileFindings;
+  }
+  for (const f of fileFindings) {
+    f.outcome = { status: 'deferred' };
+    const log = f.check
+      ? createLogger({ check: f.check }, snapshot.log)
+      : snapshot.log;
+    log.info(`${f.summary}; will be applied once another fix opens a PR`);
+  }
+  return [];
+}
+
+/**
  * Give every finding an outcome: compose one PR from the file fixes
  * (or render it in a dry run), then run the action fixes, `afterPr`
- * ones with the PR. Findings that already carry an outcome are left
- * as they are.
+ * ones with the PR. File fixes that are all `onlyWithOthers` are
+ * deferred. Findings that already carry an outcome are left as they are.
  */
 export async function applyFixes(
   findings: Array<Finding>,
   snapshot: RepoSnapshot,
   run: RunOptions,
 ): Promise<Applied> {
-  const fileFindings = findings.filter(isPending).filter(hasFileFix);
+  const fileFindings = dropLoneOnlyWithOthers(
+    findings.filter(isPending).filter(hasFileFix),
+    snapshot,
+  );
   const { pr, files, preview } = await applyFileFixes(
     fileFindings,
     findings,
