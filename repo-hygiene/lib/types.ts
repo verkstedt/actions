@@ -104,8 +104,10 @@ export namespace GitHub {
     has_issues: boolean;
     has_projects: boolean;
     has_wiki: boolean;
-    allow_auto_merge?: boolean;
-    delete_branch_on_merge?: boolean;
+    /** `null` or absent when the token cannot read it. */
+    allow_auto_merge?: boolean | null;
+    /** `null` or absent when the token cannot read it. */
+    delete_branch_on_merge?: boolean | null;
   }
 }
 

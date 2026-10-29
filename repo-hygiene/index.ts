@@ -3,7 +3,7 @@ import * as actionsGithub from '@actions/github';
 
 import { getErrorMessage } from './lib/github.ts';
 import { formatLogLine } from './lib/log.ts';
-import { publish } from './lib/report.ts';
+import { hasFailures, publish } from './lib/report.ts';
 import { runAudit } from './lib/run.ts';
 import type { LogSink } from './lib/types.ts';
 
@@ -59,6 +59,9 @@ async function main(): Promise<void> {
   });
 
   await publish(findings, { repoCount, dryRun: inputs.dryRun, previews });
+  if (hasFailures(findings)) {
+    core.setFailed('Some repos failed; see the summary.');
+  }
 }
 
 main().catch((error: unknown) => {

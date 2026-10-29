@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { renderSlackText, report } from './report.ts';
+import { hasFailures, renderSlackText, report } from './report.ts';
 import type { Finding } from './types.ts';
 
 const fillOrder = [
@@ -280,5 +280,27 @@ describe('report', () => {
       /## Slack message\n\n<details>\n<summary>Not sent: dry run<\/summary>/,
     );
     assert.match(outputs.slack_text, /Would open PRs \(dry run\)/);
+  });
+});
+
+describe('hasFailures', () => {
+  const base: Finding = { repo: 'org/r', level: 'info', summary: 's' };
+
+  it('is true for an error finding or a failed outcome', () => {
+    assert.equal(hasFailures([{ ...base, level: 'error' }]), true);
+    assert.equal(
+      hasFailures([{ ...base, outcome: { status: 'failed' } }]),
+      true,
+    );
+  });
+
+  it('is false for warnings and other outcomes', () => {
+    assert.equal(
+      hasFailures([
+        { ...base, level: 'warning' },
+        { ...base, outcome: { status: 'fixed' } },
+      ]),
+      false,
+    );
   });
 });

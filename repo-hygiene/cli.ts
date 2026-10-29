@@ -7,7 +7,7 @@ import { getOctokit } from '@actions/github';
 
 import { getErrorMessage } from './lib/github.ts';
 import { formatLogPrefix } from './lib/log.ts';
-import { report } from './lib/report.ts';
+import { hasFailures, report } from './lib/report.ts';
 import { runAudit } from './lib/run.ts';
 import type { LogSink } from './lib/types.ts';
 
@@ -94,11 +94,7 @@ try {
   });
   const { summary } = report(findings, { repoCount, dryRun: true, previews });
   process.stdout.write(`${summary}\n`);
-  const failed = findings.some(
-    (finding) =>
-      finding.level === 'error' || finding.outcome?.status === 'failed',
-  );
-  process.exitCode = failed ? 1 : 0;
+  process.exitCode = hasFailures(findings) ? 1 : 0;
 } catch (error) {
   process.stderr.write(`ERROR: ${getErrorMessage(error)}\n`);
   process.exitCode = 1;
