@@ -11,20 +11,21 @@ import { report } from './lib/report.ts';
 import { runAudit } from './lib/run.ts';
 import type { LogSink } from './lib/types.ts';
 
-const HELP = `Usage: repo-hygiene --org <org> [--repos <globs>]
+const HELP = `Audit the org’s repos the way the GitHub Action does, as a dry run.
 
-Audit the org’s repos the way the GitHub Action does, as a dry run:
-nothing is created or requested. Prints the progress, then the job
-summary the action would write, pull requests it would open included.
+Usage: repo-hygiene --org <org> [--repos <globs>]
+
+Nothing is created or requested. Prints the progress, then the job summary the action would write, pull requests it would open included.
 
 The GitHub token comes from $GITHUB_TOKEN, or from \`gh auth token\`.
 
 Options:
-  --org <org>      GitHub organisation to audit (required)
-  --repos <globs>  Only repos matching these picomatch globs, comma-,
-                   semicolon- or whitespace-separated. Single-quote
-                   them to avoid shell expansion.
-  -h, --help       Show this help
+  --org <org>
+      GitHub organisation to audit (required)
+  --repos <globs>
+      Only repos matching these picomatch globs, comma-, semicolon- or whitespace-separated. Single-quote them to avoid shell expansion.
+  -h, --help
+      Show this help
 
 Exit status is 1 when a repo could not be audited or a check failed.
 `;
