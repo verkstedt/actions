@@ -72,11 +72,13 @@ describe('runChecks', () => {
       },
       { repo: 'org/r', check: 'fine', level: 'info', summary: 'ok' },
     ]);
-    assert.deepEqual(log.calls.error, ['broken: check failed: kaboom']);
+    // `applyFixes` logs the finding, so it is not logged here as well.
+    assert.deepEqual(log.calls.error, []);
   });
 
-  it('fails a blind overwrite of a pending fix', async () => {
-    const snapshot = await fakeSnapshot();
+  it('fails and logs a blind overwrite of a pending fix', async () => {
+    const log = fakeLog();
+    const snapshot = await fakeSnapshot({ log });
     const findings = await runChecks(
       [
         check('first', async () => [
@@ -93,6 +95,9 @@ describe('runChecks', () => {
       status: 'failed',
       detail: 'blind check changed x without reading the pending fix for it',
     });
+    assert.deepEqual(log.calls.error, [
+      'blind: b: blind check changed x without reading the pending fix for it',
+    ]);
     assert.equal(snapshot.workingCopy.pending.get('x'), '1');
   });
 

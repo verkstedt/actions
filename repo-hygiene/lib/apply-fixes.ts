@@ -1,6 +1,6 @@
 import { parseCodeowners } from './codeowners.ts';
 import { commitChange, getErrorMessage } from './github.ts';
-import { createLogger } from './log.ts';
+import { createLogger, formatFailureLog, formatFindingLog } from './log.ts';
 import {
   chooseReviewers,
   CODEOWNERS_PATHS,
@@ -15,6 +15,7 @@ import type {
   FileFix,
   Finding,
   GitHub,
+  Logger,
   ReviewerSource,
 } from './types.ts';
 
@@ -281,6 +282,8 @@ interface FileFixesApplied {
   pr: GitHub.PullRequest | null;
   files: Record<string, string>;
   preview: string | null;
+  /** Set when opening the PR failed; logged once by `applyFileFixes`. */
+  prError?: string;
 }
 
 async function applyFileFixes(
@@ -317,11 +320,19 @@ async function applyFileFixes(
     return { pr, files, preview: null };
   } catch (e) {
     const detail = getErrorMessage(e);
+    snapshot.log.error(`could not open hygiene PR: ${detail}`);
     for (const f of fileFindings) {
       f.outcome = { status: 'failed', detail };
     }
-    return { pr: null, files, preview: null };
+    return { pr: null, files, preview: null, prError: detail };
   }
+}
+
+/** The repo’s logger, under the finding’s check when it has one. */
+function getFindingLogger(finding: Finding, snapshot: RepoSnapshot): Logger {
+  return finding.check
+    ? createLogger({ check: finding.check }, snapshot.log)
+    : snapshot.log;
 }
 
 interface ActionFixesContext {
@@ -329,17 +340,26 @@ interface ActionFixesContext {
   run: RunOptions;
   pr: GitHub.PullRequest | null;
   files: Record<string, string>;
+  /** See `FileFixesApplied.prError`. */
+  prError?: string;
 }
 
 async function applyActionFixes(
   findings: Array<Finding>,
-  { snapshot, run, pr, files }: ActionFixesContext,
+  { snapshot, run, pr, files, prError }: ActionFixesContext,
 ): Promise<void> {
   for (const finding of findings.filter(isPending).filter(hasActionFix)) {
     if (run.dryRun) {
       finding.outcome = { status: 'would-fix', detail: finding.fix.describe };
     } else {
       finding.outcome = await runAction(finding, snapshot, pr, files);
+      // An `afterPr` failure after a failed PR open only repeats its error.
+      const repeatsPrError = prError !== undefined && finding.fix.afterPr;
+      if (finding.outcome?.status === 'failed' && !repeatsPrError) {
+        getFindingLogger(finding, snapshot).error(
+          formatFailureLog(finding, finding.outcome.detail),
+        );
+      }
     }
   }
 }
@@ -357,10 +377,9 @@ function dropLoneOnlyWithOthers(
   }
   for (const f of fileFindings) {
     f.outcome = { status: 'deferred' };
-    const log = f.check
-      ? createLogger({ check: f.check }, snapshot.log)
-      : snapshot.log;
-    log.info(`${f.summary}; will be applied once another fix opens a PR`);
+    getFindingLogger(f, snapshot).info(
+      `${f.summary}; will be applied once another fix opens a PR`,
+    );
   }
   return [];
 }
@@ -380,21 +399,20 @@ export async function applyFixes(
     findings.filter(isPending).filter(hasFileFix),
     snapshot,
   );
-  const { pr, files, preview } = await applyFileFixes(
+  const { pr, files, preview, prError } = await applyFileFixes(
     fileFindings,
     findings,
     snapshot,
     run,
   );
 
-  await applyActionFixes(findings, { snapshot, run, pr, files });
+  await applyActionFixes(findings, { snapshot, run, pr, files, prError });
 
   for (const finding of findings.filter(isPending)) {
     finding.outcome = { status: 'none' };
-    const log = finding.check
-      ? createLogger({ check: finding.check }, snapshot.log)
-      : snapshot.log;
-    log.info(finding.summary);
+    getFindingLogger(finding, snapshot)[finding.level](
+      formatFindingLog(finding),
+    );
   }
   return { findings, preview };
 }

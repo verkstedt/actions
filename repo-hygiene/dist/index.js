@@ -47854,6 +47854,20 @@ async function listTargetRepos(octokit, { org, reposFilter }) {
 }
 
 ;// CONCATENATED MODULE: ./lib/log.ts
+/** `summary (url): detail, detail`, leaving out the parts it lacks. */
+function formatFindingLog({ summary, url, details }) {
+    const location = url ? ` (${url})` : '';
+    const rest = details?.length ? `: ${details.join(', ')}` : '';
+    return `${summary}${location}${rest}`;
+}
+/**
+ * `summary (url): reason`, or `summary (url): detail, detail — reason`,
+ * for a finding whose fix failed.
+ */
+function formatFailureLog(finding, reason) {
+    const separator = finding.details?.length ? ' — ' : ': ';
+    return `${formatFindingLog(finding)}${separator}${(reason ?? '') || 'failed'}`;
+}
 /** `1/3. repo, check`, or as much of it as the context has. */
 function formatLogPrefix({ repo, check }) {
     const parts = [
@@ -48758,19 +48772,31 @@ async function applyFileFixes(fileFindings, findings, snapshot, run) {
     }
     catch (e) {
         const detail = getErrorMessage(e);
+        snapshot.log.error(`could not open hygiene PR: ${detail}`);
         for (const f of fileFindings) {
             f.outcome = { status: 'failed', detail };
         }
-        return { pr: null, files, preview: null };
+        return { pr: null, files, preview: null, prError: detail };
     }
 }
-async function applyActionFixes(findings, { snapshot, run, pr, files }) {
+/** The repo’s logger, under the finding’s check when it has one. */
+function getFindingLogger(finding, snapshot) {
+    return finding.check
+        ? log_createLogger({ check: finding.check }, snapshot.log)
+        : snapshot.log;
+}
+async function applyActionFixes(findings, { snapshot, run, pr, files, prError }) {
     for (const finding of findings.filter(isPending).filter(hasActionFix)) {
         if (run.dryRun) {
             finding.outcome = { status: 'would-fix', detail: finding.fix.describe };
         }
         else {
             finding.outcome = await runAction(finding, snapshot, pr, files);
+            // An `afterPr` failure after a failed PR open only repeats its error.
+            const repeatsPrError = prError !== undefined && finding.fix.afterPr;
+            if (finding.outcome?.status === 'failed' && !repeatsPrError) {
+                getFindingLogger(finding, snapshot).error(formatFailureLog(finding, finding.outcome.detail));
+            }
         }
     }
 }
@@ -48784,10 +48810,7 @@ function dropLoneOnlyWithOthers(fileFindings, snapshot) {
     }
     for (const f of fileFindings) {
         f.outcome = { status: 'deferred' };
-        const log = f.check
-            ? log_createLogger({ check: f.check }, snapshot.log)
-            : snapshot.log;
-        log.info(`${f.summary}; will be applied once another fix opens a PR`);
+        getFindingLogger(f, snapshot).info(`${f.summary}; will be applied once another fix opens a PR`);
     }
     return [];
 }
@@ -48799,14 +48822,11 @@ function dropLoneOnlyWithOthers(fileFindings, snapshot) {
  */
 async function applyFixes(findings, snapshot, run) {
     const fileFindings = dropLoneOnlyWithOthers(findings.filter(isPending).filter(hasFileFix), snapshot);
-    const { pr, files, preview } = await applyFileFixes(fileFindings, findings, snapshot, run);
-    await applyActionFixes(findings, { snapshot, run, pr, files });
+    const { pr, files, preview, prError } = await applyFileFixes(fileFindings, findings, snapshot, run);
+    await applyActionFixes(findings, { snapshot, run, pr, files, prError });
     for (const finding of findings.filter(isPending)) {
         finding.outcome = { status: 'none' };
-        const log = finding.check
-            ? log_createLogger({ check: finding.check }, snapshot.log)
-            : snapshot.log;
-        log.info(finding.summary);
+        getFindingLogger(finding, snapshot)[finding.level](formatFindingLog(finding));
     }
     return { findings, preview };
 }
@@ -48834,6 +48854,7 @@ function acceptFileFix(finding, check, snapshot, fixedByThisCheck) {
             status: 'failed',
             detail: `${check.name} check changed ${path} without reading the pending fix for it`,
         };
+        log_createLogger({ check: check.name }, snapshot.log).error(formatFailureLog(finding, finding.outcome.detail));
     }
     else {
         snapshot.workingCopy.attach(path, finding.fix.content);
@@ -48842,7 +48863,6 @@ function acceptFileFix(finding, check, snapshot, fixedByThisCheck) {
 }
 function createErrorFinding(check, error, snapshot) {
     const message = getErrorMessage(error);
-    snapshot.log.error(`check failed: ${message}`);
     return {
         repo: `${snapshot.org}/${snapshot.repo}`,
         check: check.name,

@@ -208,6 +208,39 @@ describe('applyFixes', () => {
     }
   });
 
+  it('logs a failed PR open once, not again per finding or afterPr action', async () => {
+    const log = fakeLog();
+    const snapshot = await fakeSnapshot({
+      log,
+      handlers: {
+        'pulls.create': () => {
+          throw createHttpError(403, 'forbidden');
+        },
+      },
+    });
+    snapshot.workingCopy.attach('x', '1');
+    const afterPr: ActionFix = {
+      kind: 'action',
+      afterPr: true,
+      describe: 'comment',
+      run: async () => 'commented',
+    };
+    const result = await applyFixes(
+      [
+        finding({ fix: file('x', '1') }),
+        finding({ fix: file('y', '2') }),
+        finding({ fix: afterPr }),
+      ],
+      snapshot,
+      run,
+    );
+    assert.deepEqual(log.calls.error, ['could not open hygiene PR: forbidden']);
+    assert.deepEqual(
+      result.findings.map((f) => f.outcome?.status),
+      ['failed', 'failed', 'failed'],
+    );
+  });
+
   it('runs actions in isolation and maps their results to outcomes', async () => {
     const snapshot = await fakeSnapshot();
     const action = (runFn: ActionFix['run']): ActionFix => ({
@@ -299,6 +332,85 @@ describe('applyFixes', () => {
     assert.deepEqual(log.calls.info, [
       'opened https://p/42',
       'nothing to do here',
+    ]);
+  });
+
+  it('logs findings with no fix at their level, with URL and details', async () => {
+    const log = fakeLog();
+    const snapshot = await fakeSnapshot({ log });
+    await applyFixes(
+      [
+        finding({
+          level: 'error',
+          summary: 'could not check',
+          url: 'https://p/1',
+          details: ['boom'],
+        }),
+        finding({ level: 'warning', summary: 'nobody', details: ['a', 'b'] }),
+      ],
+      snapshot,
+      run,
+    );
+    assert.deepEqual(log.calls.error, ['could not check (https://p/1): boom']);
+    assert.deepEqual(log.calls.warning, ['nobody: a, b']);
+    assert.deepEqual(log.calls.info, []);
+  });
+
+  it('logs a failed action as an error where it fails', async () => {
+    const log = fakeLog();
+    const snapshot = await fakeSnapshot({ log });
+    const action: ActionFix = {
+      kind: 'action',
+      describe: 'update',
+      run: async () => {
+        throw new Error('forbidden');
+      },
+    };
+    await applyFixes(
+      [
+        finding({ summary: 'settings differ', fix: action }),
+        finding({
+          summary: 'conflicted',
+          fix: file('x', '2'),
+          outcome: { status: 'failed', detail: 'conflict' },
+        }),
+      ],
+      snapshot,
+      run,
+    );
+    // The already failed finding was logged by `runChecks`, not here.
+    assert.deepEqual(log.calls.error, ['settings differ: forbidden']);
+  });
+
+  it('logs a failed action with its URL, and details before the reason', async () => {
+    const log = fakeLog();
+    const snapshot = await fakeSnapshot({ log });
+    const failing: ActionFix = {
+      kind: 'action',
+      describe: 'act',
+      run: async () => {
+        throw new Error('forbidden');
+      },
+    };
+    await applyFixes(
+      [
+        finding({
+          summary: 'no reviewers',
+          url: 'https://p/12',
+          fix: failing,
+        }),
+        finding({
+          summary: 'settings differ',
+          details: ['disable the wiki', 'allow auto-merge'],
+          fix: failing,
+        }),
+      ],
+      snapshot,
+      run,
+    );
+    assert.deepEqual(log.calls.error, [
+      'no reviewers (https://p/12): forbidden',
+      'settings differ: disable the wiki, allow auto-merge — forbidden',
     ]);
   });
 

@@ -1,5 +1,5 @@
 import { getErrorMessage } from './github.ts';
-import { createLogger } from './log.ts';
+import { createLogger, formatFailureLog } from './log.ts';
 import type { RepoSnapshot } from './snapshot.ts';
 import type { Check, CheckFinding, Finding } from './types.ts';
 
@@ -29,6 +29,9 @@ function acceptFileFix(
       status: 'failed',
       detail: `${check.name} check changed ${path} without reading the pending fix for it`,
     };
+    createLogger({ check: check.name }, snapshot.log).error(
+      formatFailureLog(finding, finding.outcome.detail),
+    );
   } else {
     snapshot.workingCopy.attach(path, finding.fix.content);
     fixedByThisCheck.add(path);
@@ -41,7 +44,6 @@ function createErrorFinding(
   snapshot: RepoSnapshot,
 ): Finding {
   const message = getErrorMessage(error);
-  snapshot.log.error(`check failed: ${message}`);
   return {
     repo: `${snapshot.org}/${snapshot.repo}`,
     check: check.name,
