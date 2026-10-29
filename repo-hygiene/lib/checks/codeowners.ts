@@ -44,7 +44,7 @@ export const codeowners: Check = {
   name: 'codeowners',
   opensPr: true,
   run: async (snapshot) => {
-    const { requiredCodeowners } = detectEcosystems(await snapshot.listPaths());
+    const { requiredCodeowners } = await detectEcosystems(snapshot);
     const existing = await snapshot.readFirstExistingFile(CODEOWNERS_PATHS);
     const parsedLines = parseCodeowners(existing ? existing.content : '');
 
