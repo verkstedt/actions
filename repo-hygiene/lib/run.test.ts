@@ -3,7 +3,7 @@ import { describe, it } from 'node:test';
 
 import { createHttpError, listCallsTo } from './__fixtures__/octokit.ts';
 import { fakeRepo } from './__fixtures__/repo.ts';
-import { runAudit } from './run.ts';
+import { parseReposFilter, runAudit } from './run.ts';
 import type { Check, LogEntry } from './types.ts';
 
 const repos = [
@@ -33,7 +33,7 @@ describe('runAudit', () => {
     const { findings, previews, repoCount } = await runAudit(octokit, {
       org: 'org',
       dryRun: true,
-      reposFilter: [],
+      repos: '',
       runId: 0,
       runAttempt: 0,
       requireAppAccess: false,
@@ -82,7 +82,7 @@ describe('runAudit', () => {
     const { findings } = await runAudit(octokit, {
       org: 'org',
       dryRun: true,
-      reposFilter: [],
+      repos: '',
       runId: 0,
       runAttempt: 0,
       requireAppAccess: false,
@@ -93,5 +93,19 @@ describe('runAudit', () => {
       findings.map((f) => [f.repo, f.level, f.details]),
       [['org/a', 'error', ['boom']]],
     );
+  });
+});
+
+describe('parseReposFilter', () => {
+  it('splits on whitespace only, keeping brace globs whole', () => {
+    assert.deepEqual(parseReposFilter(' a\n b-{c,d}\t e* '), [
+      'a',
+      'b-{c,d}',
+      'e*',
+    ]);
+  });
+
+  it('returns nothing for an empty value', () => {
+    assert.deepEqual(parseReposFilter(''), []);
   });
 });
