@@ -53,7 +53,7 @@ outputs:
   package-manager:
     description: >
       Detected package manager.
-      (npm or yarn)
+      (npm, yarn, or pnpm)
     value: ${{ steps.package-manager.outputs.package-manager }}
 
 runs:
@@ -86,23 +86,81 @@ runs:
 
     - name: Calculate cache key parts
       id: cache-keys
-      uses: verkstedt/actions/cache-keys@v1
+      uses: verkstedt/actions/cache-keys@chore/pnpm-support
       with:
         working-directory: ${{ inputs.working-directory }}
 
-    - name: Find all node_modules paths
+    - name: Determine package manager
+      id: package-manager
+      working-directory: ${{ inputs.working-directory }}
+      shell: bash
+      run: |
+        # pnpm first: mid-migration a repo may still have package-lock.json too.
+        if [ -e "pnpm-lock.yaml" ]
+        then
+          echo "package-manager=pnpm" >> "$GITHUB_OUTPUT"
+        elif [ -e "yarn.lock" ]
+        then
+          echo "package-manager=yarn" >> "$GITHUB_OUTPUT"
+        elif [ -e "package-lock.json" ]
+        then
+          echo "package-manager=npm" >> "$GITHUB_OUTPUT"
+        else
+          echo "ERROR: Could not determine package manager. No pnpm-lock.yaml, yarn.lock, or package-lock.json found." >&2
+          exit 66 # EX_NOINPUT
+        fi
+
+    - name: Enable Corepack for pnpm
+      if: steps.package-manager.outputs['package-manager'] == 'pnpm'
+      shell: bash
+      run: corepack enable
+
+    - name: Get pnpm store directory
+      if: steps.package-manager.outputs['package-manager'] == 'pnpm'
+      id: pnpm-store
+      working-directory: ${{ inputs.working-directory }}
+      shell: bash
+      run: echo "path=$(pnpm store path)" >> "$GITHUB_OUTPUT"
+
+    - name: Find all cacheable paths
       id: cache-paths
       shell: sh
       run: |
         {
           echo 'paths<<PATHS'
-          {
-            echo 'node_modules/'
-            jq -r '.workspaces // [] | .[] + "/node_modules/"' package.json
-            echo '.yarn/install-state.gz'
-          } | sed 's~^~${{ inputs.working-directory }}/~'
+          # Only set for pnpm: the "Get pnpm store directory" step is skipped otherwise.
+          if [ -n "${{ steps.pnpm-store.outputs.path }}" ]
+          then
+            # pnpm: cache the store only. node_modules is a symlink farm pointing
+            # into it, and install always runs for pnpm (see below), so archiving
+            # it would cost a lot of file operations to no benefit.
+            echo '${{ steps.pnpm-store.outputs.path }}'
+          else
+            {
+              echo 'node_modules/'
+              jq -r '.workspaces // [] | .[] + "/node_modules/"' "${{ inputs.working-directory }}/package.json"
+              echo '.yarn/install-state.gz'
+            } | sed 's~^~${{ inputs.working-directory }}/~'
+          fi
           echo 'PATHS'
         } >> "$GITHUB_OUTPUT"
+
+    - name: Set up GitHub npm registry authentication
+      if: inputs.github-npm-registry-personal-access-token
+      shell: bash
+      env:
+        GITHUB_NPM_REGISTRY_PERSONAL_ACCESS_TOKEN: ${{ inputs.github-npm-registry-personal-access-token }}
+      run: |
+        # Keep config where it’s wiped with the job to avoid it being persisted
+        NPMRC="$RUNNER_TEMP/setup-registry.npmrc"
+        touch "$NPMRC"
+        chmod 600 "$NPMRC"
+        {
+          cat "$HOME/.npmrc" 2>/dev/null
+          printf '//npm.pkg.github.com/:_authToken=%s\n' \
+            "$GITHUB_NPM_REGISTRY_PERSONAL_ACCESS_TOKEN"
+        } > "$NPMRC"
+        echo "NPM_CONFIG_USERCONFIG=$NPMRC" >> "$GITHUB_ENV"
 
     - name: Restore cache
       id: cache
@@ -111,35 +169,16 @@ runs:
       with:
         path: ${{ steps.cache-paths.outputs.paths }}
         key: |
-          npm--${{ steps.cache-keys.outputs.os }}--${{ steps.cache-keys.outputs.node }}--${{ steps.cache-keys.outputs.packageJson }}--${{ steps.cache-keys.outputs.packageJsonLock }}--v2
+          npm--${{ steps.cache-keys.outputs.os }}--${{ steps.cache-keys.outputs.node }}--${{ steps.cache-keys.outputs.packageJson }}--${{ steps.cache-keys.outputs.packageJsonLock }}--v3
         restore-keys: |
           npm--${{ steps.cache-keys.outputs.os }}--${{ steps.cache-keys.outputs.node }}--${{ steps.cache-keys.outputs.packageJson }}--
           npm--${{ steps.cache-keys.outputs.os }}--${{ steps.cache-keys.outputs.node }}--
 
-    - name: Set up GitHub npm registry authentication
-      if: inputs.github-npm-registry-personal-access-token
-      shell: bash
-      run: |
-        echo "//npm.pkg.github.com/:_authToken=${{ inputs.github-npm-registry-personal-access-token }}" >> ~/.npmrc
-
-    - name: Determine package manager
-      id: package-manager
-      working-directory: ${{ inputs.working-directory }}
-      shell: bash
-      run: |
-        if [ -e "yarn.lock" ]
-        then
-          echo "package-manager=yarn" >> "$GITHUB_OUTPUT"
-        elif [ -e "package-lock.json" ]
-        then
-          echo "package-manager=npm" >> "$GITHUB_OUTPUT"
-        else
-          echo "ERROR: Could not determine package manager. Neither package-lock.json nor yarn.lock found." >&2
-          exit 66 # EX_NOINPUT
-        fi
-
     - name: Install dependencies
-      if: steps.cache.outputs.cache-hit != 'true'
+      # pnpm caches only the store, not node_modules — so a warm-cache run must STILL install to
+      # materialise node_modules from the store (fast, no downloads). npm/yarn cache node_modules
+      # directly, so they keep skipping install on a cache hit.
+      if: steps.cache.outputs.cache-hit != 'true' || steps.package-manager.outputs['package-manager'] == 'pnpm'
       working-directory: ${{ inputs.working-directory }}
       shell: bash
       env:
@@ -151,29 +190,44 @@ runs:
           export GH_REGISTRY_TOKEN="$GITHUB_NPM_REGISTRY_PERSONAL_ACCESS_TOKEN"
         fi
 
-        if [ "${{ steps.package-manager.outputs['package-manager'] }}" = "yarn" ]
-        then
-          yarn install --immutable
-        else
-          npm ci
-        fi
+        case "${{ steps.package-manager.outputs['package-manager'] }}" in
+          pnpm)
+            pnpm install --frozen-lockfile
+            ;;
+          yarn)
+            yarn install --immutable
+            ;;
+          *)
+            npm ci
+            ;;
+        esac
 
     - name: Verify the integrity of provenance attestations and registry signatures for installed dependencies
-      if: steps.cache.outputs.cache-hit != 'true' && steps.package-manager.outputs['package-manager'] == 'npm'
+      # pnpm supports the same subcommand: https://pnpm.io/cli/audit#signatures
+      # yarn (berry) does not, so it stays excluded.
+      if: >
+        steps.cache.outputs.cache-hit != 'true'
+        && (
+          steps.package-manager.outputs['package-manager'] == 'npm'
+          || steps.package-manager.outputs['package-manager'] == 'pnpm'
+        )
       working-directory: ${{ inputs.working-directory }}
       shell: bash
       run: |
         if [ 0 -lt "$( jq -r '( .dependencies + .devDependencies ) // {} | to_entries | length' package.json )" ]
         then
-          npm audit signatures
+          ${{ steps.package-manager.outputs['package-manager'] }} audit signatures
         fi
 
     - name: Run prepare npm script
+      # Only needed for npm/yarn, where install is skipped on a cache hit. `pnpm
+      # install` always runs (see above) and executes prepare/postinstall itself.
       if: >
         steps.cache.outputs.cache-hit == 'true'
+        && steps.package-manager.outputs['package-manager'] != 'pnpm'
         && (
-          contains(needs.initial-setup.outputs.scripts, ',prepare,')
-          || contains(needs.initial-setup.outputs.scripts, ',postinstall,')
+          contains(steps.scripts.outputs.scripts, ',prepare,')
+          || contains(steps.scripts.outputs.scripts, ',postinstall,')
         )
       working-directory: ${{ inputs.working-directory }}
       shell: bash
@@ -198,4 +252,4 @@ runs:
       with:
         path: ${{ steps.cache-paths.outputs.paths }}
         key: |
-          npm--${{ steps.cache-keys.outputs.os }}--${{ steps.cache-keys.outputs.node }}--${{ steps.cache-keys.outputs.packageJson }}--${{ steps.cache-keys.outputs.packageJsonLock }}--v2
+          npm--${{ steps.cache-keys.outputs.os }}--${{ steps.cache-keys.outputs.node }}--${{ steps.cache-keys.outputs.packageJson }}--${{ steps.cache-keys.outputs.packageJsonLock }}--v3
