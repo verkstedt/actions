@@ -223,19 +223,39 @@ function formatDetails(details: Array<string>): string {
   return rest > 0 ? `${shown.join(', ')} and ${rest} more` : shown.join(', ');
 }
 
+/**
+ * Either a span kept as it is — a `<…>` Slack link, a code span
+ * delimited by any number of backticks, or a bare URL — or an `@user`
+ * / `@org/team` handle that is not part of an email or path.
+ */
+const HANDLE_OR_PROTECTED_RE =
+  /(<[^>]*>|(`+)[\s\S]*?\2(?!`)|\bhttps?:\/\/\S+)|(?<![\w./@-])@[\w-]+(?:\/[\w.-]+)?/g;
+
+/**
+ * Wrap GitHub `@user` and `@org/team` handles in backticks. Slack
+ * resolves a bare `@name` to the workspace member with that username,
+ * so e.g. `@verkstedt/team` would mention whoever is `verkstedt` there.
+ */
+export function quoteHandles(text: string): string {
+  return text.replace(
+    HANDLE_OR_PROTECTED_RE,
+    (match, protectedSpan?: string) => (protectedSpan ? match : `\`${match}\``),
+  );
+}
+
 function formatFindingLine(
   finding: Finding,
   { summary, details }: { summary: boolean; details: boolean },
 ): string {
   const parts = [formatLocation(finding)];
   if (summary) {
-    parts.push(finding.summary);
+    parts.push(quoteHandles(finding.summary));
   }
   if (finding.outcome?.detail) {
-    parts.push(finding.outcome.detail);
+    parts.push(quoteHandles(finding.outcome.detail));
   }
   if (details && finding.details && finding.details.length > 0) {
-    parts.push(formatDetails(finding.details));
+    parts.push(quoteHandles(formatDetails(finding.details)));
   }
   return parts.join(' — ');
 }
