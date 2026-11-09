@@ -1,12 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import {
-  hasFailures,
-  quoteHandles,
-  renderSlackText,
-  report,
-} from './report.ts';
+import { hasFailures, renderSlackText, report } from './report.ts';
 import type { Finding } from './types.ts';
 
 const fillOrder = [
@@ -219,16 +214,16 @@ describe('report', () => {
         '',
         '*⚠️ Needs attention:*',
         '1. api: <https://p/121> — Dependabot PR has no reviewers and CODEOWNERS names nobody — a, b, c, d, e and 2 more',
-        '2. api: <https://p/119> — Dependabot PR has no reviewers — none of `@gone` could be requested',
+        '2. api: <https://p/119> — Dependabot PR has no reviewers — none of @gone could be requested',
         '',
         '*🆕 Opened PRs:*',
-        '1. shop: <https://p/42> — reviewers: `@alice`, `@org/web`',
+        '1. shop: <https://p/42> — reviewers: @alice, @org/web',
         '',
         '*🔧 Fixed:*',
-        '1. api: <https://p/118> — Dependabot PR has no reviewers — requested `@bob`',
+        '1. api: <https://p/118> — Dependabot PR has no reviewers — requested @bob',
         '',
         '*🥶 Previously opened PRs:*',
-        '1. docs: <https://p/7> — reviewer: `@carol`',
+        '1. docs: <https://p/7> — reviewer: @carol',
         '',
         '*⏳ Will be applied once another fix opens a PR:*',
         '1. later — outdated CI template',
@@ -288,7 +283,7 @@ describe('report', () => {
     );
     assert.match(
       summary,
-      /\*🔧 Would fix \(dry run\):\*\n1\. api: <https:\/\/p\/118> — Dependabot PR has no reviewers — request `@bob`\n/,
+      /\*🔧 Would fix \(dry run\):\*\n1\. api: <https:\/\/p\/118> — Dependabot PR has no reviewers — request @bob\n/,
     );
     assert.match(summary, /\n### `org\/shop`: chore: Repo hygiene\n…\n/);
     assert.match(
@@ -317,45 +312,6 @@ describe('hasFailures', () => {
         { ...base, outcome: { status: 'fixed' } },
       ]),
       false,
-    );
-  });
-});
-
-describe('quoteHandles', () => {
-  it('wraps user and team handles in backticks', () => {
-    assert.equal(
-      quoteHandles('@a requested (@org/team-x), @b.'),
-      '`@a` requested (`@org/team-x`), `@b`.',
-    );
-  });
-
-  it('leaves emails and URLs alone', () => {
-    assert.equal(
-      quoteHandles('me@example.com <https://x/@y>'),
-      'me@example.com <https://x/@y>',
-    );
-  });
-
-  it('wraps handles in quotes', () => {
-    assert.equal(quoteHandles('reviewer: "@alice"'), 'reviewer: "`@alice`"');
-  });
-
-  it('leaves Slack links and code spans alone', () => {
-    assert.equal(
-      quoteHandles('<https://x/foo,@y|a @b> `@OWNER` @c'),
-      '<https://x/foo,@y|a @b> `@OWNER` `@c`',
-    );
-  });
-
-  it('leaves code spans with multiple backticks alone', () => {
-    assert.equal(quoteHandles('`` @OWNER ``'), '`` @OWNER ``');
-    assert.equal(quoteHandles('`` `@OWNER` ``'), '`` `@OWNER` ``');
-  });
-
-  it('leaves bare URLs alone', () => {
-    assert.equal(
-      quoteHandles('>https://x/foo,@y|a @b<'),
-      '>https://x/foo,@y|a `@b`<',
     );
   });
 });
