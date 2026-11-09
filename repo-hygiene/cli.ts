@@ -92,7 +92,12 @@ try {
     requireAppAccess: false,
     log,
   });
-  const { summary } = report(findings, { repoCount, dryRun: true, previews });
+  const { summary } = report(findings, {
+    repoCount,
+    dryRun: true,
+    previews,
+    serverUrl: process.env.GITHUB_SERVER_URL,
+  });
   process.stdout.write(`${summary}\n`);
   process.exitCode = hasFailures(findings) ? 1 : 0;
 } catch (error) {

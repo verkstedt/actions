@@ -16,7 +16,7 @@ const prItems = (prefix: string, count: number) =>
   Array.from(
     { length: count },
     (_, i) =>
-      `<https://github.com/org/${prefix}-${i}/pull/1> — no reviewer assigned`,
+      `<https://gh.test/org/${prefix}-${i}/pull/1> — no reviewer assigned`,
   );
 
 describe('renderSlackText', () => {
@@ -90,7 +90,13 @@ describe('renderSlackText', () => {
 });
 
 describe('report', () => {
-  const options = { repoCount: 5, dryRun: false, previews: [], runUrl };
+  const options = {
+    repoCount: 5,
+    dryRun: false,
+    previews: [],
+    runUrl,
+    serverUrl: 'https://gh.test',
+  };
   const findings: Array<Finding> = [
     {
       repo: 'org/legacy',
@@ -103,7 +109,7 @@ describe('report', () => {
       repo: 'org/api',
       level: 'warning',
       summary: 'Dependabot PR has no reviewers and CODEOWNERS names nobody',
-      url: 'https://p/121',
+      url: 'https://p/pull/121',
       details: ['a', 'b', 'c', 'd', 'e', 'f', 'g'],
       outcome: { status: 'none' },
     },
@@ -111,7 +117,7 @@ describe('report', () => {
       repo: 'org/api',
       level: 'info',
       summary: 'Dependabot PR has no reviewers',
-      url: 'https://p/119',
+      url: 'https://p/pull/119',
       fix: {
         kind: 'action',
         describe: 'request @gone',
@@ -132,7 +138,7 @@ describe('report', () => {
       },
       outcome: {
         status: 'fixed',
-        url: 'https://p/42',
+        url: 'https://p/pull/42',
         detail: 'reviewers: @alice, @org/web',
       },
     },
@@ -149,7 +155,7 @@ describe('report', () => {
       },
       outcome: {
         status: 'fixed',
-        url: 'https://p/42',
+        url: 'https://p/pull/42',
         detail: 'reviewers: @alice, @org/web',
       },
     },
@@ -157,7 +163,7 @@ describe('report', () => {
       repo: 'org/api',
       level: 'info',
       summary: 'Dependabot PR has no reviewers',
-      url: 'https://p/118',
+      url: 'https://p/pull/118',
       fix: {
         kind: 'action',
         describe: 'request @bob',
@@ -169,10 +175,10 @@ describe('report', () => {
       repo: 'org/docs',
       level: 'info',
       summary: 'hygiene PR already open',
-      url: 'https://p/7',
+      url: 'https://p/pull/7',
       outcome: {
         status: 'skipped',
-        url: 'https://p/7',
+        url: 'https://p/pull/7',
         detail: 'reviewer: @carol',
       },
     },
@@ -209,24 +215,24 @@ describe('report', () => {
         '`repo-hygiene` run complete, 5 repo(s) checked.',
         '',
         '*💥 Failed:*',
-        '1. legacy — could not list open PRs — Resource not accessible by integration',
-        '2. broken — add x — forbidden',
+        '1. [legacy](https://gh.test/org/legacy) — could not list open PRs — Resource not accessible by integration',
+        '2. [broken](https://gh.test/org/broken) — add x — forbidden',
         '',
         '*⚠️ Needs attention:*',
-        '1. api: <https://p/121> — Dependabot PR has no reviewers and CODEOWNERS names nobody — a, b, c, d, e and 2 more',
-        '2. api: <https://p/119> — Dependabot PR has no reviewers — none of @gone could be requested',
+        '1. [api#121](https://p/pull/121) — Dependabot PR has no reviewers and CODEOWNERS names nobody — a, b, c, d, e and 2 more',
+        '2. [api#119](https://p/pull/119) — Dependabot PR has no reviewers — none of @gone could be requested',
         '',
         '*🆕 Opened PRs:*',
-        '1. shop: <https://p/42> — reviewers: @alice, @org/web',
+        '1. [shop#42](https://p/pull/42) — reviewers: @alice, @org/web',
         '',
         '*🔧 Fixed:*',
-        '1. api: <https://p/118> — Dependabot PR has no reviewers — requested @bob',
+        '1. [api#118](https://p/pull/118) — Dependabot PR has no reviewers — requested @bob',
         '',
         '*🥶 Previously opened PRs:*',
-        '1. docs: <https://p/7> — reviewer: @carol',
+        '1. [docs#7](https://p/pull/7) — reviewer: @carol',
         '',
         '*⏳ Will be applied once another fix opens a PR:*',
-        '1. later — outdated CI template',
+        '1. [later](https://gh.test/org/later) — outdated CI template',
         '',
       ].join('\n'),
     );
@@ -238,9 +244,12 @@ describe('report', () => {
     assert.equal(outputs.slack_status, 'failure');
     assert.match(
       outputs.slack_text,
-      /\*💥 Failed:\*\n1\. legacy — could not list open PRs — Resource/,
+      /\*💥 Failed:\*\n1\. <https:\/\/gh\.test\/org\/legacy\|legacy> — could not list open PRs — Resource/,
     );
-    assert.match(outputs.slack_text, /names nobody\n2\. api/);
+    assert.match(
+      outputs.slack_text,
+      /names nobody\n2\. <https:\/\/p\/pull\/119\|api#119> —/,
+    );
     assert.doesNotMatch(outputs.slack_text, /names nobody — a, b/);
     assert.doesNotMatch(outputs.slack_text, /Will be applied|later/);
     assert.match(
@@ -279,11 +288,15 @@ describe('report', () => {
     });
     assert.match(
       summary,
-      /\*🆕 Would open PRs \(dry run\):\*\n1\. shop — created a\n/,
+      /\*🆕 Would open PRs \(dry run\):\*\n1\. \[shop\]\(https:\/\/gh\.test\/org\/shop\) — created a\n/,
     );
     assert.match(
       summary,
-      /\*🔧 Would fix \(dry run\):\*\n1\. api: <https:\/\/p\/118> — Dependabot PR has no reviewers — request @bob\n/,
+      /\*🔧 Would fix \(dry run\):\*\n1\. \[api#118\]\(https:\/\/p\/pull\/118\) — Dependabot PR has no reviewers — request @bob\n/,
+    );
+    assert.match(
+      outputs.slack_text,
+      /\*🔧 Would fix \(dry run\):\*\n1\. <https:\/\/p\/pull\/118\|api#118> — Dependabot PR has no reviewers — request @bob\n/,
     );
     assert.match(summary, /\n### `org\/shop`: chore: Repo hygiene\n…\n/);
     assert.match(
