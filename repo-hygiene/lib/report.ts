@@ -134,6 +134,8 @@ export interface ReportOptions {
   /** Rendered dry-run PRs, one per repo. */
   previews: Array<string>;
   runUrl?: string;
+  /** Defaults to `https://github.com`. */
+  serverUrl?: string;
 }
 
 /** Report groups with their headings, in the order they are shown. */
@@ -206,14 +208,34 @@ function classifyFinding(finding: Finding): GroupKey | null {
   return null;
 }
 
+/** PR number at the end of a pull request URL. */
+const PULL_NUMBER_RE = /\/pull\/(\d+)\/?$/;
+
+/** Slack mrkdwn or GitHub Markdown, for the job summary. */
+type Markup = 'slack' | 'markdown';
+
+/** How to render links to findings. */
+interface LinkStyle {
+  markup: Markup;
+  /** Base for links to repositories, e.g. `https://github.com`. */
+  serverUrl: string;
+}
+
 /**
- * `repo` or `repo: <url>`, without the org: every finding in a run
- * shares it.
+ * A link to the finding’s URL, labelled `repo#123` for pull requests and
+ * `repo` otherwise; to the repository itself when the finding has no
+ * URL. The org is left out: every finding in a run shares it.
  */
-function formatLocation(finding: Finding): string {
-  const url = finding.outcome?.url ?? finding.url;
+function formatLocation(
+  finding: Finding,
+  { markup, serverUrl }: LinkStyle,
+): string {
+  const url =
+    finding.outcome?.url ?? finding.url ?? `${serverUrl}/${finding.repo}`;
   const name = finding.repo.slice(finding.repo.indexOf('/') + 1);
-  return url ? `${name}: <${url}>` : name;
+  const pullNumber = PULL_NUMBER_RE.exec(url)?.[1];
+  const label = pullNumber ? `${name}#${pullNumber}` : name;
+  return markup === 'slack' ? `<${url}|${label}>` : `[${label}](${url})`;
 }
 
 /** At most `MAX_DETAILS` items, then a count of the rest. */
@@ -223,39 +245,23 @@ function formatDetails(details: Array<string>): string {
   return rest > 0 ? `${shown.join(', ')} and ${rest} more` : shown.join(', ');
 }
 
-/**
- * Either a span kept as it is — a `<…>` Slack link, a code span
- * delimited by any number of backticks, or a bare URL — or an `@user`
- * / `@org/team` handle that is not part of an email or path.
- */
-const HANDLE_OR_PROTECTED_RE =
-  /(<[^>]*>|(`+)[\s\S]*?\2(?!`)|\bhttps?:\/\/\S+)|(?<![\w./@-])@[\w-]+(?:\/[\w.-]+)?/g;
-
-/**
- * Wrap GitHub `@user` and `@org/team` handles in backticks. Slack
- * resolves a bare `@name` to the workspace member with that username,
- * so e.g. `@verkstedt/team` would mention whoever is `verkstedt` there.
- */
-export function quoteHandles(text: string): string {
-  return text.replace(
-    HANDLE_OR_PROTECTED_RE,
-    (match, protectedSpan?: string) => (protectedSpan ? match : `\`${match}\``),
-  );
-}
-
 function formatFindingLine(
   finding: Finding,
-  { summary, details }: { summary: boolean; details: boolean },
+  {
+    summary,
+    details,
+    link,
+  }: { summary: boolean; details: boolean; link: LinkStyle },
 ): string {
-  const parts = [formatLocation(finding)];
+  const parts = [formatLocation(finding, link)];
   if (summary) {
-    parts.push(quoteHandles(finding.summary));
+    parts.push(finding.summary);
   }
   if (finding.outcome?.detail) {
-    parts.push(quoteHandles(finding.outcome.detail));
+    parts.push(finding.outcome.detail);
   }
   if (details && finding.details && finding.details.length > 0) {
-    parts.push(quoteHandles(formatDetails(finding.details)));
+    parts.push(formatDetails(finding.details));
   }
   return parts.join(' — ');
 }
@@ -264,20 +270,23 @@ function formatFindingLine(
 function renderGroupItems(
   group: GroupKey,
   findings: Array<Finding>,
-  { details }: { details: boolean },
+  { details, link }: { details: boolean; link: LinkStyle },
 ): Array<string> {
   if (group === 'opened' || group === 'previous') {
     const seen = new Set<string>();
     return findings.flatMap((f) => {
-      const key = group === 'opened' ? f.repo : formatLocation(f);
+      const key =
+        group === 'opened' ? f.repo : (f.outcome?.url ?? f.url ?? f.repo);
       if (seen.has(key)) {
         return [];
       }
       seen.add(key);
-      return [formatFindingLine(f, { summary: false, details: false })];
+      return [formatFindingLine(f, { summary: false, details: false, link })];
     });
   }
-  return findings.map((f) => formatFindingLine(f, { summary: true, details }));
+  return findings.map((f) =>
+    formatFindingLine(f, { summary: true, details, link }),
+  );
 }
 
 function pickGroupHeading(group: GroupKey, findings: Array<Finding>): string {
@@ -302,8 +311,18 @@ function getFindingsNotifyData({
 /** The action outputs and job summary for `findings`. */
 export function report(
   findings: Array<Finding>,
-  { repoCount, dryRun, previews, runUrl }: ReportOptions,
+  {
+    repoCount,
+    dryRun,
+    previews,
+    runUrl,
+    serverUrl: serverUrlOption,
+  }: ReportOptions,
 ): { outputs: Outputs; summary: string } {
+  const serverUrl =
+    serverUrlOption == null || serverUrlOption === ''
+      ? 'https://github.com'
+      : serverUrlOption;
   const groups = Object.fromEntries(
     GROUP_ORDER.map((key) => [key, [] as Array<Finding>]),
   ) as Record<GroupKey, Array<Finding>>;
@@ -318,7 +337,10 @@ export function report(
     groups[key].length > 0
       ? renderList(
           pickGroupHeading(key, groups[key]),
-          renderGroupItems(key, groups[key], { details: true }),
+          renderGroupItems(key, groups[key], {
+            details: true,
+            link: { markup: 'markdown', serverUrl },
+          }),
         )
       : [],
   );
@@ -334,6 +356,7 @@ export function report(
           // that only the job summary has room for.
           items: renderGroupItems(key, groups[key], {
             details: key === 'failed',
+            link: { markup: 'slack', serverUrl },
           }),
         },
       ]),
@@ -395,15 +418,20 @@ export function hasFailures(findings: Array<Finding>): boolean {
 /** Write the outputs and the job summary for the run. */
 export async function publish(
   findings: Array<Finding>,
-  options: Omit<ReportOptions, 'runUrl'>,
+  options: Omit<ReportOptions, 'runUrl' | 'serverUrl'>,
 ): Promise<void> {
+  const serverUrl = process.env.GITHUB_SERVER_URL;
   const runUrl = [
-    process.env.GITHUB_SERVER_URL,
+    serverUrl,
     process.env.GITHUB_REPOSITORY,
     'actions/runs',
     process.env.GITHUB_RUN_ID,
   ].join('/');
-  const { outputs, summary } = report(findings, { ...options, runUrl });
+  const { outputs, summary } = report(findings, {
+    ...options,
+    runUrl,
+    serverUrl,
+  });
   for (const [name, value] of Object.entries(outputs)) {
     core.setOutput(name, value);
   }

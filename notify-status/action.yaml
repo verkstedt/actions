@@ -12,7 +12,12 @@ inputs:
     description: 'This is _not_ a channel name. You can grab the ID from page URL.'
     required: true
   text:
-    description: 'Optional custom text to include in the message.'
+    description: >
+      Optional custom text to include in the message. Rendered verbatim:
+      Slack does not turn bare URLs into links nor resolve `@name` into
+      user mentions (also inside code spans), so use `<url>`,
+      `<url|label>`, `<@U123>` etc. explicitly.
+      See https://docs.slack.dev/reference/block-kit/composition-objects/text-object
     required: false
     default: ''
   only-after-failure:
@@ -233,7 +238,8 @@ runs:
                 "type": "section",
                 "text": {
                   "type": "mrkdwn",
-                  "text": ${{ toJson(format('<!here> {0}', steps.message.outputs.value)) }}
+                  "text": ${{ toJson(format('<!here> {0}', steps.message.outputs.value)) }},
+                  "verbatim": true
                 }
               },
               {
