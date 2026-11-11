@@ -18,7 +18,7 @@ outputs:
     description: 'Hash of the contents of package.json, e.g. `packageJson:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`'
     value: ${{ steps.main.outputs.packageJson }}
   packageJsonLock:
-    description: 'Hash of the contents of package-lock.json and/or yarn.lock, e.g. `packageJsonLock:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`'
+    description: 'Hash of the contents of package-lock.json, yarn.lock and/or pnpm-lock.yaml, e.g. `packageJsonLock:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`'
     value: ${{ steps.main.outputs.packageJsonLock }}
   ref:
     description: 'Git ref we are running on, e.g. `ref:refs/heads/main`'
@@ -46,7 +46,7 @@ runs:
 
         packageJsonLock="$(
           {
-            cat package-lock.json yarn.lock 2>/dev/null || true
+            cat package-lock.json yarn.lock pnpm-lock.yaml 2>/dev/null || true
           } | sha256sum | cut -d' ' -f1
         )"
         echo "packageJsonLock=packageJsonLock:$packageJsonLock" >> "$GITHUB_OUTPUT"

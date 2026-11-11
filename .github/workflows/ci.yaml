@@ -94,7 +94,7 @@ jobs:
 
       - name: Setup
         id: setup
-        uses: verkstedt/actions/setup@v1
+        uses: verkstedt/actions/setup@chore/pnpm-support
         with:
           working-directory: ${{ inputs.working-directory }}
           token: ${{ steps.app-token.outputs.token }}
@@ -137,7 +137,7 @@ jobs:
           private-key: ${{ secrets.GH_AUTH_APP_SECRET }}
 
       - name: Setup
-        uses: verkstedt/actions/setup@v1
+        uses: verkstedt/actions/setup@chore/pnpm-support
         with:
           working-directory: ${{ inputs.working-directory }}
           token: ${{ steps.app-token.outputs.token }}
@@ -279,7 +279,7 @@ jobs:
           private-key: ${{ secrets.GH_AUTH_APP_SECRET }}
 
       - name: Setup
-        uses: verkstedt/actions/setup@v1
+        uses: verkstedt/actions/setup@chore/pnpm-support
         with:
           working-directory: ${{ inputs.working-directory }}
           token: ${{ steps.app-token.outputs.token }}
@@ -310,7 +310,7 @@ jobs:
           private-key: ${{ secrets.GH_AUTH_APP_SECRET }}
 
       - name: Setup
-        uses: verkstedt/actions/setup@v1
+        uses: verkstedt/actions/setup@chore/pnpm-support
         with:
           working-directory: ${{ inputs.working-directory }}
           token: ${{ steps.app-token.outputs.token }}
@@ -342,7 +342,7 @@ jobs:
           private-key: ${{ secrets.GH_AUTH_APP_SECRET }}
 
       - name: Setup
-        uses: verkstedt/actions/setup@v1
+        uses: verkstedt/actions/setup@chore/pnpm-support
         with:
           working-directory: ${{ inputs.working-directory }}
           token: ${{ steps.app-token.outputs.token }}
@@ -374,7 +374,7 @@ jobs:
           private-key: ${{ secrets.GH_AUTH_APP_SECRET }}
 
       - name: Setup
-        uses: verkstedt/actions/setup@v1
+        uses: verkstedt/actions/setup@chore/pnpm-support
         with:
           working-directory: ${{ inputs.working-directory }}
           token: ${{ steps.app-token.outputs.token }}
@@ -405,7 +405,7 @@ jobs:
           private-key: ${{ secrets.GH_AUTH_APP_SECRET }}
 
       - name: Setup
-        uses: verkstedt/actions/setup@v1
+        uses: verkstedt/actions/setup@chore/pnpm-support
         with:
           working-directory: ${{ inputs.working-directory }}
           token: ${{ steps.app-token.outputs.token }}
@@ -520,7 +520,7 @@ jobs:
           private-key: ${{ secrets.GH_AUTH_APP_SECRET }}
 
       - name: Setup
-        uses: verkstedt/actions/setup@v1
+        uses: verkstedt/actions/setup@chore/pnpm-support
         with:
           working-directory: ${{ inputs.working-directory }}
           token: ${{ steps.app-token.outputs.token }}
@@ -552,7 +552,7 @@ jobs:
           private-key: ${{ secrets.GH_AUTH_APP_SECRET }}
 
       - name: Setup
-        uses: verkstedt/actions/setup@v1
+        uses: verkstedt/actions/setup@chore/pnpm-support
         with:
           working-directory: ${{ inputs.working-directory }}
           token: ${{ steps.app-token.outputs.token }}
@@ -697,7 +697,7 @@ jobs:
           private-key: ${{ secrets.GH_AUTH_APP_SECRET }}
 
       - name: Setup
-        uses: verkstedt/actions/setup@v1
+        uses: verkstedt/actions/setup@chore/pnpm-support
         with:
           working-directory: ${{ inputs.working-directory }}
           token: ${{ steps.app-token.outputs.token }}
@@ -740,7 +740,7 @@ jobs:
           private-key: ${{ secrets.GH_AUTH_APP_SECRET }}
 
       - name: Setup
-        uses: verkstedt/actions/setup@v1
+        uses: verkstedt/actions/setup@chore/pnpm-support
         with:
           working-directory: ${{ inputs.working-directory }}
           token: ${{ steps.app-token.outputs.token }}
@@ -795,7 +795,7 @@ jobs:
           private-key: ${{ secrets.GH_AUTH_APP_SECRET }}
 
       - name: Setup
-        uses: verkstedt/actions/setup@v1
+        uses: verkstedt/actions/setup@chore/pnpm-support
         with:
           lfs: true
           working-directory: ${{ inputs.working-directory }}
@@ -804,7 +804,7 @@ jobs:
 
       - name: Calculate cache key parts
         id: cache-keys
-        uses: verkstedt/actions/cache-keys@v1
+        uses: verkstedt/actions/cache-keys@chore/pnpm-support
         with:
           working-directory: ${{ inputs.working-directory }}
 
