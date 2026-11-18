@@ -1,10 +1,10 @@
-name: 'Notify about failure on main branch'
+name: 'Notify about failure on default branch'
 
 # This MUST be specified as a job that `needs` all of the other jobs in
 # the workflow:
 #
 # notify-main-branch-failure:
-#   name: Notify about failure on main branch
+#   name: Notify about failure on default branch
 #   needs:
 #     - setup
 #     - …
@@ -15,6 +15,9 @@ name: 'Notify about failure on main branch'
 #   permissions:
 #     actions: read
 #   secrets: inherit
+#
+# Note: This should’ve been called `notify-default-branch-failure`, but
+# keeping as `main` to minimise breaking changes.
 
 on:
   workflow_call:
@@ -32,7 +35,7 @@ env:
 
 jobs:
   notify-main-branch-failure:
-    name: Notify about failure on main branch
+    name: Notify about failure on default branch
     runs-on: ubuntu-latest
     steps:
       - name: Verify workflow setup
@@ -71,7 +74,7 @@ jobs:
 
           exit $exit_code
 
-      - name: Notify about failure on main branch
+      - name: Notify about failure on default branch
         if: inputs.status != 'success'
         uses: verkstedt/actions/notify-status@v1
         with:
@@ -79,7 +82,7 @@ jobs:
           slack-bot-token: ${{ secrets.SLACK_BOT_TOKEN }}
           slack-channel-id: ${{ vars.SLACK_CHANNEL_ID }}
 
-      - name: Notify about main branch being back to normal
+      - name: Notify about default branch being back to normal
         if: inputs.status == 'success'
         uses: verkstedt/actions/notify-status@v1
         with:
