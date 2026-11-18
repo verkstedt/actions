@@ -7,11 +7,13 @@ name: Dependabot auto-merge
 # no longer just a patch. When Dependabot pushes again, the PR is
 # approved again if needed.
 #
-# Fails when no ruleset requires status checks on the base branch —
-# without them auto-merge would merge without anything verifying the
-# update. Classic branch protection not supported.
-#
 # Requirements:
+# - Repository has at least one required status check rule for base branch.
+#   We want _some_ quality gate before auto–merging.
+#   Classic branch protection not supported.
+# - `.github/workflows/ci.yaml` (see `ci-workflow` input) that runs on
+#   push to the default branch and uses `notify-main-branch-failure`.
+#   We want to get notified when auto–merge breaks the default branch.
 # - Repository settings:
 #   - General → “Allow auto-merge”
 #   - Rulesets → … → Require a pull request before merging →
@@ -50,8 +52,15 @@ on:
       gh-auth-app-client-id:
         description: >
           Client ID of the GitHub App used to approve and merge PRs.
-        required: true
         type: string
+        required: true
+      ci-workflow:
+        description: >
+          Path to the CI workflow that runs on push to the default branch
+          and uses `notify-main-branch-failure`.
+        type: string
+        required: false
+        default: .github/workflows/ci.yaml
     secrets:
       gh-auth-app-private-key:
         description: >
@@ -109,6 +118,68 @@ jobs:
           else
             printf "Required status checks on \`%s\`: %s.\n" "$BASE_REF" "$count"
           fi
+
+      - name: Check if CI notifies about failures on default branch
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          REPO: ${{ github.repository }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          CI_WORKFLOW: ${{ inputs.ci-workflow }}
+        shell: bash
+        run: |
+          err="$( mktemp )"
+          if
+            ! ci="$(
+              gh api -X GET "repos/$REPO/contents/$CI_WORKFLOW" \
+                -H 'Accept: application/vnd.github.raw' \
+                -f ref="$DEFAULT_BRANCH" \
+                2> "$err"
+            )"
+          then
+            if grep -q 'HTTP 404' "$err"
+            then
+              ci=''
+            else
+              cat "$err" >&2
+              printf "::error::Failed to fetch \`%s\` on \`%s\`.\n" \
+                "$CI_WORKFLOW" "$DEFAULT_BRANCH"
+              exit 69 # EX_UNAVAILABLE
+            fi
+          fi
+
+          # `on` can be a string, a list or a map.
+          # Note: This check is not perfect: list of branches can be a
+          # wildcard, negation (!) or there could be branches-ignore,
+          # paths or paths-ignore.
+          if
+            ! printf '%s' "$ci" \
+              | yq -o=json '.on' \
+              | jq -e --arg branch "$DEFAULT_BRANCH" '
+                  if type == "string" then {(.): null}
+                  elif type == "array" then map({(.): null}) | add
+                  end
+                  | has("push")
+                    and ([.push?.branches? // $branch] | flatten | index($branch))
+                ' \
+              > /dev/null
+          then
+            printf "::error::Auto–merge requires \`%s\` on \`%s\` that runs on push to \`%s\`, to guarantee that we get notified about failures on it.\n" \
+              "$CI_WORKFLOW" "$DEFAULT_BRANCH" "$DEFAULT_BRANCH"
+            exit 78 # EX_CONFIG
+          fi
+
+          if
+            ! printf '%s' "$ci" \
+              | yq -e '.jobs[] | select(.uses // "" | contains("/notify-main-branch-failure.yaml"))' \
+              > /dev/null
+          then
+            printf "::error::Auto–merge requires \`%s\` on \`%s\` with a job that uses \`notify-main-branch-failure\`, to guarantee that we get notified about failures on the default branch.\n" \
+              "$CI_WORKFLOW" "$DEFAULT_BRANCH"
+            exit 78 # EX_CONFIG
+          fi
+
+          printf "CI workflow runs on push to \`%s\` and includes \`notify-main-branch-failure\`.\n" \
+            "$DEFAULT_BRANCH"
 
       - name: Fetch Dependabot metadata
         id: metadata
