@@ -17,5 +17,6 @@ jobs:
     uses: ./.github/workflows/dependabot-auto-merge.yaml
     with:
       gh-auth-app-client-id: ${{ vars.DEPENDABOT_AUTO_MERGE_CLIENT_ID }}
+      ci-workflow: .github/workflows/ci-here.yaml
     secrets:
       gh-auth-app-private-key: ${{ secrets.DEPENDABOT_AUTO_MERGE_APP_PRIVATE_KEY }}
