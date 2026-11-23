@@ -51,8 +51,18 @@ function createSkippedFinding(
 }
 
 /**
+ * Whether applying the fixes opens a hygiene PR (or renders one in a
+ * dry run); mirrors `dropLoneOnlyWithOthers` in `applyFixes`.
+ */
+function willOpenPr(findings: Array<Finding>): boolean {
+  return findings.some((f) => f.fix?.kind === 'file' && !f.fix.onlyWithOthers);
+}
+
+/**
  * Audit one repo: snapshot it, skip PR-opening checks when a hygiene
- * PR is already open, run the checks and apply their fixes. Throws
+ * PR is already open, run the checks and apply their fixes. Findings
+ * marked `resolvedByHygienePr` are dropped when a hygiene PR is open
+ * or about to be opened. Throws
  * when the snapshot cannot be taken or the open PRs cannot be listed.
  */
 export async function auditRepo(
@@ -76,7 +86,11 @@ export async function auditRepo(
   const toRun =
     existingPrs.length > 0 ? checks.filter((c) => !c.opensPr) : checks;
 
-  const findings = await runChecks(toRun, snapshot);
+  const allFindings = await runChecks(toRun, snapshot);
+  const hasHygienePr = existingPrs.length > 0 || willOpenPr(allFindings);
+  const findings = hasHygienePr
+    ? allFindings.filter((f) => !f.resolvedByHygienePr)
+    : allFindings;
   const applied = await applyFixes(findings, snapshot, run);
   return {
     findings: [...skipped, ...applied.findings],

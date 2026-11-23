@@ -117,6 +117,69 @@ describe('auditRepo', () => {
     assert.equal(listCallsTo(octokit, 'pulls.create').length, 1);
   });
 
+  describe('findings resolved by a hygiene PR', () => {
+    const resolvable: Check = {
+      name: 'resolvable',
+      run: async () => [
+        {
+          level: 'warning',
+          summary: 'needs owners',
+          resolvedByHygienePr: true,
+        },
+      ],
+    };
+    const writer = (onlyWithOthers = false): Check => ({
+      name: 'writer',
+      opensPr: true,
+      run: async () => [
+        {
+          level: 'info',
+          summary: 'add x',
+          fix: {
+            kind: 'file',
+            path: 'x',
+            content: '1',
+            lang: '',
+            describe: 'added x',
+            onlyWithOthers,
+          },
+        },
+      ],
+    });
+    const summaries = (findings: Array<{ summary: string }>) =>
+      findings.map((f) => f.summary);
+
+    it('are dropped when a hygiene PR is already open', async () => {
+      const octokit = fakeRepo({
+        openPrs: [hygienePr('https://p/1', 'org/r')],
+      });
+      const { findings } = await auditRepo(
+        octokit,
+        repoMeta,
+        options([resolvable]),
+      );
+      assert.deepEqual(summaries(findings), ['hygiene PR already open']);
+    });
+
+    it('are dropped when this run opens a hygiene PR', async () => {
+      const { findings } = await auditRepo(
+        fakeRepo(),
+        repoMeta,
+        options([resolvable, writer()]),
+      );
+      assert.deepEqual(summaries(findings), ['add x']);
+    });
+
+    it('are kept when no hygiene PR is open or opened', async () => {
+      const { findings } = await auditRepo(
+        fakeRepo(),
+        repoMeta,
+        options([resolvable, writer(true)]),
+      );
+      assert.deepEqual(summaries(findings), ['needs owners', 'add x']);
+    });
+  });
+
   it('lets checks that do not list paths run when the tree cannot be fetched', async () => {
     const octokit = fakeRepo({
       handlers: {

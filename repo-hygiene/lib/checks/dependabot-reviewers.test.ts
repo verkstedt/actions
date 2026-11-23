@@ -97,6 +97,7 @@ describe('dependabotReviewers', () => {
         summary: 'Dependabot PR has no reviewers and CODEOWNERS names nobody',
         url: 'https://p/1',
         details: ['Dockerfile', 'Dockerfile.old'],
+        resolvedByHygienePr: true,
       },
     ]);
   });

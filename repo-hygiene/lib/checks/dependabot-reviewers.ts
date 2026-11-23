@@ -6,7 +6,8 @@
  * PRs opened before the file covered them stay reviewer-less otherwise.
  *
  * - PRs with owners for their files get those owners requested
- * - PRs whose files have no owner are only reported as a warning
+ * - PRs whose files have no owner are reported as a warning, unless a
+ *   hygiene PR is open or being opened
  */
 
 import { collectCodeownersForFiles, parseCodeowners } from '../codeowners.ts';
@@ -105,6 +106,8 @@ async function checkPr(
       summary: 'Dependabot PR has no reviewers and CODEOWNERS names nobody',
       url: pr.html_url,
       details: files,
+      // The hygiene PR adds CODEOWNERS entries for the used ecosystems.
+      resolvedByHygienePr: true,
     };
   }
   return {
