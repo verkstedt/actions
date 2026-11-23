@@ -48139,8 +48139,14 @@ const PARTIAL = {
     deferred: false,
 };
 const MAX_DETAILS = 5;
+/**
+ * File fixes and `afterPr` actions are part of the hygiene PR, so they
+ * belong to Opened PRs; Fixed lists only what was done outside of it.
+ */
 function classifyFixedFinding(finding) {
-    return finding.fix?.kind === 'file' ? 'opened' : 'fixed';
+    const partOfPr = finding.fix?.kind === 'file' ||
+        (finding.fix?.kind === 'action' && finding.fix.afterPr === true);
+    return partOfPr ? 'opened' : 'fixed';
 }
 /** Statuses that decide the group on their own. */
 const CLASSIFY_BY_STATUS = {
