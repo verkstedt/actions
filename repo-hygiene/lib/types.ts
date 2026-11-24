@@ -86,6 +86,7 @@ export namespace GitHub {
 
   export interface PullRequest {
     number: number;
+    node_id?: string;
     html_url: string;
     user?: User | null;
     head: {
@@ -108,6 +109,9 @@ export namespace GitHub {
     allow_auto_merge?: boolean | null;
     /** `null` or absent when the token cannot read it. */
     delete_branch_on_merge?: boolean | null;
+    allow_merge_commit?: boolean;
+    allow_squash_merge?: boolean;
+    allow_rebase_merge?: boolean;
   }
 }
 

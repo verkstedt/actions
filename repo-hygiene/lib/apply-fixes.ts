@@ -1,3 +1,8 @@
+import {
+  enableAutoMerge,
+  planAutoMerge,
+  type MergeMethod,
+} from './auto-merge.ts';
 import { parseCodeowners } from './codeowners.ts';
 import { commitChange, getErrorMessage } from './github.ts';
 import { createLogger, formatFailureLog, formatFindingLog } from './log.ts';
@@ -68,9 +73,11 @@ const REVIEWER_PARAGRAPHS: Partial<Record<ReviewerSource, string>> = {
 function composePrBody(
   reviewerSource: ReviewerSource,
   describes: Array<string>,
+  autoMerge: boolean,
 ): string {
+  const mergeNote = autoMerge ? '' : ' Merge after approving.';
   const parts = [
-    `> [!NOTE]\n> 🤖 Opened automatically by [repo-hygiene action from verkstedt/actions](${WORKFLOW_LINK}). Merge after approving.`,
+    `> [!NOTE]\n> 🤖 Opened automatically by [repo-hygiene action from verkstedt/actions](${WORKFLOW_LINK}).${mergeNote}`,
   ];
   const paragraph = REVIEWER_PARAGRAPHS[reviewerSource];
   if (paragraph) {
@@ -97,6 +104,8 @@ interface PrPlan {
   describes: Array<string>;
   reviewers: { users: Array<string>; teams: Array<string> };
   reviewerHandles: Array<string>;
+  /** Merge method to auto-merge with, when rulesets require a review. */
+  autoMerge: MergeMethod | null;
   body: string;
 }
 
@@ -130,6 +139,7 @@ async function planPr(
     f.fix.describe,
     ...(f.fix.warnings ?? []).map((w) => `⚠️ ${w}`),
   ]);
+  const autoMerge = await planAutoMerge(snapshot);
   return {
     files: collectFinalFiles(fileFindings),
     langs: new Map(
@@ -138,7 +148,8 @@ async function planPr(
     describes,
     reviewers,
     reviewerHandles: formatReviewerHandles(snapshot.org, reviewers),
-    body: composePrBody(reviewerSource, describes),
+    autoMerge,
+    body: composePrBody(reviewerSource, describes, autoMerge !== null),
   };
 }
 
@@ -282,6 +293,7 @@ interface FileFixesApplied {
   pr: GitHub.PullRequest | null;
   files: Record<string, string>;
   preview: string | null;
+  autoMerge?: MergeMethod | null;
   /** Set when opening the PR failed; logged once by `applyFileFixes`. */
   prError?: string;
 }
@@ -317,7 +329,7 @@ async function applyFileFixes(
         detail: describeReviewers(requested),
       };
     }
-    return { pr, files, preview: null };
+    return { pr, files, preview: null, autoMerge: plan.autoMerge };
   } catch (e) {
     const detail = getErrorMessage(e);
     snapshot.log.error(`could not open hygiene PR: ${detail}`);
@@ -399,7 +411,7 @@ export async function applyFixes(
     findings.filter(isPending).filter(hasFileFix),
     snapshot,
   );
-  const { pr, files, preview, prError } = await applyFileFixes(
+  const { pr, files, preview, prError, autoMerge } = await applyFileFixes(
     fileFindings,
     findings,
     snapshot,
@@ -407,6 +419,17 @@ export async function applyFixes(
   );
 
   await applyActionFixes(findings, { snapshot, run, pr, files, prError });
+  // After the action fixes, which may allow auto-merge in the repo settings.
+  if (pr && autoMerge) {
+    try {
+      await enableAutoMerge(snapshot, pr, autoMerge);
+      snapshot.log.info(`enabled auto-merge (${autoMerge}) on ${pr.html_url}`);
+    } catch (e) {
+      snapshot.log.warning(
+        `could not enable auto-merge: ${getErrorMessage(e)}`,
+      );
+    }
+  }
 
   for (const finding of findings.filter(isPending)) {
     finding.outcome = { status: 'none' };

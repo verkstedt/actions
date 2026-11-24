@@ -67,6 +67,7 @@ export function fakeRepo({
     'repos.createOrUpdateFileContents': () => ({}),
     'pulls.create': ({ body, head }: { body: string; head: string }) => ({
       number: 42,
+      node_id: 'PR_42',
       html_url: 'https://p/42',
       head: { sha: 'prhead', ref: head },
       body,
@@ -75,6 +76,8 @@ export function fakeRepo({
     'pulls.createReview': () => ({}),
     'pulls.listReviews': () => [],
     'pulls.listFiles': () => [],
+    'repos.getBranchRules': () => [],
+    'graphql': () => ({}),
     ...handlers,
   });
 }

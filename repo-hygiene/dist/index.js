@@ -48322,6 +48322,46 @@ async function publish(findings, options) {
     await summary_summary.addRaw(summary).write();
 }
 
+;// CONCATENATED MODULE: ./lib/auto-merge.ts
+/** In order of preference. */
+const MERGE_METHODS = ['merge', 'squash', 'rebase'];
+const REPO_SETTING = {
+    merge: 'allow_merge_commit',
+    squash: 'allow_squash_merge',
+    rebase: 'allow_rebase_merge',
+};
+/**
+ * The merge method to auto-merge with when the default branch’s
+ * rulesets require at least one approving review; `null` when they
+ * do not, or when no merge method is allowed by both the rulesets and
+ * the repo settings.
+ */
+async function planAutoMerge(snapshot) {
+    const { octokit, org, repo, defaultBranch } = snapshot;
+    const rules = (await octokit.paginate(octokit.rest.repos.getBranchRules, {
+        owner: org,
+        repo,
+        branch: defaultBranch,
+        per_page: 100,
+    }));
+    const prRules = rules.filter((r) => r.type === 'pull_request' &&
+        (r.parameters?.required_approving_review_count ?? 0) > 0);
+    if (prRules.length === 0) {
+        return null;
+    }
+    const repository = await snapshot.getRepository();
+    return (MERGE_METHODS.find((method) => repository[REPO_SETTING[method]] !== false &&
+        prRules.every((r) => r.parameters?.allowed_merge_methods?.includes(method) ?? true)) ?? null);
+}
+/** Turns on auto-merge for `pr`. */
+async function enableAutoMerge(snapshot, pr, mergeMethod) {
+    await snapshot.octokit.graphql(`mutation($id: ID!, $method: PullRequestMergeMethod!) {
+      enablePullRequestAutoMerge(input: { pullRequestId: $id, mergeMethod: $method }) {
+        clientMutationId
+      }
+    }`, { id: pr.node_id, method: mergeMethod.toUpperCase() });
+}
+
 ;// CONCATENATED MODULE: ./lib/codeowners.ts
 
 /**
@@ -48696,6 +48736,7 @@ async function requestReviewersOneByOne(octokit, { org, repo, pullNumber, users,
 
 
 
+
 const WORKFLOW_LINK = 'https://github.com/verkstedt/actions/blob/HEAD/repo-hygiene/';
 /** Also how PRs from earlier runs are recognised. */
 const BRANCH_PREFIX = 'chore/repo-hygiene/';
@@ -48719,9 +48760,10 @@ const REVIEWER_PARAGRAPHS = {
     'contributors': 'Assigned repo contributors as reviewers of this PR.',
     'none': 'Could not determine who to assign as reviewers of this PR.',
 };
-function composePrBody(reviewerSource, describes) {
+function composePrBody(reviewerSource, describes, autoMerge) {
+    const mergeNote = autoMerge ? '' : ' Merge after approving.';
     const parts = [
-        `> [!NOTE]\n> 🤖 Opened automatically by [repo-hygiene action from verkstedt/actions](${WORKFLOW_LINK}). Merge after approving.`,
+        `> [!NOTE]\n> 🤖 Opened automatically by [repo-hygiene action from verkstedt/actions](${WORKFLOW_LINK}).${mergeNote}`,
     ];
     const paragraph = REVIEWER_PARAGRAPHS[reviewerSource];
     if (paragraph) {
@@ -48756,13 +48798,15 @@ async function planPr(fileFindings, findings, snapshot) {
         f.fix.describe,
         ...(f.fix.warnings ?? []).map((w) => `⚠️ ${w}`),
     ]);
+    const autoMerge = await planAutoMerge(snapshot);
     return {
         files: collectFinalFiles(fileFindings),
         langs: new Map(fileFindings.map((f) => [normalise(f.fix.path), f.fix.lang])),
         describes,
         reviewers,
         reviewerHandles: formatReviewerHandles(snapshot.org, reviewers),
-        body: composePrBody(reviewerSource, describes),
+        autoMerge,
+        body: composePrBody(reviewerSource, describes, autoMerge !== null),
     };
 }
 async function renderFilePreview(path, content, plan, snapshot) {
@@ -48895,7 +48939,7 @@ async function applyFileFixes(fileFindings, findings, snapshot, run) {
                 detail: describeReviewers(requested),
             };
         }
-        return { pr, files, preview: null };
+        return { pr, files, preview: null, autoMerge: plan.autoMerge };
     }
     catch (e) {
         const detail = getErrorMessage(e);
@@ -48949,8 +48993,18 @@ function dropLoneOnlyWithOthers(fileFindings, snapshot) {
  */
 async function applyFixes(findings, snapshot, run) {
     const fileFindings = dropLoneOnlyWithOthers(findings.filter(isPending).filter(hasFileFix), snapshot);
-    const { pr, files, preview, prError } = await applyFileFixes(fileFindings, findings, snapshot, run);
+    const { pr, files, preview, prError, autoMerge } = await applyFileFixes(fileFindings, findings, snapshot, run);
     await applyActionFixes(findings, { snapshot, run, pr, files, prError });
+    // After the action fixes, which may allow auto-merge in the repo settings.
+    if (pr && autoMerge) {
+        try {
+            await enableAutoMerge(snapshot, pr, autoMerge);
+            snapshot.log.info(`enabled auto-merge (${autoMerge}) on ${pr.html_url}`);
+        }
+        catch (e) {
+            snapshot.log.warning(`could not enable auto-merge: ${getErrorMessage(e)}`);
+        }
+    }
     for (const finding of findings.filter(isPending)) {
         finding.outcome = { status: 'none' };
         getFindingLogger(finding, snapshot)[finding.level](formatFindingLog(finding));
