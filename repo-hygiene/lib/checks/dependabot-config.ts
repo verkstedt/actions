@@ -43,12 +43,10 @@ export const dependabotConfig: Check = {
     template = await loadDependabotTemplate(octokit);
   },
   run: async (snapshot) => {
-    const { detected, manifestDirsByEcosystem } =
-      await detectEcosystems(snapshot);
+    const { detected } = await detectEcosystems(snapshot);
     const existing = await snapshot.readFirstExistingFile(DEPENDABOT_PATHS);
     const change = planDependabotChange({
       detected,
-      manifestDirsByEcosystem,
       existing,
       template: requireLoadedTemplate(),
       defaultBranch: snapshot.defaultBranch,
