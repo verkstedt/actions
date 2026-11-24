@@ -40,6 +40,10 @@ export function fakeOctokit(handlers: Record<string, Handler>): FakeOctokit {
       calls.push({ name: route, params });
       return { data: await handlers[route](params) };
     },
+    graphql: async (query: string, variables: Params) => {
+      calls.push({ name: 'graphql', params: { query, ...variables } });
+      return await handlers.graphql(variables);
+    },
   };
   return fake as unknown as FakeOctokit;
 }

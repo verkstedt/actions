@@ -100,6 +100,82 @@ describe('applyFixes', () => {
     assert.equal(result.preview, null);
   });
 
+  it('enables auto-merge and drops the merge note when rulesets require a review', async () => {
+    const octokit = fakeRepo({
+      repository: { allow_merge_commit: false },
+      handlers: {
+        'repos.getBranchRules': () => [
+          {
+            type: 'pull_request',
+            parameters: {
+              required_approving_review_count: 1,
+              allowed_merge_methods: ['merge', 'rebase'],
+            },
+          },
+        ],
+      },
+    });
+    const snapshot = await fakeSnapshot({ octokit });
+    snapshot.workingCopy.attach('x', '1');
+    await applyFixes([finding({ fix: file('x', '1') })], snapshot, run);
+    const body = listCallsTo(octokit, 'pulls.create')[0].body;
+    assert.match(body, /Opened automatically/);
+    assert.doesNotMatch(body, /Merge after approving/);
+    const [mutation] = listCallsTo(octokit, 'graphql');
+    assert.match(mutation.query, /enablePullRequestAutoMerge/);
+    assert.equal(mutation.id, 'PR_42');
+    assert.equal(mutation.method, 'REBASE');
+  });
+
+  it('keeps the merge note and skips auto-merge when no review is required', async () => {
+    const octokit = fakeRepo({
+      handlers: {
+        'repos.getBranchRules': () => [
+          {
+            type: 'pull_request',
+            parameters: { required_approving_review_count: 0 },
+          },
+        ],
+      },
+    });
+    const snapshot = await fakeSnapshot({ octokit });
+    snapshot.workingCopy.attach('x', '1');
+    await applyFixes([finding({ fix: file('x', '1') })], snapshot, run);
+    assert.match(
+      listCallsTo(octokit, 'pulls.create')[0].body,
+      /Merge after approving/,
+    );
+    assert.equal(listCallsTo(octokit, 'graphql').length, 0);
+  });
+
+  it('warns but keeps the PR fixed when enabling auto-merge fails', async () => {
+    const log = fakeLog();
+    const snapshot = await fakeSnapshot({
+      log,
+      handlers: {
+        'repos.getBranchRules': () => [
+          {
+            type: 'pull_request',
+            parameters: { required_approving_review_count: 1 },
+          },
+        ],
+        'graphql': () => {
+          throw new Error('auto-merge not allowed');
+        },
+      },
+    });
+    snapshot.workingCopy.attach('x', '1');
+    const result = await applyFixes(
+      [finding({ fix: file('x', '1') })],
+      snapshot,
+      run,
+    );
+    assert.equal(result.findings[0].outcome?.status, 'fixed');
+    assert.deepEqual(log.calls.warning, [
+      'could not enable auto-merge: auto-merge not allowed',
+    ]);
+  });
+
   it('falls back to CODEOWNERS owners, then contributors, and says so in the body', async () => {
     const octokit = fakeRepo({
       files: { 'docs/CODEOWNERS': '/docs/ @writer\n' },
