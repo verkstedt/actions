@@ -180,6 +180,11 @@ export interface Finding {
   /** Suggested reviewers for the hygiene PR. */
   reviewers?: Array<string>;
   fix?: Fix;
+  /**
+   * Leave it out when a hygiene PR is open or this run opens one, as
+   * that PR is expected to resolve it.
+   */
+  resolvedByHygienePr?: boolean;
   outcome?: Outcome;
 }
 

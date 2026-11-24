@@ -160,6 +160,18 @@ describe('report', () => {
       },
     },
     {
+      repo: 'org/shop',
+      level: 'info',
+      summary: 'CODEOWNERS uses a placeholder',
+      fix: {
+        kind: 'action',
+        afterPr: true,
+        describe: 'comment on the `@OWNER` lines',
+        run: async () => undefined,
+      },
+      outcome: { status: 'fixed', detail: 'commented on the `@OWNER` lines' },
+    },
+    {
       repo: 'org/api',
       level: 'info',
       summary: 'Dependabot PR has no reviewers',
@@ -263,7 +275,7 @@ describe('report', () => {
   });
 
   it('does not notify when only previously opened PRs and warnings remain', () => {
-    const { outputs, summary } = report([findings[1], findings[6]], options);
+    const { outputs, summary } = report([findings[1], findings[7]], options);
     assert.equal(outputs.should_notify, 'false');
     assert.equal(outputs.slack_status, 'warning');
     assert.match(
@@ -304,6 +316,44 @@ describe('report', () => {
       /## Slack message\n\n<details>\n<summary>Not sent: dry run<\/summary>/,
     );
     assert.match(outputs.slack_text, /Would open PRs \(dry run\)/);
+  });
+
+  it('lists actions run on the hygiene PR under Opened PRs, not Fixed', () => {
+    const { summary } = report(
+      [
+        {
+          repo: 'org/watch',
+          level: 'info',
+          summary: 'CODEOWNERS lacks owners',
+          fix: {
+            kind: 'file',
+            path: 'c',
+            content: '',
+            lang: '',
+            describe: 'c',
+          },
+          outcome: { status: 'fixed', url: 'https://p/pull/12' },
+        },
+        {
+          repo: 'org/watch',
+          level: 'info',
+          summary: 'CODEOWNERS uses a placeholder',
+          fix: {
+            kind: 'action',
+            afterPr: true,
+            describe: 'comment',
+            run: async () => undefined,
+          },
+          outcome: { status: 'fixed', detail: 'commented' },
+        },
+      ],
+      options,
+    );
+    assert.match(
+      summary,
+      /\*🆕 Opened PRs:\*\n1\. \[watch#12\]\(https:\/\/p\/pull\/12\)\n/,
+    );
+    assert.doesNotMatch(summary, /Fixed/);
   });
 });
 
