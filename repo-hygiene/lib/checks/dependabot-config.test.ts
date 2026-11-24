@@ -71,7 +71,7 @@ describe('dependabotConfig', () => {
     assert.match(finding.fix.content, /package-ecosystem: 'docker'/);
     assert.equal(
       finding.fix.describe,
-      'updated `.github/dependabot.yml`: added sections: `docker`',
+      'updated `.github/dependabot.yml`: added sections: `docker`; set directories on `npm` to match the template',
     );
   });
 
@@ -94,21 +94,6 @@ describe('dependabotConfig', () => {
       finding.fix.describe,
       'updated `.github/dependabot.yml`: set directories on `npm` to match the template',
     );
-  });
-
-  it('keeps entries that together cover every lockfile', async () => {
-    await setup(templateOctokit(DEPENDABOT_TEMPLATE));
-    const entry = (directory: string) =>
-      `  - package-ecosystem: 'npm'\n    directory: '${directory}'\n    schedule:\n      interval: 'weekly'\n    cooldown:\n      default-days: 7\n`;
-    const snapshot = await fakeSnapshot({
-      paths: ['web/package-lock.json', 'api/package-lock.json'],
-      files: {
-        '.github/dependabot.yml': `version: 2\nupdates:\n${entry('/web')}${entry('/api')}`,
-      },
-    });
-    assert.deepEqual(await dependabotConfig.run(snapshot), [
-      { level: 'info', summary: 'dependabot config is complete' },
-    ]);
   });
 
   it('reports nothing to do when the config is complete', async () => {
